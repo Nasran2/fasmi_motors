@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\BikeIntake;
+use App\Models\JobCard;
+use App\Models\Product;
+use App\Models\Store;
+use App\Models\StoreStock;
+use App\Models\Technician;
+use App\Services\WorkshopService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class JobCardController extends Controller
+{
+    public function index(Request $r)
+    {
+        $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
+        if ($r->status) {
+            $q->where('status', $r->status);
+        }
+
+return view('jobs.index', ['jobs' => $q->paginate(15), 'statuses' => self::statuses()]);
+    }
+
+    public function create(Request $r)
+    {
+        return view('jobs.create', ['intakes' => BikeIntake::doesntHave('jobCard')->with('bike.customer')->latest()->get(), 'selected' => $r->intake, 'technicians' => Technician::where('active', 1)->get()]);
+    }
+
+    public function store(Request $r)
+    {
+        $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
+        $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.str_pad((string) (JobCard::max('id') + 1), 4, '0', STR_PAD_LEFT), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
+        DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+
+        return redirect()->route('jobs.show', $job)->with('success', 'Job card created.');
+    }
+
+    public function show(JobCard $job)
+    {
+        return view('jobs.show', ['job' => $job->load('intake.bike.customer', 'technician', 'parts.product', 'services', 'invoice.payments'), 'technicians' => Technician::where('active', 1)->get(), 'products' => Product::with('stocks')->where('active', 1)->get(), 'stores' => Store::where('active', 1)->get(), 'statuses' => self::statuses()]);
+    }
+
+    public function update(Request $r, JobCard $job)
+    {
+        $v = $r->validate(['status' => 'required|in:'.implode(',', self::statuses()), 'main_technician_id' => 'nullable|required_if:status,Assigned|exists:technicians,id', 'change_reason' => 'nullable|max:500', 'parts_total' => 'nullable|numeric|min:0', 'service_total' => 'nullable|numeric|min:0', 'labor_total' => 'nullable|numeric|min:0', 'washing_total' => 'nullable|numeric|min:0', 'other_total' => 'nullable|numeric|min:0', 'discount' => 'nullable|numeric|min:0', 'tax' => 'nullable|numeric|min:0']);
+        $old = $job->status;
+        $job->update($v);
+        if ($old !== $job->status) {
+            DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'old_status' => $old, 'new_status' => $job->status, 'note' => $r->change_reason, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+        }
+
+return back()->with('success', 'Job card updated.');
+    }
+
+    public function addPart(Request $r, JobCard $job, WorkshopService $service)
+    {
+        $v = $r->validate(['product_id' => 'required|exists:products,id', 'store_id' => 'required|exists:stores,id', 'quantity' => 'required|numeric|min:0.01', 'unit_price' => 'required|numeric|min:0', 'discount' => 'nullable|numeric|min:0']);
+        $stock = StoreStock::where(['product_id' => $v['product_id'], 'store_id' => $v['store_id']])->value('quantity') ?? 0;
+        $out = $stock < $v['quantity'];
+        $total = $v['quantity'] * $v['unit_price'] - ($v['discount'] ?? 0);
+        $part = $job->parts()->create($v + ['total' => $total, 'out_of_stock' => $out]);
+        if (! $out) {
+            $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}");
+        }$job->update(['parts_total' => $job->parts()->sum('total')]);
+
+        return back()->with('success', $out ? 'Part added with an out-of-stock warning.' : 'Part issued from stock.');
+    }
+
+    public function invoice(Request $r, JobCard $job, WorkshopService $service)
+    {
+        $v = $r->validate(['paid_amount' => 'required|numeric|min:0', 'payment_method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR,Credit/Due']);
+        $invoice = $service->invoice($job, (float) $v['paid_amount'], $v['payment_method']);
+
+        return redirect()->route('invoices.public', $invoice->public_token)->with('success', 'Invoice generated.');
+    }
+
+    private static function statuses(): array
+    {
+        return ['Received', 'Assigned', 'In Progress', 'Waiting for Parts', 'On Hold', 'Repair Ready', 'Completed', 'Billed', 'Delivered', 'Cancelled'];
+    }
+}

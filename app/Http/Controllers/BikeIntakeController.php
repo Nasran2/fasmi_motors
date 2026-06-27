@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Bike;
+use App\Models\BikeIntake;
+use App\Models\Customer;
+use App\Models\Technician;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class BikeIntakeController extends Controller
+{
+    public function index(Request $r)
+    {
+        $q = BikeIntake::with('bike.customer', 'jobCard')->latest();
+        if ($r->q) {
+            $q->whereHas('bike', fn ($x) => $x->where('number', 'like', '%'.$r->q.'%'));
+        }
+
+return view('intakes.index', ['intakes' => $q->paginate(15)]);
+    }
+
+    public function create()
+    {
+        return view('intakes.create', ['technicians' => Technician::where('active', true)->get()]);
+    }
+
+    public function lookup(string $number)
+    {
+        $bike = Bike::with('customer', 'technician', 'intakes.jobCard.invoice')->where('number', strtoupper($number))->first();
+
+        return response()->json($bike);
+    }
+
+    public function store(Request $r)
+    {
+        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'phone' => 'required|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
+        $intake = DB::transaction(function () use ($r, $v) {
+            $bike = Bike::with('customer')->where('number', strtoupper($v['bike_number']))->first();
+            if ($bike) {
+                $bike->customer->update(['name' => $v['customer_name'] ?? $bike->customer->name, 'phone' => $v['phone']]);
+                $bike->update(['model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+            } else {
+                $customer = Customer::create(['name' => $v['customer_name'] ?? null, 'phone' => $v['phone'], 'address' => $r->address, 'nic' => $r->nic]);
+                $bike = $customer->bikes()->create(['number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+            }
+
+            return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.str_pad((string) (BikeIntake::max('id') + 1), 4, '0', STR_PAD_LEFT), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
+        });
+
+        return redirect()->route('intakes.show', $intake)->with('success', 'Bike intake recorded.');
+    }
+
+    public function show(BikeIntake $intake)
+    {
+        return view('intakes.show', ['intake' => $intake->load('bike.customer','bike.intakes.jobCard.invoice','jobCard.technician')]);
+    }
+}

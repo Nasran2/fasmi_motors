@@ -1,18 +1,9 @@
 <x-layouts::app :title="__('Dashboard')">
-    <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
-        <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-        </div>
-        <div class="relative h-full flex-1 overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-            <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-        </div>
-    </div>
+<div class="space-y-6">
+ <div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">Good {{ now()->hour < 12 ? 'morning' : (now()->hour < 17 ? 'afternoon' : 'evening') }}</h1><p class="page-subtitle">Here’s what is happening at the workshop today.</p></div><a href="{{ route('intakes.create') }}" class="btn-primary">+ New bike intake</a></div>
+ @if(session('success'))<div class="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{{ session('success') }}</div>@endif
+ <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">@foreach($cards as $label=>$value)<div class="panel"><p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">{{ $label }}</p><p class="mt-3 text-3xl font-bold text-zinc-900 dark:text-white">{{ is_numeric($value) && str_contains(strtolower($label),'sales') || str_contains(strtolower($label),'expenses') ? 'Rs. '.number_format((float)$value,2) : $value }}</p></div>@endforeach</div>
+ <div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><div class="mb-4 flex justify-between"><h2 class="font-bold">Recent job cards</h2><a href="{{ route('jobs.index') }}" class="text-sm text-emerald-600">View all</a></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Job</th><th>Bike / customer</th><th>Technician</th><th>Status</th></tr></thead><tbody>@forelse($recentJobs as $job)<tr><td><a class="font-semibold text-emerald-600" href="{{ route('jobs.show',$job) }}">{{ $job->number }}</a></td><td>{{ $job->intake->bike->number }}<br><span class="text-xs text-zinc-500">{{ $job->intake->bike->customer->name ?: 'Walk-in customer' }}</span></td><td>{{ $job->technician?->name ?: 'Unassigned' }}</td><td><span class="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800">{{ $job->status }}</span></td></tr>@empty<tr><td colspan="4" class="text-center">No job cards yet.</td></tr>@endforelse</tbody></table></div></div>
+ <div class="panel"><h2 class="mb-4 font-bold">Account balances</h2><div class="space-y-4">@foreach($accounts as $account)<div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800"><p class="text-sm text-zinc-500">{{ $account->name }}</p><p class="mt-1 text-xl font-bold">Rs. {{ number_format($account->balance,2) }}</p></div>@endforeach</div></div></div>
+</div>
 </x-layouts::app>

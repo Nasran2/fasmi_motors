@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         @include('partials.head')
     </head>
@@ -11,24 +11,21 @@
             </flux:sidebar.header>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
+                <flux:sidebar.group :heading="__('Main menu')" class="grid gap-1">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                        {{ __('Dashboard') }}
+                        <span class="block">Dashboard</span><span class="block text-[10px] opacity-60">Today summary & performance</span>
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="plus-circle" :href="route('intakes.index')" :current="request()->routeIs('intakes.*')"><span class="block">Bike Intake</span><span class="block text-[10px] opacity-60">New repair & customer bike</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="clipboard-document-list" :href="route('jobs.index')" :current="request()->routeIs('jobs.*')"><span class="block">Job Cards</span><span class="block text-[10px] opacity-60">Technician work assignment</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="cube" :href="route('products.index')" :current="request()->routeIs('products.*')"><span class="block">Stock</span><span class="block text-[10px] opacity-60">Spare parts & store</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="banknotes" :href="route('finance.index')" :current="request()->routeIs('finance.*')"><span class="block">Accounts</span><span class="block text-[10px] opacity-60">Main, parts & bank ledgers</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="users" :href="route('technicians.index')" :current="request()->routeIs('technicians.*')"><span class="block">Technicians</span><span class="block text-[10px] opacity-60">Staff, salary & attendance</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="chart-bar" :href="route('reports.index')" :current="request()->routeIs('reports.*')"><span class="block">Reports</span><span class="block text-[10px] opacity-60">Sales, profit & stock</span></flux:sidebar.item>
+                    <flux:sidebar.item icon="cog-6-tooth" :href="route('system-settings.index')" :current="request()->routeIs('system-settings.*')"><span class="block">Settings</span><span class="block text-[10px] opacity-60">System & account settings</span></flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
             <flux:spacer />
-
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
 
             <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
         </flux:sidebar>

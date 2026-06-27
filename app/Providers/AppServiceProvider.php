@@ -2,9 +2,21 @@
 
 namespace App\Providers;
 
+use App\Models\AuditLog;
+use App\Models\Bike;
+use App\Models\BikeIntake;
+use App\Models\Drawing;
+use App\Models\Expense;
+use App\Models\JobCard;
+use App\Models\Product;
+use App\Models\Setting;
+use App\Models\Technician;
+use App\Models\TechnicianAttendance;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -24,6 +36,26 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        foreach ([Bike::class, BikeIntake::class, JobCard::class, Product::class, Technician::class, TechnicianAttendance::class, Expense::class, Drawing::class, Setting::class] as $model) {
+            $model::created(fn (Model $item) => $this->audit('created', $item, [], $item->getAttributes()));
+            $model::updated(fn (Model $item) => $this->audit('updated', $item, $item->getOriginal(), $item->getChanges()));
+            $model::deleted(fn (Model $item) => $this->audit('deleted', $item, $item->getOriginal(), []));
+        }
+    }
+
+    private function audit(string $event, Model $item, array $old, array $new): void
+    {
+        if (! Schema::hasTable('audit_logs')) {
+            return;
+        }
+
+        AuditLog::create([
+            'user_id' => auth()->id(), 'event' => $event,
+            'auditable_type' => $item->getMorphClass(), 'auditable_id' => $item->getKey(),
+            'old_values' => $old, 'new_values' => $new,
+            'ip_address' => request()->ip(), 'user_agent' => request()->userAgent(),
+        ]);
     }
 
     /**
