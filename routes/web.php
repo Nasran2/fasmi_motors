@@ -86,8 +86,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('sales/public-links/{invoice}/regenerate', [SalesBillingController::class, 'regenerateLink'])->name('sales.public-links.regenerate');
     Route::post('sales/public-links/{invoice}/toggle', [SalesBillingController::class, 'toggleLink'])->name('sales.public-links.toggle');
     Route::post('sales/public-links/{invoice}/sms', [SalesBillingController::class, 'sendBillSms'])->name('sales.public-links.sms');
+    Route::get('technicians/create', [TechnicianController::class, 'create'])->name('technicians.create');
+    Route::get('technicians/attendance', [TechnicianController::class, 'attendanceIndex'])->name('technicians.attendance.index');
+    Route::post('technicians/attendance', [TechnicianController::class, 'attendanceStore'])->name('technicians.attendance.store');
+    Route::get('technicians/salaries', [TechnicianController::class, 'salaries'])->name('technicians.salaries');
+    Route::post('technicians/salaries', [TechnicianController::class, 'salaryStore'])->name('technicians.salaries.store');
+    Route::get('technicians/advances', [TechnicianController::class, 'advances'])->name('technicians.advances');
+    Route::post('technicians/advances', [TechnicianController::class, 'advanceStore'])->name('technicians.advances.store');
+    Route::get('technicians/commissions', [TechnicianController::class, 'commissions'])->name('technicians.commissions');
+    Route::post('technicians/commissions', [TechnicianController::class, 'commissionStore'])->name('technicians.commissions.store');
+    Route::get('technicians/bike-deductions', [TechnicianController::class, 'bikeDeductions'])->name('technicians.bike-deductions');
+    Route::post('technicians/bike-deductions', [TechnicianController::class, 'bikeDeductionStore'])->name('technicians.bike-deductions.store');
+    Route::get('technicians/contributions', [TechnicianController::class, 'contributions'])->name('technicians.contributions');
+    Route::get('technicians/history', [TechnicianController::class, 'history'])->name('technicians.history');
     Route::post('technicians/{technician}/attendance', [TechnicianController::class, 'attendance'])->name('technicians.attendance');
-    Route::resource('technicians', TechnicianController::class)->only(['index', 'store', 'show']);
+    Route::resource('technicians', TechnicianController::class)->only(['index', 'store', 'show', 'update']);
     Route::get('accounts', [FinanceController::class, 'index'])->name('finance.index');
     Route::post('expenses', [FinanceController::class, 'expense'])->name('expenses.store');
     Route::post('drawings', [FinanceController::class, 'drawing'])->name('drawings.store');
@@ -95,6 +108,39 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('system-settings', [SettingController::class, 'index'])->name('system-settings.index');
     Route::put('system-settings', [SettingController::class, 'update'])->name('system-settings.update');
+    
+    // Accounts Module
+    Route::prefix('accounts')->name('accounts.')->group(function () {
+        Route::get('main-ledger', [\App\Http\Controllers\Accounts\MainAccountController::class, 'index'])->name('main-ledger.index');
+        Route::post('main-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\MainAccountController::class, 'reverse'])->name('main-ledger.reverse');
+        
+        Route::get('spare-parts-ledger', [\App\Http\Controllers\Accounts\SparePartsAccountController::class, 'index'])->name('spare-parts-ledger.index');
+        Route::post('spare-parts-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\SparePartsAccountController::class, 'reverse'])->name('spare-parts-ledger.reverse');
+
+        Route::get('bank-ledger', [\App\Http\Controllers\Accounts\BankAccountController::class, 'index'])->name('bank-ledger.index');
+        Route::post('bank-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\BankAccountController::class, 'reverse'])->name('bank-ledger.reverse');
+
+        Route::get('cash-book', [\App\Http\Controllers\Accounts\CashBookController::class, 'index'])->name('cash-book.index');
+        Route::post('cash-book/{transaction}/reverse', [\App\Http\Controllers\Accounts\CashBookController::class, 'reverse'])->name('cash-book.reverse');
+
+        Route::get('transfers', [\App\Http\Controllers\Accounts\AccountTransferController::class, 'index'])->name('transfers.index');
+        Route::post('transfers', [\App\Http\Controllers\Accounts\AccountTransferController::class, 'store'])->name('transfers.store');
+
+        Route::get('daily-closing', [\App\Http\Controllers\Accounts\DailyClosingController::class, 'index'])->name('daily-closing.index');
+        Route::post('daily-closing', [\App\Http\Controllers\Accounts\DailyClosingController::class, 'store'])->name('daily-closing.store');
+
+        Route::get('cheques', [\App\Http\Controllers\Accounts\ChequeController::class, 'index'])->name('cheques.index');
+        Route::patch('cheques/{cheque}/status', [\App\Http\Controllers\Accounts\ChequeController::class, 'updateStatus'])->name('cheques.status');
+
+        // Card payments is essentially a filtered view of bank ledger. Using BankAccountController for now.
+        Route::get('card-payments', [\App\Http\Controllers\Accounts\BankAccountController::class, 'index'])->name('card-payments.index');
+
+        Route::get('opening-balances', [\App\Http\Controllers\Accounts\OpeningBalanceController::class, 'index'])->name('opening-balances.index');
+        Route::post('opening-balances', [\App\Http\Controllers\Accounts\OpeningBalanceController::class, 'store'])->name('opening-balances.store');
+        
+        Route::get('export/{type}', [\App\Http\Controllers\Accounts\AccountExportController::class, 'export'])->name('export');
+    });
+
     Route::get('workspace/{section}/{page}', WorkspacePageController::class)
         ->where(['section' => '[a-z0-9-]+', 'page' => '[a-z0-9-]+'])
         ->name('workspace.page');

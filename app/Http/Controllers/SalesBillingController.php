@@ -8,10 +8,13 @@ use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\StockBatch;
+use App\Models\Store;
 use App\Models\Store;
 use App\Models\Technician;
 use App\Services\WorkshopService;
+use App\Services\AccountService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,67 +48,112 @@ class SalesBillingController extends Controller
 
     public function partsSales()
     {
+        $categories = ProductCategory::orderBy('name')->get();
         $products = Product::with(['stocks.store', 'stockBatches' => fn ($q) => $q->where('status', 'active')->where('available_qty', '>', 0)])->where('active', true)->orderBy('name')->get();
 
-        return view('sales.parts-sales', ['customers' => Customer::where('active', true)->orderBy('name')->get(), 'stores' => Store::where('active', true)->orderByDesc('is_default')->get(), 'accounts' => Account::where('active', true)->get(), 'products' => $products, 'productOptions' => $products->map(fn (Product $p) => ['id' => $p->id, 'label' => $p->name.' — '.$p->code.($p->barcode ? ' — '.$p->barcode : ''), 'sku' => $p->code, 'barcode' => $p->barcode, 'price' => (float) $p->selling_price, 'stocks' => $p->stocks->map(fn ($stock) => ['store_id' => $stock->store_id, 'quantity' => (float) $stock->quantity])->values(), 'batches' => $p->stockBatches->map(fn ($b) => ['id' => $b->id, 'store_id' => $b->store_id, 'batch_no' => $b->batch_no, 'cost' => (float) $b->cost_price, 'selling' => (float) $b->selling_price, 'qty' => (float) $b->available_qty])->values()])->values(), 'recent' => Invoice::with('customer')->where('invoice_type', 'Parts Sale')->latest()->limit(5)->get(), 'stats' => ['today' => Invoice::where('invoice_type', 'Parts Sale')->whereDate('created_at', today())->sum('total'), 'items' => DB::table('invoice_items')->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')->whereDate('invoices.created_at', today())->sum('invoice_items.quantity'), 'income' => Account::where('code', 'SPARE')->first()?->balance ?? 0, 'due' => Invoice::where('invoice_type', 'Parts Sale')->sum('due_amount'), 'low' => Product::whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id=products.id)<=products.minimum_stock')->count()]]);
+        return view('sales.parts-sales', ['customers' => Customer::where('active', true)->orderBy('name')->get(), 'stores' => Store::where('active', true)->orderByDesc('is_default')->get(), 'accounts' => Account::where('active', true)->get(), 'categories' => $categories, 'products' => $products, 'productOptions' => $products->map(fn (Product $p) => ['id' => $p->id, 'label' => $p->name.' — '.$p->code.($p->barcode ? ' — '.$p->barcode : ''), 'name' => $p->name, 'sku' => $p->code, 'barcode' => $p->barcode, 'price' => (float) $p->selling_price, 'unit' => $p->unit, 'category_id' => $p->category_id, 'stocks' => $p->stocks->map(fn ($stock) => ['store_id' => $stock->store_id, 'quantity' => (float) $stock->quantity])->values(), 'batches' => $p->stockBatches->map(fn ($b) => ['id' => $b->id, 'store_id' => $b->store_id, 'batch_no' => $b->batch_no, 'cost' => (float) $b->cost_price, 'selling' => (float) $b->selling_price, 'qty' => (float) $b->available_qty, 'date' => $b->purchase_date?->format('d/m/Y') ?? 'N/A'])->values()])->values(), 'recent' => Invoice::with('customer')->where('invoice_type', 'Parts Sale')->latest()->limit(5)->get(), 'stats' => ['today' => Invoice::where('invoice_type', 'Parts Sale')->whereDate('created_at', today())->sum('total'), 'items' => DB::table('invoice_items')->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')->whereDate('invoices.created_at', today())->sum('invoice_items.quantity'), 'income' => Account::where('code', 'SPARE')->first()?->balance ?? 0, 'due' => Invoice::where('invoice_type', 'Parts Sale')->sum('due_amount'), 'low' => Product::whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id=products.id)<=products.minimum_stock')->count()]]);
     }
 
     public function partsStore(Request $request, WorkshopService $service)
     {
-        $data = $request->validate(['customer_mode' => ['required', Rule::in(['walkin', 'existing', 'new'])], 'customer_id' => ['nullable', 'exists:customers,id'], 'customer_name' => ['nullable', 'max:150'], 'customer_phone' => ['nullable', 'max:30'], 'store_id' => ['required', 'exists:stores,id'], 'discount' => ['nullable', 'numeric', 'min:0'], 'tax' => ['nullable', 'numeric', 'min:0'], 'paid_amount' => ['required', 'numeric', 'min:0'], 'payment_method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR', 'Credit/Due'])], 'account_id' => ['nullable', 'exists:accounts,id'], 'items' => ['required', 'array', 'min:1', 'max:100'], 'items.*.product_id' => ['required', 'distinct', 'exists:products,id'], 'items.*.quantity' => ['required', 'numeric', 'gt:0'], 'items.*.unit_price' => ['required', 'numeric', 'min:0'], 'items.*.discount' => ['nullable', 'numeric', 'min:0'], 'items.*.stock_batch_id' => ['nullable', 'exists:stock_batches,id']]);
-        if ((float) $data['paid_amount'] > 0 && empty($data['account_id'])) {
-            throw ValidationException::withMessages(['account_id' => 'Select the account receiving this payment.']);
+        $v = $request->validate([
+            'customer_mode' => 'nullable|string',
+            'customer_id' => 'nullable|exists:customers,id',
+            'customer_name' => 'nullable|string|max:255',
+            'customer_phone' => 'nullable|string|max:255',
+            'store_id' => 'required|exists:stores,id',
+            'discount' => 'nullable|numeric|min:0',
+            'tax' => 'nullable|numeric|min:0',
+            'paid_amount' => 'required|numeric|min:0',
+            'payment_method' => 'nullable|string',
+            'account_id' => 'nullable|exists:accounts,id',
+            'invoice_type' => 'nullable|string|in:Parts Sale,Quotation',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.stock_batch_id' => 'nullable|exists:stock_batches,id',
+            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.discount' => 'nullable|numeric|min:0',
+            'action' => 'nullable|string',
+        ]);
+
+        if (($v['customer_mode'] ?? '') === 'new' && $v['customer_name']) {
+            $customer = Customer::create(['name' => $v['customer_name'], 'phone' => $v['customer_phone'], 'active' => true]);
+            $v['customer_id'] = $customer->id;
         }
-        $invoice = DB::transaction(function () use ($data, $request, $service) {
-            $customer = match ($data['customer_mode']) {
-                'existing' => Customer::findOrFail($data['customer_id']),
-                'new' => Customer::create(['name' => $data['customer_name'] ?: 'Parts Customer', 'phone' => $data['customer_phone'] ?: 'TEMP-'.Str::upper(Str::random(8)), 'customer_type' => 'Parts Customer', 'active' => true]),
-                default => Customer::firstOrCreate(['phone' => 'WALK-IN'], ['name' => 'Walk-in Customer', 'customer_type' => 'Walk-in', 'active' => true]),
-            };
-            $subtotal = collect($data['items'])->sum(fn (array $item) => (float) $item['quantity'] * (float) $item['unit_price'] - (float) ($item['discount'] ?? 0));
-            $total = max(0, $subtotal - (float) ($data['discount'] ?? 0) + (float) ($data['tax'] ?? 0));
-            $paid = (float) $data['paid_amount'];
-            if ($paid > $total) {
-                throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the sale total.']);
-            }
-            $invoice = Invoice::create(['number' => 'INV-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'invoice_type' => 'Parts Sale', 'customer_id' => $customer->id, 'store_id' => $data['store_id'], 'subtotal' => $subtotal, 'parts_amount' => $subtotal, 'discount' => $data['discount'] ?? 0, 'tax' => $data['tax'] ?? 0, 'total' => $total, 'paid_amount' => 0, 'due_amount' => $total, 'status' => 'Unpaid', 'payment_method' => $data['payment_method'], 'due_date' => $paid < $total ? today()->addDays(30) : null, 'public_token' => Str::random(48), 'link_expires_at' => now()->addDays(90), 'created_by' => auth()->id()]);
-            foreach ($data['items'] as $item) {
-                $line = (float) $item['quantity'] * (float) $item['unit_price'] - (float) ($item['discount'] ?? 0);
 
-                $batchId = $item['stock_batch_id'] ?? null;
-                $costPrice = 0;
-                if (! $batchId) {
-                    $batch = StockBatch::where('product_id', $item['product_id'])->where('store_id', $data['store_id'])->where('status', 'active')->where('available_qty', '>', 0)->orderBy('purchase_date', 'asc')->first();
-                    if ($batch) {
-                        $batchId = $batch->id;
-                    }
+        $invType = $v['invoice_type'] ?? 'Parts Sale';
+
+        $subtotal = collect($v['items'])->sum(fn ($i) => ($i['quantity'] * $i['unit_price']) - ($i['discount'] ?? 0));
+        $total = max(0, $subtotal - ($v['discount'] ?? 0) + ($v['tax'] ?? 0));
+        $paid = $invType === 'Quotation' ? 0 : ($v['paid_amount'] ?? 0);
+
+        $invoice = Invoice::create([
+            'number' => 'INV-'.date('Ymd').'-'.str_pad(Invoice::whereDate('created_at', today())->count() + 1, 3, '0', STR_PAD_LEFT),
+            'invoice_type' => $invType,
+            'status' => $invType === 'Quotation' ? 'Draft' : ($paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid')),
+            'customer_id' => $v['customer_id'] ?? null,
+            'store_id' => $v['store_id'],
+            'subtotal' => $subtotal,
+            'discount' => $v['discount'] ?? 0,
+            'tax' => $v['tax'] ?? 0,
+            'parts_amount' => $subtotal,
+            'payment_method' => $v['payment_method'] ?? null,
+            'total' => $total,
+            'paid_amount' => $paid,
+            'due_amount' => max(0, $total - $paid),
+            'public_token' => Str::random(48),
+            'link_expires_at' => now()->addDays(90),
+            'created_by' => auth()->id(),
+        ]);
+
+        foreach ($v['items'] as $i) {
+            $batchId = $i['stock_batch_id'] ?? null;
+            $costPrice = 0;
+            if ($batchId) {
+                $batch = StockBatch::find($batchId);
+                $costPrice = $batch->cost_price ?? 0;
+            } else {
+                $product = Product::find($i['product_id']);
+                $costPrice = $product->cost_price ?? 0;
+            }
+
+            $invoice->items()->create([
+                'product_id' => $i['product_id'],
+                'store_id' => $v['store_id'],
+                'stock_batch_id' => $batchId,
+                'quantity' => $i['quantity'],
+                'unit_price' => $i['unit_price'],
+                'discount' => $i['discount'] ?? 0,
+                'total' => ($i['quantity'] * $i['unit_price']) - ($i['discount'] ?? 0),
+                'cost_price' => $costPrice,
+                'profit' => (($i['unit_price'] - $costPrice) * $i['quantity']) - ($i['discount'] ?? 0),
+            ]);
+
+            if ($invType !== 'Quotation') {
+                $service->adjustStock($v['store_id'], $i['product_id'], -$i['quantity'], 'sale', $invoice, "Parts Sale #$invoice->number", $batchId, $costPrice, $i['unit_price']);
+            }
+        }
+
+        if ($paid > 0 && $invType !== 'Quotation') {
+            $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'amount' => $paid, 'method' => $v['payment_method'], 'paid_at' => now(), 'account_id' => $v['account_id'], 'balance_after' => max(0, $total - $paid), 'status' => 'Completed', 'created_by' => auth()->id()]);
+            if ($v['account_id']) {
+                $accountService = app(AccountService::class);
+                $accountService->recordTransaction('spare_parts', 'income', $paid, "Payment for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
+                
+                if (in_array($v['payment_method'], ['Cash'])) {
+                    $accountService->recordTransaction('cash', 'income', $paid, "Cash receipt for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
                 } else {
-                    $batch = StockBatch::find($batchId);
+                    $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
                 }
-
-                if ($batch) {
-                    $costPrice = (float) $batch->cost_price;
-                } else {
-                    $product = Product::find($item['product_id']);
-                    $costPrice = (float) $product->cost_price;
-                }
-
-                $profit = $line - ((float) $item['quantity'] * $costPrice);
-
-                $invoiceItem = $invoice->items()->create(['product_id' => $item['product_id'], 'store_id' => $data['store_id'], 'stock_batch_id' => $batchId, 'quantity' => $item['quantity'], 'cost_price' => $costPrice, 'selling_price' => $item['unit_price'], 'unit_price' => $item['unit_price'], 'discount' => $item['discount'] ?? 0, 'total' => $line, 'profit' => $profit]);
-                $service->adjustStock((int) $data['store_id'], (int) $item['product_id'], -(float) $item['quantity'], 'parts_sale', $invoice, "Parts sale {$invoice->number}", $batchId, $costPrice, $item['unit_price']);
             }
-            if ($paid > 0) {
-                $this->createPayment($invoice, $paid, $data['payment_method'], (int) $data['account_id'], now(), 'Initial parts sale payment', $service);
-            }
-            if ($request->input('action') === 'sms') {
-                $this->queueBillSms($invoice);
-            }
+        }
 
-            return $invoice;
-        });
-
-        return redirect()->route('sales.invoices.show', $invoice)->with('success', 'Parts sale saved; stock, due, ledger and public bill were updated.');
+        return response()->json([
+            'success' => true,
+            'invoice_id' => $invoice->id,
+            'message' => $invType === 'Quotation' ? 'Quotation saved successfully.' : 'Sale completed successfully.',
+        ]);
     }
 
     public function invoices(Request $request)
@@ -240,31 +288,39 @@ class SalesBillingController extends Controller
         $invoice->refresh();
         $invoice->update(['status' => (float) $invoice->due_amount <= 0 ? 'Paid' : 'Partially Paid', 'payment_method' => $method]);
         $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => $method, 'reference' => $reference, 'paid_at' => $paidAt, 'note' => $note, 'status' => 'Completed', 'created_by' => auth()->id()]);
-        $this->postIncomeLedgers($invoice, $payment, $amount, $method, $service, false);
+        
+        $accountService = app(AccountService::class);
+        $this->postIncomeLedgers($invoice, $payment, $amount, $method, $accountService, false, $accountId);
 
         return $payment;
     }
 
-    private function postIncomeLedgers(Invoice $invoice, Payment $payment, float $amount, string $method, WorkshopService $service, bool $reversal): void
+    private function postIncomeLedgers(Invoice $invoice, Payment $payment, float $amount, string $method, AccountService $service, bool $reversal, int $accountId = null): void
     {
         $partsShare = (float) $invoice->total > 0 ? min($amount, $amount * ((float) $invoice->parts_amount / (float) $invoice->total)) : 0;
         $mainShare = max(0, $amount - $partsShare);
+        
         $type = $reversal ? 'refund' : 'income';
+        
         if ($partsShare > 0) {
-            $service->ledger(Account::where('code', 'SPARE')->firstOrFail(), $type, $partsShare, ($reversal ? 'Reversal ' : '')."parts income {$invoice->number}", $payment, 'spare_parts');
+            $service->recordTransaction('spare_parts', $type, $partsShare, ($reversal ? 'Reversal ' : '')."parts income {$invoice->number}", $payment, $method, null, $accountId);
         }
         if ($mainShare > 0) {
-            $service->ledger(Account::where('code', 'MAIN')->firstOrFail(), $type, $mainShare, ($reversal ? 'Reversal ' : '')."service income {$invoice->number}", $payment, 'service');
+            $service->recordTransaction('main', $type, $mainShare, ($reversal ? 'Reversal ' : '')."service income {$invoice->number}", $payment, $method, null, $accountId);
         }
-        if (in_array($method, ['Card', 'Bank Transfer', 'Cheque', 'QR'], true)) {
-            $service->ledger(Account::where('code', 'BANK')->firstOrFail(), $reversal ? 'refund' : 'payment', $amount, ($reversal ? 'Reversal ' : '')."bank receipt {$invoice->number}", $payment, 'payment_location');
+        
+        if (in_array($method, ['Cash'], true)) {
+            $service->recordTransaction('cash', $reversal ? 'expense' : 'income', $amount, ($reversal ? 'Reversal ' : '')."cash receipt {$invoice->number}", $payment, $method, null, $accountId);
+        } else {
+            $service->recordTransaction('bank', $reversal ? 'expense' : 'income', $amount, ($reversal ? 'Reversal ' : '')."bank receipt {$invoice->number}", $payment, $method, null, $accountId);
         }
     }
 
     private function reversePayment(Payment $payment, string $reason, WorkshopService $service): void
     {
         $payment->load('invoice');
-        $this->postIncomeLedgers($payment->invoice, $payment, (float) $payment->amount, $payment->method, $service, true);
+        $accountService = app(AccountService::class);
+        $this->postIncomeLedgers($payment->invoice, $payment, (float) $payment->amount, $payment->method, $accountService, true, $payment->account_id);
         $payment->invoice->decrement('paid_amount', (float) $payment->amount);
         $payment->invoice->increment('due_amount', (float) $payment->amount);
         $payment->invoice->refresh();

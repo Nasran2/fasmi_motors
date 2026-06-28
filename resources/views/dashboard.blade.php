@@ -14,7 +14,7 @@
     </div>
     <x-flash/>
 
-    <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+    <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         @foreach($cards as $card)
             @php($tone = $tones[$card['tone']])
             <article class="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_8px_26px_rgba(15,35,65,.055)] transition duration-200 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_16px_36px_rgba(15,35,65,.09)]">

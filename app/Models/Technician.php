@@ -14,7 +14,7 @@ class Technician extends Model
 
     protected function casts(): array
     {
-        return ['joining_date' => 'date', 'active' => 'boolean'];
+        return ['joining_date' => 'date', 'active' => 'boolean', 'commission_enabled' => 'boolean', 'epf_eligible' => 'boolean', 'etf_eligible' => 'boolean'];
     }
 
     /** @return HasMany<JobCard, $this> */
@@ -27,5 +27,30 @@ class Technician extends Model
     public function attendance(): HasMany
     {
         return $this->hasMany(TechnicianAttendance::class);
+    }
+
+    public function salarySheets(): HasMany
+    {
+        return $this->hasMany(TechnicianSalarySheet::class);
+    }
+
+    public function advances(): HasMany
+    {
+        return $this->hasMany(TechnicianAdvance::class);
+    }
+
+    public function commissions(): HasMany
+    {
+        return $this->hasMany(TechnicianCommission::class);
+    }
+
+    public function bikeDeductions(): HasMany
+    {
+        return $this->hasMany(TechnicianBikeDeduction::class);
+    }
+
+    public function contributions(): HasMany
+    {
+        return $this->hasMany(TechnicianContribution::class);
     }
 }

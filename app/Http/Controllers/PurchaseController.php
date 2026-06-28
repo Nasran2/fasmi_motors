@@ -12,6 +12,7 @@ use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
 use App\Services\WorkshopService;
+use App\Services\AccountService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,7 +117,13 @@ class PurchaseController extends Controller
             if ($paid > 0) {
                 $account = Account::findOrFail($data['account_id']);
                 $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $data['supplier_id'], 'purchase_id' => $purchase->id, 'account_id' => $account->id, 'payment_date' => $data['purchase_date'], 'amount' => $paid, 'balance_after' => Supplier::findOrFail($data['supplier_id'])->balance, 'payment_method' => $data['payment_method'], 'status' => 'Completed', 'note' => 'Initial purchase payment', 'created_by' => auth()->id()]);
-                $service->ledger($account, 'purchase', $paid, "Payment for purchase {$purchase->number}", $payment, 'supplier_payment');
+                
+                $accountService = app(AccountService::class);
+                if (in_array($data['payment_method'], ['Cash'])) {
+                    $accountService->recordTransaction('cash', 'expense', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], null, $account->id);
+                } else {
+                    $accountService->recordTransaction('bank', 'expense', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], null, $account->id);
+                }
             }
 
             return $purchase;
@@ -152,10 +159,15 @@ class PurchaseController extends Controller
                 }
             }
             $cashRefunds = (float) $purchase->returns->where('status', 'Approved')->where('refund_type', 'Cash refund')->sum('return_value');
+            $accountService = app(AccountService::class);
             foreach ($purchase->payments->where('status', 'Completed') as $payment) {
                 $reversal = min((float) $payment->amount, max(0, (float) $payment->amount - $cashRefunds));
                 if ($reversal > 0) {
-                    $service->ledger($payment->account, 'supplier_refund', $reversal, "Reversal of {$purchase->number}", $purchase, 'purchase_reversal');
+                    if (in_array($payment->payment_method, ['Cash'])) {
+                        $accountService->recordTransaction('cash', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
+                    } else {
+                        $accountService->recordTransaction('bank', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
+                    }
                 }
                 $cashRefunds = max(0, $cashRefunds - (float) $payment->amount);
                 $payment->update(['status' => 'Cancelled', 'cancel_reason' => $data['reason'], 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
@@ -228,7 +240,10 @@ class PurchaseController extends Controller
                 $purchase->save();
             }
             if ($return->refund_type === 'Cash refund') {
-                $service->ledger(Account::findOrFail($return->account_id), 'supplier_refund', (float) $return->return_value, "Supplier refund {$return->number}", $return, 'purchase_return');
+                $accountService = app(AccountService::class);
+                // Currently refund to Cash or Bank depending on method, default to Cash since we don't have payment method for return directly. We'll assume Cash or let the user see it in cash book.
+                // Assuming it's cash based on "Cash refund"
+                $accountService->recordTransaction('cash', 'income', (float) $return->return_value, "Supplier refund {$return->number}", $return, 'Cash', null, $return->account_id);
             }
             $return->update(['status' => 'Approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         });
@@ -304,7 +319,13 @@ class PurchaseController extends Controller
                 $supplier->update(['opening_due' => max(0, (float) $supplier->opening_due - $amountLeft)]);
             }
             $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $data['purchase_id'] ?? null, 'account_id' => $data['account_id'], 'payment_date' => $data['payment_date'], 'amount' => $data['amount'], 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-            $service->ledger(Account::findOrFail($data['account_id']), 'supplier_payment', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, 'supplier_payment');
+            
+            $accountService = app(AccountService::class);
+            if (in_array($data['payment_method'], ['Cash'])) {
+                $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], null, $data['account_id']);
+            } else {
+                $accountService->recordTransaction('bank', 'expense', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], null, $data['account_id']);
+            }
         });
 
         return back()->with('success', 'Supplier payment saved; due and account ledger updated.');

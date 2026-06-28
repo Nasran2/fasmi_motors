@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\BikeIntake;
+use App\Services\AccountService;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\JobCard;
@@ -33,12 +34,11 @@ class DashboardController extends Controller
         $partsSales = (float) JobCard::query()->join('invoices', 'invoices.job_card_id', '=', 'job_cards.id')->whereDate('invoices.created_at', $today)->sum('job_cards.parts_total');
         $yesterdayPartsSales = (float) JobCard::query()->join('invoices', 'invoices.job_card_id', '=', 'job_cards.id')->whereDate('invoices.created_at', $yesterday)->sum('job_cards.parts_total');
 
-        $mainAccount = Account::where('code', 'MAIN')->first();
-        $bankAccount = Account::where('code', 'BANK')->first();
-        $partsAccount = Account::where('code', 'SPARE')->first();
-        $mainBalance = $mainAccount === null ? 0 : $mainAccount->balance;
-        $bankBalance = $bankAccount === null ? 0 : $bankAccount->balance;
-        $partsBalance = $partsAccount === null ? 0 : $partsAccount->balance;
+        $accountService = app(AccountService::class);
+        $mainBalance = $accountService->getRunningBalance('main');
+        $bankBalance = $accountService->getRunningBalance('bank');
+        $partsBalance = $accountService->getRunningBalance('spare_parts');
+        
         $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
 
         $cards = [

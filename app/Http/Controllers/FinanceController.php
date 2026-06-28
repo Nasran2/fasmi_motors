@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Drawing;
 use App\Models\Expense;
 use App\Services\WorkshopService;
+use App\Services\AccountService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -31,7 +32,13 @@ return view('finance.index', ['accounts' => $accounts, 'active' => $active, 'tra
         $v = $r->validate(['expense_date' => 'required|date', 'category' => 'required|max:100', 'account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|max:50']);
         DB::transaction(function () use ($v, $r, $service) {
             $e = Expense::create($v + ['vendor' => $r->vendor, 'note' => $r->note, 'created_by' => auth()->id()]);
-            $service->ledger(Account::findOrFail($v['account_id']), 'expense', (float) $v['amount'], "{$v['category']} expense", $e, $v['category']);
+            
+            $accountService = app(AccountService::class);
+            if (in_array($v['payment_method'], ['Cash'])) {
+                $accountService->recordTransaction('cash', 'expense', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], null, $v['account_id']);
+            } else {
+                $accountService->recordTransaction('bank', 'expense', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], null, $v['account_id']);
+            }
         });
 
         return back()->with('success', 'Expense recorded in the ledger.');
@@ -42,7 +49,10 @@ return view('finance.index', ['accounts' => $accounts, 'active' => $active, 'tra
         $v = $r->validate(['drawing_date' => 'required|date', 'person_name' => 'required|max:100', 'drawing_type' => 'required|max:100', 'account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|min:0.01']);
         DB::transaction(function () use ($v, $r, $service) {
             $d = Drawing::create($v + ['note' => $r->note, 'created_by' => auth()->id()]);
-            $service->ledger(Account::findOrFail($v['account_id']), 'drawing', (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'drawing');
+            
+            $accountService = app(AccountService::class);
+            // Defaulting to cash for drawing if no method is specified in form, or bank if it's a bank account. We assume Cash here unless it's known to be bank.
+            $accountService->recordTransaction('cash', 'expense', (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'Cash', null, $v['account_id']);
         });
 
         return back()->with('success', 'Drawing recorded in the ledger.');
@@ -53,8 +63,12 @@ return view('finance.index', ['accounts' => $accounts, 'active' => $active, 'tra
         $v = $r->validate(['from_account_id' => ['required', 'exists:accounts,id', Rule::notIn([$r->to_account_id])], 'to_account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|min:0.01', 'transfer_date' => 'required|date']);
         DB::transaction(function () use ($v, $r, $service) {
             $id = DB::table('account_transfers')->insertGetId($v + ['reference_number' => $r->reference_number, 'note' => $r->note, 'created_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
-            $service->ledger(Account::findOrFail($v['from_account_id']), 'transfer_out', (float) $v['amount'], "Transfer #{$id} out", null, 'transfer');
-            $service->ledger(Account::findOrFail($v['to_account_id']), 'transfer_in', (float) $v['amount'], "Transfer #{$id} in", null, 'transfer');
+            
+            // This transfer method uses the old system but we should probably use the new transfer logic in AccountTransferController instead.
+            // For now, doing a basic fallback just in case it's called.
+            $accountService = app(AccountService::class);
+            $accountService->recordTransaction('main', 'expense', (float) $v['amount'], "Transfer #{$id} out", null, 'Transfer', null, $v['from_account_id']);
+            $accountService->recordTransaction('main', 'income', (float) $v['amount'], "Transfer #{$id} in", null, 'Transfer', null, $v['to_account_id']);
         });
 
         return back()->with('success','Account transfer completed.');

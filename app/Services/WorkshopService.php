@@ -56,14 +56,21 @@ class WorkshopService
             }
             $partsPaid = $total > 0 ? min((float) $job->parts_total, $paid * ((float) $job->parts_total / $total)) : 0;
             $servicePaid = max(0, $paid - $partsPaid);
+            
+            $accountService = app(\App\Services\AccountService::class);
+            
             if ($partsPaid > 0) {
-                $this->ledger(Account::where('code', 'SPARE')->firstOrFail(), 'income', $partsPaid, "Parts income for {$invoice->number}", $payment, 'spare_parts');
+                $accountService->recordTransaction('spare_parts', 'income', $partsPaid, "Parts income for {$invoice->number}", $payment, $method, null, $accountId);
             }
             if ($servicePaid > 0) {
-                $this->ledger(Account::where('code', 'MAIN')->firstOrFail(), 'income', $servicePaid, "Workshop income for {$invoice->number}", $payment, 'service');
+                $accountService->recordTransaction('main', 'income', $servicePaid, "Workshop income for {$invoice->number}", $payment, $method, null, $accountId);
             }
-            if ($paid > 0 && in_array($method, ['Card', 'Bank Transfer', 'Cheque', 'QR'], true)) {
-                $this->ledger(Account::where('code', 'BANK')->firstOrFail(), 'payment', $paid, "Bank receipt for {$invoice->number}", $payment, 'payment_location');
+            if ($paid > 0) {
+                if (in_array($method, ['Cash'])) {
+                    $accountService->recordTransaction('cash', 'income', $paid, "Cash receipt for {$invoice->number}", $payment, $method, null, $accountId);
+                } else {
+                    $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for {$invoice->number}", $payment, $method, null, $accountId);
+                }
             }
             $job->update(['status' => 'Billed']);
 
