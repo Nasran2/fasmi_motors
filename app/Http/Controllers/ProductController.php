@@ -224,11 +224,14 @@ class ProductController extends Controller
 
     public function lowStock(Request $request)
     {
-        $stocks = StoreStock::with(['product.category', 'store'])->whereHas('product', fn ($q) => $q->whereColumn('store_stocks.quantity', '<=', 'products.minimum_stock'))
+        $stocks = StoreStock::with(['product.category', 'product.supplier', 'store'])->whereHas('product', fn ($q) => $q->whereColumn('store_stocks.quantity', '<=', 'products.minimum_stock'))
             ->when($request->q, fn ($q, $term) => $q->whereHas('product', fn ($x) => $x->where('name', 'like', "%{$term}%")->orWhere('code', 'like', "%{$term}%")))
+            ->when($request->supplier, fn ($q, $supplier_id) => $q->whereHas('product', fn ($x) => $x->where('supplier_id', $supplier_id)))
             ->orderBy('quantity')->paginate(15)->withQueryString();
 
-        return view('products.low-stock', compact('stocks'));
+        $suppliers = Supplier::orderBy('name')->get();
+
+        return view('products.low-stock', compact('stocks', 'suppliers'));
     }
 
     public function damages()
