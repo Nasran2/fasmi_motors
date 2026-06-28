@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Technician extends Model
@@ -16,12 +17,14 @@ class Technician extends Model
         return ['joining_date' => 'date', 'active' => 'boolean'];
     }
 
-    public function jobs()
+    /** @return HasMany<JobCard, $this> */
+    public function jobs(): HasMany
     {
         return $this->hasMany(JobCard::class, 'main_technician_id');
     }
 
-    public function attendance()
+    /** @return HasMany<TechnicianAttendance, $this> */
+    public function attendance(): HasMany
     {
         return $this->hasMany(TechnicianAttendance::class);
     }

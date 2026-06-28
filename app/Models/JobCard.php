@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/** @property int $jobs_count
+ * @property float|int $billed_total
+ * @property-read BikeIntake $intake
+ */
 class JobCard extends Model
 {
     use SoftDeletes;

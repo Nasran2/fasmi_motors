@@ -48,18 +48,204 @@
 }
 
 @layer components {
-    .page-title { @apply text-2xl font-bold tracking-tight text-zinc-900 dark:text-white; }
-    .page-subtitle { @apply mt-1 text-sm text-zinc-500 dark:text-zinc-400; }
-    .panel { @apply rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900; }
-    .btn-primary { @apply inline-flex cursor-pointer items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700; }
-    .btn-secondary { @apply inline-flex cursor-pointer items-center justify-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100; }
-    .field { @apply w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white; }
-    .label { @apply mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300; }
-    .table-wrap { @apply overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700; }
-    .data-table { @apply min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-700; }
-    .data-table th { @apply bg-zinc-50 px-4 py-3 text-left font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300; }
-    .data-table td { @apply px-4 py-3 text-zinc-700 dark:text-zinc-200; }
-    .data-table tbody { @apply divide-y divide-zinc-100 dark:divide-zinc-800; }
+    .page-title { @apply text-[26px] font-extrabold tracking-[-0.035em] text-slate-950; }
+    .page-subtitle { @apply mt-1 text-sm font-medium text-slate-500; }
+    .panel { @apply rounded-2xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_10px_35px_rgba(15,35,65,.055)] transition-shadow; }
+    .panel:hover { @apply shadow-[0_14px_40px_rgba(15,35,65,.075)]; }
+    .btn-primary { @apply inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl bg-[#ed142b] px-5 py-2.5 text-sm font-bold text-white shadow-[0_10px_24px_rgba(237,20,43,.22)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#d90f25] hover:shadow-[0_14px_30px_rgba(237,20,43,.28)]; }
+    .btn-secondary { @apply inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50; }
+    .field { @apply min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-400 focus:bg-white focus:ring-4 focus:ring-red-50; }
+    .label { @apply mb-1.5 block text-[12px] font-bold text-slate-700; }
+    .table-wrap { @apply overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,35,65,.04)]; }
+    .data-table { @apply min-w-full divide-y divide-slate-200 bg-white text-sm; }
+    .data-table th { @apply bg-slate-50 px-4 py-3 text-left font-semibold text-slate-600; }
+    .data-table td { @apply px-4 py-3 text-slate-700; }
+    .data-table tbody { @apply divide-y divide-slate-100; }
+}
+
+.workshop-sidebar {
+    background:
+        linear-gradient(180deg, rgba(11, 37, 70, .35), transparent 32%),
+        linear-gradient(165deg, #07182f 0%, #041124 55%, #061a35 100%) !important;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, .22) transparent;
+    width: 18rem !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    padding: .75rem !important;
+}
+
+.erp-menu-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, .24) transparent;
+}
+
+.erp-menu-scroll::-webkit-scrollbar { width: 4px; }
+.erp-menu-scroll::-webkit-scrollbar-track { background: transparent; }
+.erp-menu-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(148, 163, 184, .24); }
+
+.erp-menu-button {
+    display: flex;
+    width: 100%;
+    min-height: 45px;
+    align-items: center;
+    gap: .7rem;
+    border: 1px solid transparent;
+    border-radius: .85rem;
+    padding: .55rem .7rem;
+    color: #e2e8f0;
+    transition: background-color .2s ease, border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+
+.erp-menu-button:hover {
+    transform: translateX(2px);
+    border-color: rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .06);
+    color: #fff;
+}
+
+.erp-menu-button-active {
+    border-color: rgba(255, 91, 108, .35);
+    background: linear-gradient(135deg, #ee1730, #cb0c22);
+    color: #fff;
+    box-shadow: 0 10px 25px rgba(205, 11, 36, .24), inset 0 1px rgba(255, 255, 255, .16);
+}
+
+.erp-menu-group[data-open="true"] > .erp-menu-button {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    backdrop-filter: blur(12px);
+}
+
+.erp-menu-icon {
+    display: grid;
+    width: 1.9rem;
+    height: 1.9rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: .65rem;
+    background: rgba(255, 255, 255, .055);
+    color: #aebed3;
+    transition: background-color .2s ease, color .2s ease;
+}
+
+.erp-menu-button:hover .erp-menu-icon,
+.erp-menu-button-active .erp-menu-icon { background: rgba(255, 255, 255, .14); color: #fff; }
+
+.erp-menu-chevron { color: #64748b; transition: transform .25s ease, color .2s ease; }
+.erp-menu-group[data-open="true"] .erp-menu-chevron { transform: rotate(90deg); color: #cbd5e1; }
+
+.erp-submenu {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: .35;
+    transition: grid-template-rows .26s ease, opacity .2s ease;
+}
+
+.erp-menu-group[data-open="true"] .erp-submenu { grid-template-rows: 1fr; opacity: 1; }
+
+.erp-submenu-link {
+    position: relative;
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    border-radius: .65rem;
+    padding-right: .65rem;
+    padding-left: 36px;
+    color: #8494ab;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.1;
+    transition: background-color .18s ease, color .18s ease;
+}
+
+.erp-submenu-link:hover { background: rgba(255, 255, 255, .055); color: #fff; }
+
+.erp-submenu-dot {
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    margin-top: -3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #475569;
+    transition: background-color .18s ease, box-shadow .18s ease;
+}
+
+.erp-submenu-link-active { background: rgba(239, 23, 45, .15); color: #fff; }
+.erp-submenu-link-active .erp-submenu-dot { background: #ff3148; box-shadow: 0 0 0 4px rgba(239, 23, 45, .22); }
+
+.erp-submenu-text {
+    transition: transform .18s ease;
+}
+
+.erp-submenu-link:hover .erp-submenu-text {
+    transform: translateX(2px);
+}
+
+.workshop-nav-item {
+    min-height: 48px !important;
+    border: 1px solid transparent !important;
+    border-radius: 13px !important;
+    padding: 7px 10px !important;
+    color: #d9e3f1 !important;
+    transition: transform .2s ease, background-color .2s ease, border-color .2s ease, color .2s ease !important;
+}
+
+.workshop-nav-item:hover {
+    transform: translateX(2px);
+    border-color: rgba(255, 255, 255, .08) !important;
+    background: rgba(255, 255, 255, .065) !important;
+    color: #fff !important;
+}
+
+.workshop-nav-item-active,
+.workshop-nav-item-active:hover {
+    border-color: rgba(255, 93, 110, .45) !important;
+    background: linear-gradient(135deg, #f0162e 0%, #db1026 100%) !important;
+    color: #fff !important;
+    box-shadow: 0 10px 28px rgba(209, 11, 35, .28), inset 0 1px rgba(255, 255, 255, .18) !important;
+}
+
+@media (min-width: 64rem) and (max-height: 820px) {
+    .workshop-nav-item { min-height: 43px !important; padding-block: 5px !important; }
+    .workshop-sidebar-brand { display: none !important; }
+}
+
+/* The workshop shell deliberately replaces Flux's full-width header grid on
+   desktop: the dark navigation must start at the top-left, as in the design. */
+@media (min-width: 64rem) {
+    body.workshop-shell {
+        grid-template-areas:
+            "sidebar header header"
+            "sidebar main aside"
+            "sidebar footer aside";
+        grid-template-columns: 18rem minmax(0, 1fr) auto;
+        grid-template-rows: 68px auto auto;
+    }
+
+    body.workshop-shell > .workshop-sidebar {
+        grid-area: sidebar;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    body.workshop-shell > .workshop-topbar {
+        grid-area: header;
+        width: 100%;
+        margin-left: 0;
+    }
+
+    body.workshop-shell > [data-flux-main] {
+        min-width: 0;
+        padding: 20px 24px 28px;
+        background:
+            radial-gradient(circle at 88% 0%, rgba(219, 234, 254, .42), transparent 28rem),
+            #f7f9fc;
+    }
 }
 
 [data-flux-field]:not(ui-radio, ui-checkbox) {

@@ -16,7 +16,7 @@ class Invoice extends Model
 
     protected function casts(): array
     {
-        return ['link_expires_at' => 'datetime'];
+        return ['link_expires_at' => 'datetime', 'due_date' => 'date'];
     }
 
     public function jobCard(): BelongsTo
@@ -27,5 +27,10 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 }

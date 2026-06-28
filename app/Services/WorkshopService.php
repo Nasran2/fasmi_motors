@@ -39,9 +39,10 @@ class WorkshopService
             }
             $invoice = $job->invoice()->create([
                 'number' => 'INV-'.now()->format('ymd').'-'.str_pad((string) (Invoice::max('id') + 1), 4, '0', STR_PAD_LEFT),
+                'customer_id' => $job->intake->bike->customer_id,
                 'subtotal' => $total + (float) $job->discount - (float) $job->tax, 'discount' => $job->discount, 'tax' => $job->tax,
                 'total' => $total, 'paid_amount' => $paid, 'due_amount' => $total - $paid,
-                'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'),
+                'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'), 'due_date' => $paid < $total ? today()->addDays(30) : null,
                 'public_token' => Str::random(48), 'created_by' => auth()->id(),
             ]);
             if ($paid > 0) {
@@ -85,6 +86,6 @@ final class SettingValue
 {
     public static function bool(string $key, bool $default): bool
     {
-        return filter_var(Setting::valueFor($key,$default),FILTER_VALIDATE_BOOL);
+        return filter_var(Setting::valueFor($key, $default), FILTER_VALIDATE_BOOL);
     }
 }

@@ -18,7 +18,7 @@ class BikeIntakeController extends Controller
             $q->whereHas('bike', fn ($x) => $x->where('number', 'like', '%'.$r->q.'%'));
         }
 
-return view('intakes.index', ['intakes' => $q->paginate(15)]);
+        return view('intakes.index', ['intakes' => $q->paginate(15)]);
     }
 
     public function create()
@@ -43,7 +43,7 @@ return view('intakes.index', ['intakes' => $q->paginate(15)]);
                 $bike->update(['model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             } else {
                 $customer = Customer::create(['name' => $v['customer_name'] ?? null, 'phone' => $v['phone'], 'address' => $r->address, 'nic' => $r->nic]);
-                $bike = $customer->bikes()->create(['number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+                $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             }
 
             return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.str_pad((string) (BikeIntake::max('id') + 1), 4, '0', STR_PAD_LEFT), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
@@ -54,6 +54,6 @@ return view('intakes.index', ['intakes' => $q->paginate(15)]);
 
     public function show(BikeIntake $intake)
     {
-        return view('intakes.show', ['intake' => $intake->load('bike.customer','bike.intakes.jobCard.invoice','jobCard.technician')]);
+        return view('intakes.show', ['intake' => $intake->load('bike.customer', 'bike.intakes.jobCard.invoice', 'jobCard.technician')]);
     }
 }
