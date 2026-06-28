@@ -16,7 +16,7 @@ class Invoice extends Model
 
     protected function casts(): array
     {
-        return ['link_expires_at' => 'datetime', 'due_date' => 'date'];
+        return ['link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'link_enabled' => 'boolean'];
     }
 
     public function jobCard(): BelongsTo
@@ -32,5 +32,25 @@ class Invoice extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function bike(): BelongsTo
+    {
+        return $this->belongsTo(Bike::class);
+    }
+
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class);
+    }
+
+    public function accesses(): HasMany
+    {
+        return $this->hasMany(PublicBillAccess::class);
     }
 }

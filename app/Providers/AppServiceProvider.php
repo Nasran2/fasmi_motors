@@ -7,9 +7,15 @@ use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Drawing;
 use App\Models\Expense;
+use App\Models\Invoice;
 use App\Models\JobCard;
+use App\Models\Payment;
 use App\Models\Product;
+use App\Models\Purchase;
+use App\Models\PurchaseReturn;
 use App\Models\Setting;
+use App\Models\Supplier;
+use App\Models\SupplierPayment;
 use App\Models\Technician;
 use App\Models\TechnicianAttendance;
 use Carbon\CarbonImmutable;
@@ -37,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        foreach ([Bike::class, BikeIntake::class, JobCard::class, Product::class, Technician::class, TechnicianAttendance::class, Expense::class, Drawing::class, Setting::class] as $model) {
+        foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, Expense::class, Drawing::class, Setting::class] as $model) {
             $model::created(fn (Model $item) => $this->audit('created', $item, [], $item->getAttributes()));
             $model::updated(fn (Model $item) => $this->audit('updated', $item, $item->getOriginal(), $item->getChanges()));
             $model::deleted(fn (Model $item) => $this->audit('deleted', $item, $item->getOriginal(), []));

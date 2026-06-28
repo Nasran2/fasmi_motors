@@ -286,4 +286,11 @@ class ProductController extends Controller
 
         return ['products' => Product::count(), 'in_stock' => Product::whereHas('stocks', fn ($q) => $q->where('quantity', '>', 0))->count(), 'low' => Product::whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')->count(), 'value' => $stockValue];
     }
+
+    public function show(Product $product)
+    {
+        $product->load(['category', 'brand', 'unit', 'supplier', 'stocks.store', 'stockBatches.store', 'stockBatches.supplier', 'stockBatches' => fn ($q) => $q->where('status', 'active')]);
+
+        return view('products.show', compact('product'));
+    }
 }

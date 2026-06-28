@@ -12,4 +12,9 @@ class JobCardPart extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function stockBatch()
+    {
+        return $this->belongsTo(StockBatch::class);
+    }
 }
