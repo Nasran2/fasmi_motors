@@ -134,7 +134,30 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('service-reminders/{reminder}/reschedule', [ServiceReminderController::class, 'reschedule'])->name('service-reminders.reschedule');
     Route::post('service-reminder-settings', [ServiceReminderController::class, 'saveSettings'])->name('service-reminders.settings.save');
     Route::post('account-transfers', [FinanceController::class, 'transfer'])->name('transfers.store');
-    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+    // Reports Module
+    Route::prefix('reports')->name('reports.')->group(function () {
+        Route::get('/', [ReportController::class, 'index'])->name('index');
+        Route::get('job-cards', [ReportController::class, 'jobCards'])->name('job-cards');
+        Route::get('spare-parts', [ReportController::class, 'spareParts'])->name('spare-parts');
+        Route::get('profit-loss', [ReportController::class, 'profitLoss'])->name('profit-loss');
+        Route::get('stock', [ReportController::class, 'stock'])->name('stock');
+        Route::get('purchases', [ReportController::class, 'purchases'])->name('purchases');
+        Route::get('expenses', [ReportController::class, 'expenses'])->name('expenses');
+        Route::get('drawings', [ReportController::class, 'drawings'])->name('drawings');
+        Route::get('due-bills', [ReportController::class, 'dueBills'])->name('due-bills');
+        Route::get('customer-due', [ReportController::class, 'customerDue'])->name('customer-due');
+        Route::get('technicians', [ReportController::class, 'technicians'])->name('technicians');
+        Route::get('attendance', [ReportController::class, 'attendance'])->name('attendance');
+        Route::get('salary', [ReportController::class, 'salary'])->name('salary');
+        Route::get('epf', [ReportController::class, 'epf'])->name('epf');
+        Route::get('etf', [ReportController::class, 'etf'])->name('etf');
+        Route::get('main-account', [ReportController::class, 'mainAccount'])->name('main-account');
+        Route::get('spare-parts-account', [ReportController::class, 'sparePartsAccount'])->name('spare-parts-account');
+        Route::get('bank-account', [ReportController::class, 'bankAccount'])->name('bank-account');
+        Route::get('daily-closing', [ReportController::class, 'dailyClosing'])->name('daily-closing');
+        Route::get('service-reminders', [ReportController::class, 'serviceReminders'])->name('service-reminders');
+        Route::get('sms', [ReportController::class, 'sms'])->name('sms');
+    });
     Route::get('system-settings', [SettingController::class, 'index'])->name('system-settings.index');
     Route::put('system-settings', [SettingController::class, 'update'])->name('system-settings.update');
 
