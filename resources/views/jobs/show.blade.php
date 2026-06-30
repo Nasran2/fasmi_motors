@@ -1,7 +1,95 @@
-<x-layouts::app title="{{ $job->number }}"><div class="space-y-5"><div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">{{ $job->number }} · {{ $job->intake->bike->number }}</h1><p class="page-subtitle">{{ $job->intake->bike->model }} · {{ $job->intake->bike->customer->name ?: 'Walk-in customer' }} · {{ $job->intake->bike->customer->phone }}</p></div><span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">{{ $job->status }}</span></div><x-flash/>
+<x-layouts::app title="{{ $job->number }}">
+@php
+  $statusColors = [
+      'Received'          => 'bg-slate-100 text-slate-700 border border-slate-200',
+      'Assigned'          => 'bg-blue-100 text-blue-700 border border-blue-200',
+      'In Progress'       => 'bg-cyan-100 text-cyan-700 border border-cyan-200',
+      'Waiting for Parts' => 'bg-orange-100 text-orange-700 border border-orange-200',
+      'On Hold'           => 'bg-amber-100 text-amber-700 border border-amber-200',
+      'Repair Ready'      => 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+      'Completed'         => 'bg-green-100 text-green-700 border border-green-200',
+      'Billed'            => 'bg-purple-100 text-purple-700 border border-purple-200',
+      'Delivered'         => 'bg-teal-100 text-teal-700 border border-teal-200',
+      'Cancelled'         => 'bg-rose-100 text-rose-700 border border-rose-200',
+  ];
+@endphp
+<div class="space-y-5"><div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">{{ $job->number }} · {{ $job->intake->bike->number }}</h1><p class="page-subtitle">{{ $job->intake->bike->model }} · {{ $job->intake->bike->customer->name ?: 'Walk-in customer' }} · {{ $job->intake->bike->customer->phone }}</p></div><span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusColors[$job->status] ?? 'bg-slate-100 text-slate-700' }}">{{ $job->status }}</span></div><x-flash/>
 <div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf @method('PUT')<label><span class="label">Status</span><select name="status" class="field">@foreach($statuses as $s)<option @selected($job->status===$s)>{{ $s }}</option>@endforeach</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field"><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes</span><input name="change_reason" class="field"></label>@foreach(['service_total'=>'Service','labor_total'=>'Labor','washing_total'=>'Washing','other_total'=>'Other income','discount'=>'Discount','tax'=>'Tax'] as $name=>$label)<label><span class="label">{{ $label }} (LKR)</span><input type="number" step=".01" name="{{ $name }}" value="{{ $job->$name }}" class="field"></label>@endforeach<div class="sm:col-span-2 text-right"><button class="btn-primary">Update job</button></div></form></div>
-<div class="panel"><h2 class="mb-4 font-bold">Bill summary</h2><dl class="space-y-2 text-sm"><div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div><div class="flex justify-between"><dt>Service & labor</dt><dd>Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div><div class="flex justify-between"><dt>Discount</dt><dd>- Rs. {{ number_format($job->discount,2) }}</dd></div><div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd>Rs. {{ number_format($job->total,2) }}</dd></div></dl>@if($job->invoice)<a target="_blank" href="{{ route('invoices.public',$job->invoice->public_token) }}" class="btn-primary mt-5 w-full">View {{ $job->invoice->number }}</a>@else<form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">@csrf<input type="number" step=".01" min="0" max="{{ $job->total }}" name="paid_amount" value="0" class="field" placeholder="Paid amount"><select name="payment_method" class="field">@foreach(['Cash','Card','Bank Transfer','Cheque','QR','Credit/Due'] as $m)<option>{{ $m }}</option>@endforeach</select><button class="btn-primary w-full">Generate invoice</button></form>@endif</div></div>
-<div class="panel">
+<div class="space-y-4">
+    <div class="panel">
+        <h2 class="mb-4 font-bold">Bill summary</h2>
+        <dl class="space-y-2 text-sm">
+            <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Service & labor</dt><dd>Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Discount</dt><dd>- Rs. {{ number_format($job->discount,2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd>Rs. {{ number_format($job->total,2) }}</dd></div>
+            @if($job->invoice)
+            <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
+            @endif
+        </dl>
+        @if($job->invoice)
+        <div class="flex flex-col gap-2 mt-5">
+            <a target="_blank" href="{{ route('invoices.public',$job->invoice->public_token) }}" class="btn-primary w-full text-center">View {{ $job->invoice->number }}</a>
+            @if($job->invoice->due_amount > 0)
+            <button type="button" onclick="openDuePaymentModal({{ $job->invoice->id }}, {{ $job->invoice->due_amount }}, '{{ $job->invoice->number }}')" class="btn-primary w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-colors">
+                💰 Pay Bill
+            </button>
+            @endif
+        </div>
+        @else
+        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
+            @csrf
+            <input type="number" step=".01" min="0" max="{{ $job->total }}" name="paid_amount" value="0" class="field" placeholder="Paid amount">
+            <select name="payment_method" class="field">
+                @foreach(['Cash','Card','Bank Transfer','Cheque','QR','Credit/Due'] as $m)
+                <option>{{ $m }}</option>
+                @endforeach
+            </select>
+            <button class="btn-primary w-full">Generate invoice</button>
+        </form>
+        @endif
+    </div>
+
+    <div class="panel">
+        <h2 class="mb-4 font-bold text-slate-800">👤 Customer & Vehicle</h2>
+        <div class="space-y-3 text-xs leading-relaxed">
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Name</span>
+                <span class="font-extrabold text-slate-800">{{ $job->intake->bike->customer->name ?: 'Walk-in Customer' }}</span>
+            </div>
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Phone Number</span>
+                <span class="font-extrabold text-slate-800">{{ $job->intake->bike->customer->phone ?: 'N/A' }}</span>
+            </div>
+            @if($job->intake->bike->customer->address)
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Address</span>
+                <span class="font-semibold text-slate-700">{{ $job->intake->bike->customer->address }}</span>
+            </div>
+            @endif
+            <hr class="border-slate-100 my-2">
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vehicle Details</span>
+                <span class="font-extrabold text-red-600 text-sm">{{ $job->intake->bike->number }}</span>
+                <span class="block text-slate-600 font-bold mt-0.5">{{ $job->intake->bike->brand }} {{ $job->intake->bike->model }} ({{ $job->intake->bike->year ?: 'N/A' }})</span>
+            </div>
+            @if($job->intake->bike->chassis_no)
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Chassis Number</span>
+                <span class="font-mono text-slate-700">{{ $job->intake->bike->chassis_no }}</span>
+            </div>
+            @endif
+            @if($job->intake->bike->engine_no)
+            <div>
+                <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Engine Number</span>
+                <span class="font-mono text-slate-700">{{ $job->intake->bike->engine_no }}</span>
+            </div>
+            @endif
+        </div>
+    </div>
+</div></div>
+<div id="spare-parts" class="panel scroll-mt-24">
     <div class="mb-4 flex justify-between">
         <h2 class="font-extrabold text-slate-800">⚙️ Spare Parts</h2>
     </div>
@@ -236,4 +324,72 @@ function openPriceModal(partId, name, cost, price) {
     
     modal.showModal();
 }
-</script></div></x-layouts::app>
+</script>
+
+{{-- Due Payment Dialog --}}
+<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <form method="POST" id="due-payment-form" class="p-6">
+        @csrf
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-red-600">Payment Collection</p>
+                <h2 class="mt-1 text-xl font-black text-slate-900" id="due-payment-title" style="color: #0f172a !important;">Receive Payment</h2>
+            </div>
+            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-slate-500 hover:bg-slate-200">×</button>
+        </div>
+        <div class="mt-4 rounded-2xl bg-red-50 p-4" style="background-color: #fef2f2 !important; border: 1px solid #fee2e2 !important;">
+            <p class="text-xs font-bold text-red-500">Outstanding Due</p>
+            <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
+        </div>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Payment Amount *</span>
+                <input type="number" step="0.01" min="0.01" name="amount" id="due-payment-amount" class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+            </label>
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Payment Method *</span>
+                <select name="method" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
+                    <option>Cash</option>
+                    <option>Card</option>
+                    <option>Bank Transfer</option>
+                    <option>Cheque</option>
+                    <option>QR</option>
+                </select>
+            </label>
+            <label class="sm:col-span-2 block">
+                <span class="label" style="color: #475569 !important;">Deposit Account *</span>
+                <select name="account_id" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+                    @foreach($accounts as $account)
+                    <option value="{{ $account->id }}">{{ $account->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="sm:col-span-2 block">
+                <span class="label" style="color: #475569 !important;">Note</span>
+                <textarea name="note" rows="2" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;"></textarea>
+            </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
+            <button class="btn-primary">Save Payment</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
+    const dialog = document.getElementById('due-payment-dialog');
+    const form = document.getElementById('due-payment-form');
+    
+    form.action = `{{ url('customer-dues') }}/${invoiceId}/payment`;
+    document.getElementById('due-payment-title').textContent = `Pay Bill ${invoiceNumber}`;
+    document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    const amountInput = document.getElementById('due-payment-amount');
+    amountInput.value = parseFloat(dueAmount).toFixed(2);
+    amountInput.max = parseFloat(dueAmount);
+    
+    dialog.showModal();
+}
+</script>
+</div></x-layouts::app>

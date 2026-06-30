@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Account;
 use App\Models\BikeIntake;
 use App\Models\JobCard;
+use App\Models\JobCardPart;
 use App\Models\Product;
 use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\Technician;
+use App\Services\Sms\TextitSmsService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +25,11 @@ class JobCardController extends Controller
             $q->where('status', $r->status);
         }
 
-        return view('jobs.index', ['jobs' => $q->paginate(15), 'statuses' => self::statuses()]);
+        return view('jobs.index', [
+            'jobs' => $q->paginate(15),
+            'statuses' => self::statuses(),
+            'accounts' => Account::where('active', 1)->get(),
+        ]);
     }
 
     public function create(Request $r)
@@ -40,7 +47,7 @@ class JobCardController extends Controller
         // Send SMS to Customer & Technician immediately
         $job->load('intake.bike.customer', 'technician');
         $customer = $job->intake?->bike?->customer;
-        $smsService = app(\App\Services\Sms\TextitSmsService::class);
+        $smsService = app(TextitSmsService::class);
 
         if ($customer && $customer->phone) {
             $smsService->send($customer->phone, "Fasmir Motors: Job Card {$job->number} has been created for your bike {$job->intake->bike->number}. Status: {$job->status}.", [
@@ -56,7 +63,7 @@ class JobCardController extends Controller
         }
 
         if ($job->main_technician_id && $job->technician && $job->technician->phone) {
-            $smsService->send($job->technician->phone, "Dear {$job->technician->name}, Job Card {$job->number} has been assigned to you for bike {$job->intake->bike->number}. Complaint: " . ($job->intake->complaint ?? 'N/A') . ". Priority: {$job->priority}.", [
+            $smsService->send($job->technician->phone, "Dear {$job->technician->name}, Job Card {$job->number} has been assigned to you for bike {$job->intake->bike->number}. Complaint: ".($job->intake->complaint ?? 'N/A').". Priority: {$job->priority}.", [
                 'module' => 'Job Card',
                 'message_type' => 'Technician Alert',
                 'recipient_name' => $job->technician->name,
@@ -98,6 +105,7 @@ class JobCardController extends Controller
             'productBatchOptions' => $productBatchOptions,
             'stores' => Store::where('active', 1)->get(),
             'statuses' => self::statuses(),
+            'accounts' => Account::where('active', 1)->get(),
         ]);
     }
 
@@ -111,6 +119,8 @@ class JobCardController extends Controller
         if ($old !== $job->status) {
             DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'old_status' => $old, 'new_status' => $job->status, 'note' => $changeReason, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
         }
+
+        $this->syncInvoice($job);
 
         return back()->with('success', 'Job card updated.');
     }
@@ -145,15 +155,17 @@ class JobCardController extends Controller
         $part = $job->parts()->create($v + ['total' => $total, 'out_of_stock' => $out, 'stock_batch_id' => $batchId, 'cost_price' => $costPrice, 'selling_price' => $v['unit_price'], 'profit' => $profit]);
         if (! $out) {
             $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}", $batchId, $costPrice, $v['unit_price']);
-        }$job->update(['parts_total' => $job->parts()->sum('total')]);
+        }
+        $job->update(['parts_total' => $job->parts()->sum('total')]);
+        $this->syncInvoice($job);
 
         return back()->with('success', $out ? 'Part added with an out-of-stock warning.' : 'Part issued from stock.');
     }
 
-    public function updatePartPrice(Request $r, JobCard $job, \App\Models\JobCardPart $part)
+    public function updatePartPrice(Request $r, JobCard $job, JobCardPart $part)
     {
         $v = $r->validate([
-            'unit_price' => 'required|numeric|min:0'
+            'unit_price' => 'required|numeric|min:0',
         ]);
 
         $price = (float) $v['unit_price'];
@@ -161,18 +173,19 @@ class JobCardController extends Controller
         $discount = (float) $part->discount;
 
         $total = $qty * $price - $discount;
-        $profit = $total - ($qty * (float)$part->cost_price);
+        $profit = $total - ($qty * (float) $part->cost_price);
 
         $part->update([
             'unit_price' => $price,
             'selling_price' => $price,
             'total' => $total,
-            'profit' => $profit
+            'profit' => $profit,
         ]);
 
         $job->update([
-            'parts_total' => $job->parts()->sum('total')
+            'parts_total' => $job->parts()->sum('total'),
         ]);
+        $this->syncInvoice($job);
 
         return back()->with('success', 'Part selling price updated successfully.');
     }
@@ -182,11 +195,53 @@ class JobCardController extends Controller
         $v = $r->validate(['paid_amount' => 'required|numeric|min:0', 'payment_method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR,Credit/Due']);
         $invoice = $service->invoice($job, (float) $v['paid_amount'], $v['payment_method']);
 
+        // Send Billing SMS to customer
+        $invoice->loadMissing('customer');
+        if ($invoice->customer && $invoice->customer->phone) {
+            $smsService = app(TextitSmsService::class);
+            $smsService->send($invoice->customer->phone, "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), [
+                'module' => 'Billing',
+                'message_type' => 'Bill SMS',
+                'recipient_name' => $invoice->customer->name,
+                'recipient_type' => 'customer',
+                'reference_no' => $invoice->number,
+                'related_type' => $invoice->getMorphClass(),
+                'related_id' => $invoice->id,
+            ]);
+            $invoice->update(['sms_sent_at' => now()]);
+        }
+
         return redirect()->route('invoices.public', $invoice->public_token)->with('success', 'Invoice generated.');
+    }
+
+    private function syncInvoice(JobCard $job)
+    {
+        $job->loadMissing('invoice');
+        if ($job->invoice) {
+            $invoice = $job->invoice;
+            $total = $job->total;
+            $subtotal = (float) $job->parts_total + (float) $job->service_total + (float) $job->labor_total + (float) $job->washing_total + (float) $job->other_total;
+            $paid = (float) $invoice->paid_amount;
+            $due = max(0, $total - $paid);
+
+            $invoice->update([
+                'subtotal' => $subtotal,
+                'discount' => $job->discount,
+                'tax' => $job->tax,
+                'parts_amount' => $job->parts_total,
+                'service_amount' => $job->service_total,
+                'labor_amount' => $job->labor_total,
+                'washing_amount' => $job->washing_total,
+                'other_amount' => $job->other_total,
+                'total' => $total,
+                'due_amount' => $due,
+                'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'),
+            ]);
+        }
     }
 
     private static function statuses(): array
     {
-        return ['Received', 'Assigned', 'In Progress', 'Waiting for Parts', 'On Hold', 'Repair Ready', 'Completed', 'Billed', 'Delivered', 'Cancelled'];
+        return ['Received', 'Assigned', 'Diagnosis', 'In Progress', 'Waiting for Parts', 'Washing / Final Check', 'On Hold', 'Repair Ready', 'Ready for Delivery', 'Pending Payment', 'Completed', 'Billed', 'Delivered', 'Cancelled'];
     }
 }

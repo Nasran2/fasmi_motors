@@ -16,16 +16,17 @@ use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\LiveBoardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SalesBillingController;
 use App\Http\Controllers\ServiceReminderController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\SmsCenterController;
 use App\Http\Controllers\TechnicianController;
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WorkspacePageController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,6 +35,10 @@ Route::redirect('/', '/login')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('search', GlobalSearchController::class)->name('search');
+    Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
+    Route::get('workshop/live-board', [LiveBoardController::class, 'fullscreen'])->name('live-board.fullscreen');
+    Route::get('workshop/live-board/data', [LiveBoardController::class, 'data'])->name('live-board.data');
+    Route::patch('workshop/live-board/jobs/{job}/status', [LiveBoardController::class, 'updateStatus'])->name('live-board.status');
     Route::get('customers', [CustomerBikeController::class, 'customers'])->name('customers.index');
     Route::get('customers/create', [CustomerBikeController::class, 'customerCreate'])->name('customers.create');
     Route::post('customers', [CustomerBikeController::class, 'customerStore'])->name('customers.store');
@@ -265,23 +270,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── SMS Center ────────────────────────────────────────────────
     Route::prefix('sms')->name('sms.')->group(function () {
-        Route::get('dashboard',             [SmsCenterController::class, 'dashboard'])->name('dashboard');
-        Route::get('send',                  [SmsCenterController::class, 'send'])->name('send');
-        Route::post('send',                 [SmsCenterController::class, 'sendPost'])->name('send.post');
-        Route::get('templates',             [SmsCenterController::class, 'templates'])->name('templates');
-        Route::get('templates/create',      [SmsCenterController::class, 'templateCreate'])->name('templates.create');
-        Route::post('templates',            [SmsCenterController::class, 'templateStore'])->name('templates.store');
-        Route::get('templates/{template}/edit',   [SmsCenterController::class, 'templateEdit'])->name('templates.edit');
-        Route::put('templates/{template}',        [SmsCenterController::class, 'templateUpdate'])->name('templates.update');
-        Route::delete('templates/{template}',     [SmsCenterController::class, 'templateDestroy'])->name('templates.destroy');
-        Route::post('templates/{template}/toggle',[SmsCenterController::class, 'templateToggle'])->name('templates.toggle');
-        Route::get('logs',                  [SmsCenterController::class, 'logs'])->name('logs');
-        Route::get('failed',                [SmsCenterController::class, 'failed'])->name('failed');
-        Route::post('resend/{smsLog}',      [SmsCenterController::class, 'resend'])->name('resend');
-        Route::get('settings',              [SmsCenterController::class, 'settings'])->name('settings');
-        Route::post('settings',             [SmsCenterController::class, 'settingsUpdate'])->name('settings.update');
-        Route::post('settings/test',        [SmsCenterController::class, 'testSms'])->name('settings.test');
-        Route::get('search-recipients',     [SmsCenterController::class, 'searchRecipients'])->name('search-recipients');
+        Route::get('dashboard', [SmsCenterController::class, 'dashboard'])->name('dashboard');
+        Route::get('send', [SmsCenterController::class, 'send'])->name('send');
+        Route::post('send', [SmsCenterController::class, 'sendPost'])->name('send.post');
+        Route::get('templates', [SmsCenterController::class, 'templates'])->name('templates');
+        Route::get('templates/create', [SmsCenterController::class, 'templateCreate'])->name('templates.create');
+        Route::post('templates', [SmsCenterController::class, 'templateStore'])->name('templates.store');
+        Route::get('templates/{template}/edit', [SmsCenterController::class, 'templateEdit'])->name('templates.edit');
+        Route::put('templates/{template}', [SmsCenterController::class, 'templateUpdate'])->name('templates.update');
+        Route::delete('templates/{template}', [SmsCenterController::class, 'templateDestroy'])->name('templates.destroy');
+        Route::post('templates/{template}/toggle', [SmsCenterController::class, 'templateToggle'])->name('templates.toggle');
+        Route::get('logs', [SmsCenterController::class, 'logs'])->name('logs');
+        Route::get('failed', [SmsCenterController::class, 'failed'])->name('failed');
+        Route::post('resend/{smsLog}', [SmsCenterController::class, 'resend'])->name('resend');
+        Route::get('settings', [SmsCenterController::class, 'settings'])->name('settings');
+        Route::post('settings', [SmsCenterController::class, 'settingsUpdate'])->name('settings.update');
+        Route::post('settings/test', [SmsCenterController::class, 'testSms'])->name('settings.test');
+        Route::get('search-recipients', [SmsCenterController::class, 'searchRecipients'])->name('search-recipients');
     });
 });
 
