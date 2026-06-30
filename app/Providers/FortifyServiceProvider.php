@@ -47,7 +47,10 @@ class FortifyServiceProvider extends ServiceProvider
                 ->orWhereRaw('LOWER(username) = ?', [$login])
                 ->first();
 
-            return $user && $user->active && Hash::check((string) $request->input('password'), $user->password)
+            return $user 
+                && $user->active 
+                && (!$user->locked_until || $user->locked_until->isPast())
+                && Hash::check((string) $request->input('password'), $user->password)
                 ? $user
                 : null;
         });

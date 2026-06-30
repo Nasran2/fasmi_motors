@@ -45,6 +45,56 @@
     ::file-selector-button {
         border-color: var(--color-gray-200, currentColor);
     }
+
+    /* Global Input Field UI Styles */
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    input[type="tel"],
+    input[type="search"],
+    select,
+    textarea {
+        border: 1.5px solid #94a3b8 !important; /* Bold slate-400 border */
+        background-color: #f8fafc !important; /* slate-50 background */
+        border-radius: 0.75rem !important; /* rounded-xl */
+        padding: 0.625rem 0.875rem !important;
+        font-size: 0.875rem !important;
+        outline: none !important;
+        transition: all 0.2s ease-in-out !important;
+        color: #0f172a !important; /* dark slate text */
+    }
+
+    input[type="text"]:focus,
+    input[type="email"]:focus,
+    input[type="password"]:focus,
+    input[type="number"]:focus,
+    input[type="date"]:focus,
+    input[type="tel"]:focus,
+    input[type="search"]:focus,
+    select:focus,
+    textarea:focus {
+        border-color: #ed142b !important; /* Bold primary red border on focus */
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 4px rgba(237, 20, 43, 0.15) !important;
+    }
+
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+        background-color: #cbd5e1 !important; /* Darker gray background */
+        color: #64748b !important;
+        border-color: #94a3b8 !important;
+        cursor: not-allowed !important;
+    }
+
+    input[readonly],
+    textarea[readonly] {
+        background-color: #f1f5f9 !important; /* read-only background */
+        border-color: #cbd5e1 !important;
+        cursor: default !important;
+    }
 }
 
 @layer components {

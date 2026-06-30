@@ -121,6 +121,12 @@ return [
         'reports.daily-closing-report' => ['route' => 'reports.daily-closing'],
         'reports.service-reminder-report' => ['route' => 'reports.service-reminders'],
         'reports.sms-report' => ['route' => 'reports.sms'],
+        'user-management.users' => ['route' => 'user-management.users.index', 'active' => ['user-management.users.index', 'user-management.users.create', 'user-management.users.edit']],
+        'user-management.add-user' => ['route' => 'user-management.users.create'],
+        'user-management.roles' => ['route' => 'user-management.roles.index'],
+        'user-management.permissions' => ['route' => 'user-management.permissions.index'],
+        'user-management.activity-logs' => ['route' => 'user-management.activity-logs.index'],
+        'user-management.login-history' => ['route' => 'user-management.login-history.index'],
         'settings.general-settings' => ['route' => 'system-settings.index'],
     ],
 ];

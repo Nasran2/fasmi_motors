@@ -57,6 +57,85 @@ class AppServiceProvider extends ServiceProvider
             $model::updated(fn (Model $item) => $this->audit('updated', $item, $item->getOriginal(), $item->getChanges()));
             $model::deleted(fn (Model $item) => $this->audit('deleted', $item, $item->getOriginal(), []));
         }
+
+        // Authentication event logging
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Login::class, function ($event) {
+            $user = $event->user;
+            $user->update([
+                'last_login_at' => now(),
+                'last_login_ip' => request()->ip(),
+                'failed_login_attempts' => 0,
+            ]);
+
+            \App\Models\LoginHistory::create([
+                'user_id' => $user->id,
+                'username_or_email' => $user->username ?: $user->email,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'device' => $this->getDevice(request()->userAgent() ?? ''),
+                'browser' => $this->getBrowser(request()->userAgent() ?? ''),
+                'status' => 'Success',
+                'logged_in_at' => now(),
+            ]);
+        });
+
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Failed::class, function ($event) {
+            $username = $event->credentials['username'] ?? $event->credentials['email'] ?? 'Unknown';
+            $user = $event->user;
+
+            if ($user) {
+                $user->increment('failed_login_attempts');
+                if ($user->failed_login_attempts >= 5) {
+                    $user->update(['locked_until' => now()->addMinutes(15)]);
+                }
+            }
+
+            \App\Models\LoginHistory::create([
+                'user_id' => $user?->id,
+                'username_or_email' => $username,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'device' => $this->getDevice(request()->userAgent() ?? ''),
+                'browser' => $this->getBrowser(request()->userAgent() ?? ''),
+                'status' => $user && $user->failed_login_attempts >= 5 ? 'Locked' : 'Failed',
+                'failure_reason' => 'Invalid credentials',
+                'logged_in_at' => now(),
+            ]);
+        });
+
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Lockout::class, function ($event) {
+            $username = $event->request->input('username') ?? $event->request->input('email') ?? 'Unknown';
+            
+            \App\Models\LoginHistory::create([
+                'user_id' => null,
+                'username_or_email' => $username,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'device' => $this->getDevice(request()->userAgent() ?? ''),
+                'browser' => $this->getBrowser(request()->userAgent() ?? ''),
+                'status' => 'Locked',
+                'failure_reason' => 'Account temporarily locked due to too many failed attempts',
+                'logged_in_at' => now(),
+            ]);
+        });
+    }
+
+    private function getDevice(string $ua): string
+    {
+        if (preg_match('/Mobi|Android|iPhone|iPad/i', $ua)) {
+            return 'Mobile';
+        }
+        return 'Desktop';
+    }
+
+    private function getBrowser(string $ua): string
+    {
+        if (preg_match('/chrome/i', $ua)) return 'Chrome';
+        if (preg_match('/firefox/i', $ua)) return 'Firefox';
+        if (preg_match('/safari/i', $ua)) return 'Safari';
+        if (preg_match('/edge/i', $ua)) return 'Edge';
+        if (preg_match('/opera/i', $ua)) return 'Opera';
+        return 'Other';
     }
 
     private function audit(string $event, Model $item, array $old, array $new): void

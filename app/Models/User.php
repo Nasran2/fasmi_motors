@@ -16,10 +16,14 @@ use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 /**
  * @property int $id
  * @property string $name
  * @property string $email
+ * @property string|null $phone
+ * @property string|null $avatar
  * @property string|null $username
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -31,12 +35,12 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $updated_at
  * @property-read Role|null $role
  */
-#[Fillable(['name', 'username', 'email', 'password', 'role_id', 'active'])]
+#[Fillable(['name', 'username', 'email', 'phone', 'avatar', 'password', 'role_id', 'active', 'store_access', 'last_login_at', 'last_login_ip', 'force_password_change', 'failed_login_attempts', 'locked_until', 'created_by', 'updated_by'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable, SoftDeletes;
 
     /** @return BelongsTo<Role, $this> */
     public function role(): BelongsTo
@@ -61,6 +65,8 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'locked_until' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
     }
 

@@ -20,6 +20,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SalesBillingController;
 use App\Http\Controllers\ServiceReminderController;
 use App\Http\Controllers\SettingController;
@@ -160,6 +161,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::get('system-settings', [SettingController::class, 'index'])->name('system-settings.index');
     Route::put('system-settings', [SettingController::class, 'update'])->name('system-settings.update');
+
+    // User Management Module
+    Route::prefix('user-management')->name('user-management.')->group(function () {
+        // Users
+        Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
+        Route::get('users/create', [UserManagementController::class, 'create'])->name('users.create');
+        Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
+        Route::get('users/{user}/edit', [UserManagementController::class, 'edit'])->name('users.edit');
+        Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
+        Route::post('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
+        Route::post('users/{user}/toggle-status', [UserManagementController::class, 'toggleStatus'])->name('users.toggle-status');
+        Route::delete('users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+
+        // Roles
+        Route::get('roles', [UserManagementController::class, 'roles'])->name('roles.index');
+        Route::post('roles', [UserManagementController::class, 'storeRole'])->name('roles.store');
+        Route::put('roles/{role}', [UserManagementController::class, 'updateRole'])->name('roles.update');
+        Route::delete('roles/{role}', [UserManagementController::class, 'destroyRole'])->name('roles.destroy');
+
+        // Permissions
+        Route::get('permissions', [UserManagementController::class, 'permissions'])->name('permissions.index');
+        Route::post('permissions', [UserManagementController::class, 'updatePermissions'])->name('permissions.update');
+
+        // Logs & History
+        Route::get('activity-logs', [UserManagementController::class, 'activityLogs'])->name('activity-logs.index');
+        Route::get('login-history', [UserManagementController::class, 'loginHistory'])->name('login-history.index');
+    });
 
     // Accounts Module
     Route::prefix('accounts')->name('accounts.')->group(function () {
