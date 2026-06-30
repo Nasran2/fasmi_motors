@@ -6,7 +6,26 @@
     ])
     
     @slot('filters')
-      <div class="grid grid-cols-2 gap-3"><label class="label">Technician</label><select name="technician"><option value="">All</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected(request("technician")==$t->id)>{{ $t->name }}</option>@endforeach</select><label class="label">Status</label><select name="status"><option value="">All</option><option value="Present" @selected(request("status")=="Present")>Present</option><option value="Absent" @selected(request("status")=="Absent")>Absent</option></select></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="label">Technician</label>
+          <select name="technician">
+            <option value="">All</option>
+            @foreach($technicians as $t)
+            <option value="{{ $t->id }}" @selected(request("technician")==$t->id)>{{ $t->name }}</option>
+            @endforeach
+          </select>
+        </div>
+        <div>
+          <label class="label">Status</label>
+          <select name="status">
+            <option value="">All</option>
+            @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave'] as $status)
+            <option value="{{ $status }}" @selected(request("status")==$status)>{{ $status }}</option>
+            @endforeach
+          </select>
+        </div>
+      </div>
     @endslot
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
@@ -31,34 +50,62 @@
           <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
             <tr>
               <th class="px-4 py-3 font-bold">Date</th>
-<th class="px-4 py-3 font-bold">Technician</th>
-<th class="px-4 py-3 font-bold">Status</th>
-<th class="px-4 py-3 font-bold">In Time</th>
-<th class="px-4 py-3 font-bold">Out Time</th>
-<th class="px-4 py-3 font-bold">Late Mins</th>
-<th class="px-4 py-3 font-bold">OT Hours</th>
+              <th class="px-4 py-3 font-bold">Technician</th>
+              <th class="px-4 py-3 font-bold">Status</th>
+              <th class="px-4 py-3 font-bold">In Time</th>
+              <th class="px-4 py-3 font-bold">Out Time</th>
+              <th class="px-4 py-3 font-bold">Late Mins</th>
+              <th class="px-4 py-3 font-bold">Early Leave</th>
+              <th class="px-4 py-3 font-bold">OT Payout</th>
+              <th class="px-4 py-3 font-bold">Deductions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             @forelse($rows as $row)
+            @php
+              $statusVal = strtolower($row->status ?? '');
+              $statusClass = match(true) {
+                in_array($statusVal, ['present', 'active', 'paid', 'completed']) => 'badge-sent',
+                in_array($statusVal, ['absent', 'inactive', 'failed', 'due']) => 'badge-failed',
+                default => 'badge-pending'
+              };
+            @endphp
             <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3">{{ $row->date->format("d M Y") }}</td>
-<td class="px-4 py-3">{{ $row->technician?->name }}</td>
-<td class="px-4 py-3">
-  @php
-    $statusVal = strtolower($row->status ?? '');
-    $statusClass = match(true) {
-      in_array($statusVal, ['sent', 'success', 'paid', 'completed', 'present', 'active', 'balanced', 'delivered']) => 'badge-sent',
-      in_array($statusVal, ['failed', 'cancelled', 'due', 'absent', 'inactive', 'difference found', 'overdue', 'error']) => 'badge-failed',
-      default => 'badge-pending'
-    };
-  @endphp
-  <span class="{{ $statusClass }}">{{ $row->status }}</span>
-</td>
-<td class="px-4 py-3">{{ $row->in_time?->format("h:i A") }}</td>
-<td class="px-4 py-3">{{ $row->out_time?->format("h:i A") }}</td>
-<td class="px-4 py-3">{{ $row->late_minutes }}</td>
-<td class="px-4 py-3">{{ $row->ot_hours }}</td>
+              <td class="px-4 py-3 font-mono">{{ $row->date->format("d M Y") }}</td>
+              <td class="px-4 py-3 font-bold text-slate-900">{{ $row->technician?->name }}</td>
+              <td class="px-4 py-3">
+                <span class="{{ $statusClass }}">{{ $row->status }}</span>
+              </td>
+              <td class="px-4 py-3 font-mono">{{ $row->in_time ? Carbon\Carbon::parse($row->in_time)->format("h:i A") : '—' }}</td>
+              <td class="px-4 py-3 font-mono">{{ $row->out_time ? Carbon\Carbon::parse($row->out_time)->format("h:i A") : '—' }}</td>
+              <td class="px-4 py-3">
+                @if($row->late_minutes > 0)
+                <span class="text-orange-600 font-bold font-mono">{{ $row->late_minutes }} min</span>
+                @else
+                —
+                @endif
+              </td>
+              <td class="px-4 py-3">
+                @if($row->early_leave_minutes > 0)
+                <span class="text-orange-500 font-bold font-mono">{{ $row->early_leave_minutes }} min</span>
+                @else
+                —
+                @endif
+              </td>
+              <td class="px-4 py-3 text-green-600 font-bold">
+                @if($row->ot_amount > 0)
+                Rs. {{ number_format($row->ot_amount, 2) }}
+                @else
+                —
+                @endif
+              </td>
+              <td class="px-4 py-3 text-red-600 font-bold">
+                @if($row->deduction_amount > 0)
+                Rs. {{ number_format($row->deduction_amount, 2) }}
+                @else
+                —
+                @endif
+              </td>
             </tr>
             @empty
             <tr>

@@ -8,6 +8,7 @@ use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class SettingController extends Controller
 {
@@ -58,7 +59,111 @@ class SettingController extends Controller
     public function save(Request $r)
     {
         $group = $r->input('group', 'general');
-        $inputs = $r->except(['_token', '_method', 'group', 'logo_file', 'favicon_file']);
+
+        if ($group === 'salary') {
+            $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
+            
+            $data = $r->validate([
+                'salary_cycle' => 'required|string',
+                'salary_month_start_day' => 'required|integer|min:1|max:31',
+                'allow_daily_advance' => 'nullable|boolean',
+                'opening_time' => 'required|string',
+                'closing_time' => 'required|string',
+                'working_hours_per_day' => 'required|numeric|min:1|max:24',
+                'lunch_break_minutes' => 'nullable|integer|min:0',
+                'work_days' => 'nullable|array',
+                
+                'enable_late_deduction' => 'nullable|boolean',
+                'late_grace_minutes' => 'required|integer|min:0',
+                'late_deduction_type' => 'required|string',
+                'late_deduction_amount' => 'required|numeric|min:0',
+                'require_reason_late_edit' => 'nullable|boolean',
+                
+                'enable_early_leave_deduction' => 'nullable|boolean',
+                'early_leave_grace_minutes' => 'required|integer|min:0',
+                'early_leave_deduction_type' => 'required|string',
+                'early_leave_deduction_amount' => 'required|numeric|min:0',
+                'require_reason_early_leave' => 'nullable|boolean',
+                
+                'enable_ot' => 'nullable|boolean',
+                'ot_grace_minutes_after_closing' => 'required|integer|min:0',
+                'ot_calculation_type' => 'required|string',
+                'ot_round_method' => 'required|string',
+                'ot_amount_per_slab' => 'required|numeric|min:0',
+                'ot_slab_minutes' => 'required|integer|min:1',
+                'require_ot_approval' => 'nullable|boolean',
+                'allow_manual_ot_override' => 'nullable|boolean',
+                
+                'enable_half_day' => 'nullable|boolean',
+                'morning_half_day_cutoff' => 'required|string',
+                'evening_half_day_cutoff' => 'required|string',
+                'half_day_deduction_type' => 'required|string',
+                'half_day_deduction_amount' => 'required|numeric|min:0',
+                
+                'paysheet_finalize_lock' => 'nullable|boolean',
+                'require_reason_reopen_paysheet' => 'nullable|boolean',
+            ]);
+
+            // Booleans fallback
+            $booleans = [
+                'allow_daily_advance', 'enable_late_deduction', 'require_reason_late_edit',
+                'enable_early_leave_deduction', 'require_reason_early_leave', 'enable_ot',
+                'require_ot_approval', 'allow_manual_ot_override', 'enable_half_day',
+                'paysheet_finalize_lock', 'require_reason_reopen_paysheet'
+            ];
+            foreach ($booleans as $b) {
+                $data[$b] = $r->has($b) ? (bool)$r->input($b) : false;
+            }
+            $data['work_days'] = $r->input('work_days', []);
+
+            $oldVal = $salarySetting->toArray();
+            $salarySetting->update($data);
+            $newVal = $salarySetting->fresh()->toArray();
+
+            // Handle OT Slabs
+            $submittedSlabs = $r->input('slabs', []);
+            $keepIds = [];
+            
+            DB::transaction(function() use ($submittedSlabs, &$keepIds) {
+                foreach ($submittedSlabs as $id => $slabData) {
+                    if (str_starts_with($id, 'new_')) {
+                        $slab = \App\Models\OtSlabRule::create([
+                            'from_minutes' => $slabData['from_minutes'],
+                            'to_minutes' => $slabData['to_minutes'],
+                            'amount' => $slabData['amount'],
+                            'calculation_rule' => $slabData['calculation_rule'] ?? 'Fixed for this range',
+                            'status' => $slabData['status'] ?? 'Active',
+                            'sort_order' => $slabData['sort_order'] ?? 0,
+                            'created_by' => auth()->id(),
+                        ]);
+                        $keepIds[] = $slab->id;
+                    } else {
+                        $slab = \App\Models\OtSlabRule::find($id);
+                        if ($slab) {
+                            $slab->update([
+                                'from_minutes' => $slabData['from_minutes'],
+                                'to_minutes' => $slabData['to_minutes'],
+                                'amount' => $slabData['amount'],
+                                'calculation_rule' => $slabData['calculation_rule'] ?? 'Fixed for this range',
+                                'status' => $slabData['status'] ?? 'Active',
+                                'sort_order' => $slabData['sort_order'] ?? 0,
+                                'updated_by' => auth()->id(),
+                            ]);
+                            $keepIds[] = $slab->id;
+                        }
+                    }
+                }
+                
+                // Delete removed slabs
+                \App\Models\OtSlabRule::whereNotIn('id', $keepIds)->delete();
+            });
+
+            $this->audit('Updated Salary Settings', 'Updated technician payroll rules and OT slabs', $oldVal, $newVal);
+
+            return back()->with('success', 'Technician Attendance & Salary settings saved successfully.');
+        }
+
+        $inputs = $r->except(['_token', '_method', 'group', 'logo_file', 'favicon_file', 'slabs']);
 
         // Handle File uploads if present
         if ($r->hasFile('logo_file')) {
@@ -216,7 +321,9 @@ class SettingController extends Controller
     public function salarySettings()
     {
         $settings = $this->getSettings();
-        return view('system-settings.salary', compact('settings'));
+        $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
+        $otSlabs = \App\Models\OtSlabRule::orderBy('sort_order')->orderBy('from_minutes')->get();
+        return view('system-settings.salary', compact('settings', 'salarySetting', 'otSlabs'));
     }
 
     // ─── 10. EPF / ETF SETTINGS ──────────────────────────────────

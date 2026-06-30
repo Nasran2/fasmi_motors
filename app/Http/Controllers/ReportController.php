@@ -328,6 +328,11 @@ class ReportController extends Controller
         $rows = Technician::withCount(['jobs' => fn ($q) => $q->whereBetween('created_at', [$from, $to])])
             ->withCount(['jobs as completed_jobs' => fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', 'Completed')])
             ->withSum(['commissions' => fn ($q) => $q->whereBetween('created_at', [$from, $to])], 'amount')
+            ->withSum(['attendance as total_ot_amount' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'ot_amount')
+            ->withSum(['attendance as total_late_deduction' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'late_deduction_amount')
+            ->withSum(['attendance as total_early_leave_deduction' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'early_leave_deduction_amount')
+            ->withSum(['attendance as total_half_day_deduction' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'half_day_deduction_amount')
+            ->withSum(['salarySheets as total_salary_paid' => fn ($q) => $q->whereBetween('period_start', [$from, $to])], 'paid_amount')
             ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%"))
             ->get();
 
@@ -335,7 +340,7 @@ class ReportController extends Controller
             'total'     => Technician::count(),
             'active'    => Technician::where('active', 1)->count(),
             'total_jobs' => JobCard::whereBetween('created_at', [$from, $to])->count(),
-            'total_commission' => 0,
+            'total_commission' => $rows->sum('commissions_sum_amount') ?? 0,
         ];
 
         return view('reports.technicians', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
@@ -353,11 +358,13 @@ class ReportController extends Controller
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
             ->orderByDesc('date')->paginate(25)->withQueryString();
 
+        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+
         $stats = [
-            'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Present')->count(),
-            'absent'  => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Absent')->count(),
+            'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', $presentStatuses)->count(),
+            'absent'  => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
             'late'    => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Late')->count(),
-            'leave'   => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Leave')->count(),
+            'leave'   => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);

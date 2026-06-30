@@ -31,20 +31,30 @@
           <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
             <tr>
               <th class="px-4 py-3 font-bold">Technician</th>
-<th class="px-4 py-3 font-bold">Status</th>
-<th class="px-4 py-3 font-bold">Total Jobs</th>
-<th class="px-4 py-3 font-bold">Completed</th>
-<th class="px-4 py-3 font-bold">Commissions</th>
+              <th class="px-4 py-3 font-bold">Status</th>
+              <th class="px-4 py-3 font-bold">Total Jobs</th>
+              <th class="px-4 py-3 font-bold">Completed</th>
+              <th class="px-4 py-3 font-bold">Commissions</th>
+              <th class="px-4 py-3 font-bold">OT Payouts</th>
+              <th class="px-4 py-3 font-bold">Late Deductions</th>
+              <th class="px-4 py-3 font-bold">Early Leave</th>
+              <th class="px-4 py-3 font-bold">Half Day</th>
+              <th class="px-4 py-3 font-bold">Net Salary Paid</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3">{{ $row->name }}</td>
-<td class="px-4 py-3"><span class="{{ $row->active ? 'badge-sent' : 'badge-failed' }}">{{ $row->active ? 'Active' : 'Inactive' }}</span></td>
-<td class="px-4 py-3">{{ $row->jobs_count }}</td>
-<td class="px-4 py-3">{{ $row->completed_jobs }}</td>
-<td class="px-4 py-3">{{ "Rs. " . number_format($row->commissions_sum_amount, 2) }}</td>
+              <td class="px-4 py-3 font-bold">{{ $row->name }}</td>
+              <td class="px-4 py-3"><span class="{{ $row->active ? 'badge-sent' : 'badge-failed' }}">{{ $row->active ? 'Active' : 'Inactive' }}</span></td>
+              <td class="px-4 py-3">{{ $row->jobs_count }}</td>
+              <td class="px-4 py-3">{{ $row->completed_jobs }}</td>
+              <td class="px-4 py-3">Rs. {{ number_format($row->commissions_sum_amount, 2) }}</td>
+              <td class="px-4 py-3 text-green-600">Rs. {{ number_format($row->total_ot_amount, 2) }}</td>
+              <td class="px-4 py-3 text-red-600">Rs. {{ number_format($row->total_late_deduction, 2) }}</td>
+              <td class="px-4 py-3 text-red-600">Rs. {{ number_format($row->total_early_leave_deduction, 2) }}</td>
+              <td class="px-4 py-3 text-red-600">Rs. {{ number_format($row->total_half_day_deduction, 2) }}</td>
+              <td class="px-4 py-3 font-black text-slate-800">Rs. {{ number_format($row->total_salary_paid, 2) }}</td>
             </tr>
             @empty
             <tr>

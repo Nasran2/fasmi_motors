@@ -84,31 +84,290 @@ class TechnicianController extends Controller
             ->when($request->status, fn (Builder $q, $status) => $q->where('status', $status))
             ->whereDate('date', $date)->latest('date')->paginate(20)->withQueryString();
 
+        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+
         return view('technicians.attendance', ['records' => $records, 'technicians' => $this->technicians(), 'date' => $date, 'stats' => [
-            'present' => TechnicianAttendance::whereDate('date', today())->whereIn('status', ['Present', 'Late'])->count(),
-            'absent' => TechnicianAttendance::whereDate('date', today())->where('status', 'Absent')->count(),
-            'late' => TechnicianAttendance::whereDate('date', today())->where('status', 'Late')->count(),
-            'leave' => TechnicianAttendance::whereDate('date', today())->where('status', 'Leave')->count(),
+            'present' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', $presentStatuses)->count(),
+            'absent' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
+            'late' => TechnicianAttendance::whereDate('date', $date)->where('status', 'Late')->count(),
+            'leave' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', ['Leave', 'Paid Leave'])->count(),
             'ot' => TechnicianAttendance::whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()])->sum('ot_hours'),
         ]]);
     }
 
     public function attendanceStore(Request $request)
     {
-        $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'date' => ['required', 'date'], 'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Leave', 'Late', 'Holiday'])], 'in_time' => ['nullable', 'date_format:H:i'], 'out_time' => ['nullable', 'date_format:H:i'], 'ot_hours' => ['nullable', 'numeric', 'min:0'], 'late_minutes' => ['nullable', 'integer', 'min:0'], 'note' => ['nullable', 'max:1000'], 'edit_reason' => ['nullable', 'max:500']]);
-        if ($data['in_time'] && $data['out_time']) {
-            $data['working_hours'] = max(0, Carbon::parse($data['in_time'])->diffInMinutes(Carbon::parse($data['out_time']), false) / 60);
-            $data['ot_hours'] = $data['ot_hours'] ?? max(0, $data['working_hours'] - 8);
-        }
-        TechnicianAttendance::updateOrCreate(['technician_id' => $data['technician_id'], 'date' => $data['date']], $data + ['created_by' => auth()->id(), 'edited_by' => auth()->id()]);
+        $bulk = $request->has('technician_ids') && is_array($request->input('technician_ids'));
+        $ids = $bulk ? $request->input('technician_ids') : [$request->input('technician_id')];
 
-        return back()->with('success', 'Attendance saved and working hours recalculated.');
+        $request->validate([
+            'date' => ['required', 'date'],
+            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late'])],
+            'in_time' => ['nullable', 'date_format:H:i'],
+            'out_time' => ['nullable', 'date_format:H:i'],
+            'ot_amount' => ['nullable', 'numeric', 'min:0'],
+            'deduction_amount' => ['nullable', 'numeric', 'min:0'],
+            'note' => ['nullable', 'max:1000'],
+            'edit_reason' => ['nullable', 'max:500'],
+            'is_manual_edit' => ['nullable']
+        ]);
+
+        if (!$bulk) {
+            $request->validate([
+                'technician_id' => ['required', 'exists:technicians,id']
+            ]);
+        }
+
+        $date = $request->input('date');
+        $start = Carbon::parse($date)->startOfMonth();
+        
+        $savedCount = 0;
+
+        foreach ($ids as $techId) {
+            if (!$techId) continue;
+            
+            $technician = Technician::findOrFail($techId);
+
+            // 1. Check finalized salary sheets
+            $isFinalized = TechnicianSalarySheet::where('technician_id', $technician->id)
+                ->whereDate('period_start', $start)
+                ->where('status', 'Finalized')
+                ->exists();
+            if ($isFinalized) {
+                if ($bulk) continue;
+                throw ValidationException::withMessages(['date' => "This attendance for {$technician->name} is included in finalized salary. Reopen paysheet before editing."]);
+            }
+
+            $oldRecord = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->first();
+
+            // Edit reason is required if updating existing
+            if ($oldRecord && empty($request->edit_reason) && !$bulk) {
+                throw ValidationException::withMessages(['edit_reason' => 'Edit Reason is required when updating attendance record.']);
+            }
+
+            $status = $request->input('status');
+            $isManual = $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
+
+            // Calculate metrics
+            $metrics = $this->calculateAttendance(
+                $technician,
+                $date,
+                $status,
+                $request->input('in_time'),
+                $request->input('out_time'),
+                $request->filled('ot_amount') ? (float)$request->input('ot_amount') : null,
+                $request->filled('deduction_amount') ? (float)$request->input('deduction_amount') : null,
+                $isManual
+            );
+
+            $payload = array_merge($request->only(['date', 'in_time', 'out_time', 'note', 'edit_reason']), $metrics, [
+                'technician_id' => $technician->id,
+                'status' => $status,
+                'is_manual_edit' => $isManual,
+                'edited_by' => auth()->id(),
+                'updated_by' => auth()->id()
+            ]);
+
+            if (!$oldRecord) {
+                $payload['created_by'] = auth()->id();
+            } else {
+                // Log Audit Log
+                AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'event' => 'Attendance Edited',
+                    'auditable_type' => $technician->getMorphClass(),
+                    'auditable_id' => $technician->id,
+                    'old_values' => [
+                        'date' => $oldRecord->date->toDateString(),
+                        'in_time' => $oldRecord->in_time,
+                        'out_time' => $oldRecord->out_time,
+                        'ot_amount' => $oldRecord->ot_amount,
+                        'deduction_amount' => $oldRecord->deduction_amount,
+                        'status' => $oldRecord->status,
+                        'edit_reason' => $oldRecord->edit_reason,
+                    ],
+                    'new_values' => [
+                        'date' => $date,
+                        'in_time' => $request->input('in_time'),
+                        'out_time' => $request->input('out_time'),
+                        'ot_amount' => $metrics['ot_amount'],
+                        'deduction_amount' => $metrics['deduction_amount'],
+                        'status' => $status,
+                        'edit_reason' => $request->input('edit_reason'),
+                    ],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+            }
+
+            TechnicianAttendance::updateOrCreate(['technician_id' => $technician->id, 'date' => $date], $payload);
+            $savedCount++;
+        }
+
+        return back()->with('success', "Attendance saved for {$savedCount} technician(s) and metrics calculated.");
+    }
+
+    private function calculateAttendance($technician, $date, &$status, $inTime, $outTime, $manualOtAmount = null, $manualDeductionAmount = null, $isManualEdit = false)
+    {
+        $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
+        
+        $metrics = [
+            'working_minutes' => 0,
+            'working_hours' => 0,
+            'late_minutes' => 0,
+            'early_leave_minutes' => 0,
+            'ot_minutes' => 0,
+            'ot_hours' => 0,
+            'ot_amount' => 0,
+            'deduction_amount' => 0,
+            'late_deduction_amount' => 0,
+            'early_leave_deduction_amount' => 0,
+            'half_day_deduction_amount' => 0,
+        ];
+
+        // 1. If leave or non-work status, return empty metrics
+        $nonWorkStatuses = ['Absent', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday'];
+        if (in_array($status, $nonWorkStatuses)) {
+            if ($status === 'Absent' || $status === 'No Pay Leave') {
+                $metrics['deduction_amount'] = (float) $technician->no_pay_deduction_rate;
+            }
+            return $metrics;
+        }
+
+        // 2. We need In/Out times for calculation
+        if (!$inTime || !$outTime) {
+            return $metrics;
+        }
+
+        $in = Carbon::parse($inTime);
+        $out = Carbon::parse($outTime);
+        
+        $working_minutes = max(0, $in->diffInMinutes($out, false));
+        $metrics['working_minutes'] = $working_minutes;
+        $metrics['working_hours'] = $working_minutes / 60;
+
+        // 3. Late coming calculation
+        $open = Carbon::parse($salarySetting->opening_time);
+        if ($salarySetting->enable_late_deduction && $in->gt($open)) {
+            $diff = $in->diffInMinutes($open);
+            if ($diff > $salarySetting->late_grace_minutes) {
+                $metrics['late_minutes'] = $diff;
+                if ($salarySetting->late_deduction_type === 'Fixed amount') {
+                    $metrics['late_deduction_amount'] = (float) $salarySetting->late_deduction_amount;
+                } elseif ($salarySetting->late_deduction_type === 'Per minute amount') {
+                    $metrics['late_deduction_amount'] = $diff * (float) $salarySetting->late_deduction_amount;
+                }
+            }
+        }
+
+        // 4. Early leave calculation
+        $close = Carbon::parse($salarySetting->closing_time);
+        if ($salarySetting->enable_early_leave_deduction && $out->lt($close)) {
+            $diff = $close->diffInMinutes($out);
+            if ($diff > $salarySetting->early_leave_grace_minutes) {
+                $metrics['early_leave_minutes'] = $diff;
+                if ($salarySetting->early_leave_deduction_type === 'Fixed amount') {
+                    $metrics['early_leave_deduction_amount'] = (float) $salarySetting->early_leave_deduction_amount;
+                } elseif ($salarySetting->early_leave_deduction_type === 'Per minute amount') {
+                    $metrics['early_leave_deduction_amount'] = $diff * (float) $salarySetting->early_leave_deduction_amount;
+                }
+            }
+        }
+
+        // 5. Half Day cutoffs check
+        if ($salarySetting->enable_half_day) {
+            $morningCutoff = Carbon::parse($salarySetting->morning_half_day_cutoff);
+            $eveningCutoff = Carbon::parse($salarySetting->evening_half_day_cutoff);
+            
+            $isHalfDay = false;
+            if ($in->gt($morningCutoff)) {
+                $status = 'Morning Half Day';
+                $isHalfDay = true;
+            } elseif ($out->lt($eveningCutoff)) {
+                $status = 'Evening Half Day';
+                $isHalfDay = true;
+            }
+
+            if ($isHalfDay || $status === 'Half Day') {
+                $dailyRate = $technician->salary_type === 'Daily' ? (float) $technician->daily_salary : ((float) $technician->basic_salary / 26);
+                
+                if ($salarySetting->half_day_deduction_type === 'Half of daily salary') {
+                    $metrics['half_day_deduction_amount'] = $dailyRate / 2;
+                } elseif ($salarySetting->half_day_deduction_type === 'Fixed amount') {
+                    $metrics['half_day_deduction_amount'] = (float) $salarySetting->half_day_deduction_amount;
+                }
+                
+                // If it is half day, we nullify late and early deductions since half day deduction covers it
+                $metrics['late_deduction_amount'] = 0;
+                $metrics['early_leave_deduction_amount'] = 0;
+            }
+        }
+
+        // 6. Overtime (OT) calculation
+        if ($salarySetting->enable_ot && $out->gt($close)) {
+            $diff = $out->diffInMinutes($close);
+            if ($diff > $salarySetting->ot_grace_minutes_after_closing) {
+                $metrics['ot_minutes'] = $diff;
+                $metrics['ot_hours'] = $diff / 60;
+                
+                // Slab matching logic
+                $slabRules = \App\Models\OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get();
+                if ($slabRules->isNotEmpty()) {
+                    $matchedSlab = null;
+                    
+                    if ($salarySetting->ot_round_method === 'Ceiling slab') {
+                        $matchedSlab = $slabRules->first(fn($s) => $diff <= $s->to_minutes);
+                        if (!$matchedSlab) $matchedSlab = $slabRules->last();
+                    } elseif ($salarySetting->ot_round_method === 'Floor slab') {
+                        $matchedSlab = $slabRules->last(fn($s) => $diff >= $s->from_minutes);
+                        if (!$matchedSlab) $matchedSlab = $slabRules->first();
+                    } elseif ($salarySetting->ot_round_method === 'Nearest slab') {
+                        $matchedSlab = $slabRules->sortBy(fn($s) => abs(($s->from_minutes + $s->to_minutes)/2 - $diff))->first();
+                    } else { // Exact minutes
+                        $matchedSlab = $slabRules->first(fn($s) => $diff >= $s->from_minutes && $diff <= $s->to_minutes);
+                    }
+
+                    if ($matchedSlab) {
+                        if ($matchedSlab->calculation_rule === 'Fixed for this range') {
+                            $metrics['ot_amount'] = (float) $matchedSlab->amount;
+                        } else { // Add previous slab amount
+                            $metrics['ot_amount'] = $slabRules->where('from_minutes', '<=', $matchedSlab->from_minutes)->sum('amount');
+                        }
+                    }
+                } else {
+                    // Fallback to settings: "Every X minutes = Y Rs"
+                    $slabMinutes = max(1, $salarySetting->ot_slab_minutes);
+                    $amountPerSlab = (float) $salarySetting->ot_amount_per_slab;
+                    
+                    if ($salarySetting->ot_round_method === 'Ceiling slab') {
+                        $slabCount = ceil($diff / $slabMinutes);
+                    } elseif ($salarySetting->ot_round_method === 'Floor slab') {
+                        $slabCount = floor($diff / $slabMinutes);
+                    } elseif ($salarySetting->ot_round_method === 'Nearest slab') {
+                        $slabCount = round($diff / $slabMinutes);
+                    } else {
+                        $slabCount = $diff / $slabMinutes;
+                    }
+                    $metrics['ot_amount'] = $slabCount * $amountPerSlab;
+                }
+            }
+        }
+
+        // 7. Sum up deductions
+        $metrics['deduction_amount'] = $metrics['late_deduction_amount'] + $metrics['early_leave_deduction_amount'] + $metrics['half_day_deduction_amount'];
+
+        // Respect Manual Overrides
+        if ($isManualEdit) {
+            if ($manualOtAmount !== null) $metrics['ot_amount'] = $manualOtAmount;
+            if ($manualDeductionAmount !== null) $metrics['deduction_amount'] = $manualDeductionAmount;
+        }
+
+        return $metrics;
     }
 
     public function attendance(Request $request, Technician $technician)
     {
         $request->merge(['technician_id' => $technician->id]);
-
         return $this->attendanceStore($request);
     }
 
@@ -134,27 +393,73 @@ class TechnicianController extends Controller
         if (TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $start)->exists()) {
             throw ValidationException::withMessages(['month' => 'A salary sheet already exists for this technician and month.']);
         }
+        
         $attendance = TechnicianAttendance::where('technician_id', $technician->id)->whereBetween('date', [$start, $end])->get();
-        $present = $attendance->whereIn('status', ['Present', 'Late'])->count();
-        $absent = $attendance->where('status', 'Absent')->count();
+        
+        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+        $present = $attendance->whereIn('status', $presentStatuses)->count();
+        $absent = $attendance->whereIn('status', ['Absent', 'No Pay Leave'])->count();
+        
         $otHours = (float) $attendance->sum('ot_hours');
+        $otAmount = (float) $attendance->sum('ot_amount');
+        
         $commission = (float) TechnicianCommission::where('technician_id', $technician->id)->whereBetween('earned_date', [$start, $end])->where('status', 'Pending')->sum('amount');
         $advances = (float) TechnicianAdvance::where('technician_id', $technician->id)->where('status', 'Pending Deduction')->whereDate('deduct_month', $start)->sum('amount');
         $bikeDeduction = (float) TechnicianBikeDeduction::where('technician_id', $technician->id)->where('status', 'Active')->whereDate('next_deduction_month', '<=', $start)->sum('installment_amount');
+        
         $basic = $technician->salary_type === 'Daily' ? (float) $technician->daily_salary * $present : (float) $technician->basic_salary;
-        $ot = $otHours * (float) $technician->ot_rate;
-        $late = (float) $attendance->sum('late_minutes') * (float) $technician->late_deduction_rate;
+        
+        // Sum deductions directly from daily attendance details
+        $lateDeduction = (float) $attendance->sum('late_deduction_amount');
+        $earlyLeaveDeduction = (float) $attendance->sum('early_leave_deduction_amount');
+        $halfDayDeduction = (float) $attendance->sum('half_day_deduction_amount');
         $noPay = $absent * (float) $technician->no_pay_deduction_rate;
+        
         $employeeEpf = $technician->epf_eligible ? $basic * (float) $technician->epf_employee_percentage / 100 : 0;
         $companyEpf = $technician->epf_eligible ? $basic * (float) $technician->epf_company_percentage / 100 : 0;
         $companyEtf = $technician->etf_eligible ? $basic * (float) $technician->etf_company_percentage / 100 : 0;
-        $gross = $basic + $ot + $commission;
-        $deductions = $advances + $bikeDeduction + $late + $noPay + (float) ($data['other_deductions'] ?? 0);
+        
+        $gross = $basic + $otAmount + $commission;
+        $deductions = $advances + $bikeDeduction + $lateDeduction + $earlyLeaveDeduction + $halfDayDeduction + $noPay + (float) ($data['other_deductions'] ?? 0);
         $net = max(0, $gross - $deductions - $employeeEpf);
         $paid = min($net, (float) ($data['paid_amount'] ?? 0));
-        $sheet = DB::transaction(function () use ($data, $technician, $start, $end, $attendance, $present, $absent, $otHours, $basic, $ot, $commission, $advances, $bikeDeduction, $late, $noPay, $employeeEpf, $companyEpf, $companyEtf, $gross, $deductions, $net, $paid) {
-            $sheet = TechnicianSalarySheet::create(['number' => 'PAY-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'technician_id' => $technician->id, 'period_start' => $start, 'period_end' => $end, 'working_days' => $attendance->count(), 'present_days' => $present, 'absent_days' => $absent, 'ot_hours' => $otHours, 'basic_salary' => $basic, 'ot_amount' => $ot, 'commission' => $commission, 'gross_salary' => $gross, 'advances' => $advances, 'late_deduction' => $late, 'no_pay_deduction' => $noPay, 'own_bike_deduction' => $bikeDeduction, 'other_deductions' => $data['other_deductions'] ?? 0, 'deductions' => $deductions, 'epf_employee' => $employeeEpf, 'epf_company' => $companyEpf, 'etf_company' => $companyEtf, 'net_payable' => $net, 'paid_amount' => $paid, 'balance_amount' => $net - $paid, 'status' => $paid >= $net ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Draft'), 'account_id' => $data['account_id'] ?? null, 'payment_method' => $data['payment_method'] ?? null, 'created_by' => auth()->id()]);
+        
+        $sheet = DB::transaction(function () use ($data, $technician, $start, $end, $attendance, $present, $absent, $otHours, $otAmount, $basic, $commission, $advances, $bikeDeduction, $lateDeduction, $earlyLeaveDeduction, $halfDayDeduction, $noPay, $employeeEpf, $companyEpf, $companyEtf, $gross, $deductions, $net, $paid) {
+            $sheet = TechnicianSalarySheet::create([
+                'number' => 'PAY-'.now()->format('ymd').'-'.Str::upper(Str::random(5)),
+                'technician_id' => $technician->id,
+                'period_start' => $start,
+                'period_end' => $end,
+                'working_days' => $attendance->count(),
+                'present_days' => $present,
+                'absent_days' => $absent,
+                'ot_hours' => $otHours,
+                'basic_salary' => $basic,
+                'ot_amount' => $otAmount,
+                'commission' => $commission,
+                'gross_salary' => $gross,
+                'advances' => $advances,
+                'late_deduction' => $lateDeduction,
+                'early_leave_deduction' => $earlyLeaveDeduction,
+                'half_day_deduction' => $halfDayDeduction,
+                'no_pay_deduction' => $noPay,
+                'own_bike_deduction' => $bikeDeduction,
+                'other_deductions' => $data['other_deductions'] ?? 0,
+                'deductions' => $deductions,
+                'epf_employee' => $employeeEpf,
+                'epf_company' => $companyEpf,
+                'etf_company' => $companyEtf,
+                'net_payable' => $net,
+                'paid_amount' => $paid,
+                'balance_amount' => $net - $paid,
+                'status' => $paid >= $net ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Draft'),
+                'account_id' => $data['account_id'] ?? null,
+                'payment_method' => $data['payment_method'] ?? null,
+                'created_by' => auth()->id()
+            ]);
+            
             TechnicianContribution::create(['technician_id' => $technician->id, 'salary_sheet_id' => $sheet->id, 'month' => $start, 'basic_salary' => $basic, 'employee_epf_percentage' => $technician->epf_employee_percentage, 'employee_epf_amount' => $employeeEpf, 'company_epf_percentage' => $technician->epf_company_percentage, 'company_epf_amount' => $companyEpf, 'company_etf_percentage' => $technician->etf_company_percentage, 'company_etf_amount' => $companyEtf]);
+            
             if ($paid > 0) {
                 $accountService = app(AccountService::class);
                 if (in_array($data['payment_method'], ['Cash'])) {
