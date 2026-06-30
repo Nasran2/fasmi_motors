@@ -257,10 +257,16 @@ class SmsCenterController extends Controller
         $result = $sms->resend($smsLog, auth()->id());
 
         if ($result['success']) {
-            return back()->with('success', 'SMS resent successfully! Log ID: ' . $result['log_id']);
+            if (in_array(strtolower($smsLog->status), ['queued', 'pending'])) {
+                $smsLog->delete();
+            }
+            return back()->with('success', 'SMS sent successfully!');
         }
 
-        return back()->with('error', 'Resend failed: ' . ($result['error'] ?? 'Unknown error'));
+        if (in_array(strtolower($smsLog->status), ['queued', 'pending'])) {
+            $smsLog->delete();
+        }
+        return back()->with('error', 'Send failed: ' . ($result['error'] ?? 'Unknown error'));
     }
 
     // ─────────────────────────────────────────────────────────

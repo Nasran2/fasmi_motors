@@ -326,7 +326,18 @@ class SalesBillingController extends Controller
     private function queueBillSms(Invoice $invoice): void
     {
         $invoice->loadMissing('customer');
-        DB::table('sms_logs')->insert(['phone' => $invoice->customer->phone, 'message' => "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), 'status' => 'Queued', 'reference_type' => $invoice->getMorphClass(), 'reference_id' => $invoice->id, 'created_at' => now(), 'updated_at' => now()]);
+        if ($invoice->customer && $invoice->customer->phone) {
+            $smsService = app(\App\Services\Sms\TextitSmsService::class);
+            $smsService->send($invoice->customer->phone, "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), [
+                'module' => 'Billing',
+                'message_type' => 'Bill SMS',
+                'recipient_name' => $invoice->customer->name,
+                'recipient_type' => 'customer',
+                'reference_no' => $invoice->number,
+                'related_type' => $invoice->getMorphClass(),
+                'related_id' => $invoice->id,
+            ]);
+        }
         $invoice->update(['sms_sent_at' => now()]);
     }
 }

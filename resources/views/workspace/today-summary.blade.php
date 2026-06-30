@@ -3,7 +3,7 @@
     <div class="space-y-5" data-testid="today-summary-live">
         <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="mb-1 text-[10px] font-bold uppercase tracking-[.18em] text-red-600">Dashboard</p><h1 class="page-title">Today Summary</h1><p class="page-subtitle">Live workshop activity for {{ today()->format('l, d F Y') }}.</p></div><a href="{{ route('intakes.create') }}" class="btn-primary">+ New Bike Intake</a></div>
 
-        <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             @foreach($cards as $card)
                 <article class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_8px_26px_rgba(15,35,65,.055)]"><div class="flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-xl {{ $tones[$card['tone']] }}"><x-dashboard-icon :name="$card['icon']" class="size-5"/></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-slate-500">{{ $card['label'] }}</p><p class="mt-1 whitespace-nowrap text-xl font-extrabold text-slate-950">{{ ($card['money'] ?? false) ? 'Rs. '.number_format($card['value'],2) : number_format($card['value']) }}</p></div></div><p class="mt-3 text-[10px] text-slate-400">Updated from live records</p></article>
             @endforeach

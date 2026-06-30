@@ -56,10 +56,23 @@ class ServiceReminderController extends Controller
         if (! $phone) {
             return back()->withErrors(['phone' => 'This customer has no phone number.']);
         }
-        SmsLog::create(['phone' => $phone, 'message' => $this->message($reminder), 'status' => 'Queued', 'reference_type' => $reminder->getMorphClass(), 'reference_id' => $reminder->id, 'api_response' => 'Queued for configured SMS provider', 'sent_by' => auth()->id()]);
-        $reminder->update(['sms_status' => 'Queued', 'sent_at' => now()]);
+        $smsService = app(\App\Services\Sms\TextitSmsService::class);
+        $result = $smsService->send($phone, $this->message($reminder), [
+            'module' => 'Service Reminder',
+            'message_type' => 'Reminder SMS',
+            'recipient_name' => $reminder->bike?->customer?->name,
+            'recipient_type' => 'customer',
+            'reference_no' => $reminder->bike?->number,
+            'related_type' => $reminder->getMorphClass(),
+            'related_id' => $reminder->id,
+            'sent_by' => auth()->id(),
+        ]);
+        $reminder->update([
+            'sms_status' => $result['success'] ? 'sent' : 'failed',
+            'sent_at' => now()
+        ]);
 
-        return back()->with('success', 'Reminder SMS queued and logged.');
+        return back()->with('success', $result['success'] ? 'Reminder SMS sent and logged.' : 'Reminder SMS sending failed: ' . ($result['error'] ?? 'Check SMS settings.'));
     }
 
     public function complete(ServiceReminder $reminder)

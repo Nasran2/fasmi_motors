@@ -33,8 +33,40 @@ class JobCardController extends Controller
     public function store(Request $r)
     {
         $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
+        $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
         $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.str_pad((string) (JobCard::max('id') + 1), 4, '0', STR_PAD_LEFT), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
         DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+
+        // Send SMS to Customer & Technician immediately
+        $job->load('intake.bike.customer', 'technician');
+        $customer = $job->intake?->bike?->customer;
+        $smsService = app(\App\Services\Sms\TextitSmsService::class);
+
+        if ($customer && $customer->phone) {
+            $smsService->send($customer->phone, "Fasmir Motors: Job Card {$job->number} has been created for your bike {$job->intake->bike->number}. Status: {$job->status}.", [
+                'module' => 'Job Card',
+                'message_type' => 'Customer Alert',
+                'recipient_name' => $customer->name,
+                'recipient_type' => 'customer',
+                'reference_no' => $job->number,
+                'related_type' => $job->getMorphClass(),
+                'related_id' => $job->id,
+                'sent_by' => auth()->id(),
+            ]);
+        }
+
+        if ($job->main_technician_id && $job->technician && $job->technician->phone) {
+            $smsService->send($job->technician->phone, "Dear {$job->technician->name}, Job Card {$job->number} has been assigned to you for bike {$job->intake->bike->number}. Complaint: " . ($job->intake->complaint ?? 'N/A') . ". Priority: {$job->priority}.", [
+                'module' => 'Job Card',
+                'message_type' => 'Technician Alert',
+                'recipient_name' => $job->technician->name,
+                'recipient_type' => 'technician',
+                'reference_no' => $job->number,
+                'related_type' => $job->getMorphClass(),
+                'related_id' => $job->id,
+                'sent_by' => auth()->id(),
+            ]);
+        }
 
         return redirect()->route('jobs.show', $job)->with('success', 'Job card created.');
     }
@@ -73,9 +105,11 @@ class JobCardController extends Controller
     {
         $v = $r->validate(['status' => 'required|in:'.implode(',', self::statuses()), 'main_technician_id' => 'nullable|required_if:status,Assigned|exists:technicians,id', 'change_reason' => 'nullable|max:500', 'parts_total' => 'nullable|numeric|min:0', 'service_total' => 'nullable|numeric|min:0', 'labor_total' => 'nullable|numeric|min:0', 'washing_total' => 'nullable|numeric|min:0', 'other_total' => 'nullable|numeric|min:0', 'discount' => 'nullable|numeric|min:0', 'tax' => 'nullable|numeric|min:0']);
         $old = $job->status;
+        $changeReason = $v['change_reason'] ?? null;
+        unset($v['change_reason']);
         $job->update($v);
         if ($old !== $job->status) {
-            DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'old_status' => $old, 'new_status' => $job->status, 'note' => $r->change_reason, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'old_status' => $old, 'new_status' => $job->status, 'note' => $changeReason, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
         }
 
         return back()->with('success', 'Job card updated.');
@@ -114,6 +148,33 @@ class JobCardController extends Controller
         }$job->update(['parts_total' => $job->parts()->sum('total')]);
 
         return back()->with('success', $out ? 'Part added with an out-of-stock warning.' : 'Part issued from stock.');
+    }
+
+    public function updatePartPrice(Request $r, JobCard $job, \App\Models\JobCardPart $part)
+    {
+        $v = $r->validate([
+            'unit_price' => 'required|numeric|min:0'
+        ]);
+
+        $price = (float) $v['unit_price'];
+        $qty = (float) $part->quantity;
+        $discount = (float) $part->discount;
+
+        $total = $qty * $price - $discount;
+        $profit = $total - ($qty * (float)$part->cost_price);
+
+        $part->update([
+            'unit_price' => $price,
+            'selling_price' => $price,
+            'total' => $total,
+            'profit' => $profit
+        ]);
+
+        $job->update([
+            'parts_total' => $job->parts()->sum('total')
+        ]);
+
+        return back()->with('success', 'Part selling price updated successfully.');
     }
 
     public function invoice(Request $r, JobCard $job, WorkshopService $service)

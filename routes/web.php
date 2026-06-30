@@ -52,6 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('bike-intakes/lookup/{number}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
     Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->only(['index', 'create', 'store', 'show'])->names('intakes');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
+    Route::post('job-cards/{job}/parts/{part}/update-price', [JobCardController::class, 'updatePartPrice'])->name('jobs.parts.update-price');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::resource('job-cards', JobCardController::class)->parameters(['job-cards' => 'job'])->only(['index', 'create', 'store', 'show', 'update'])->names('jobs');
     Route::get('products/references', [ProductController::class, 'references'])->name('products.references');
