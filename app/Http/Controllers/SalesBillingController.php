@@ -163,7 +163,7 @@ class SalesBillingController extends Controller
 
     public function invoiceShow(Invoice $invoice)
     {
-        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'payments.account'])]);
+        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'payments.account'])]);
     }
 
     public function cancelInvoice(Request $request, Invoice $invoice, WorkshopService $service)

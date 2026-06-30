@@ -10,6 +10,8 @@ use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\JobCard;
+use App\Models\JobCardPart;
+use App\Models\JobCardService;
 use App\Models\Product;
 use App\Models\ProductCategory as Category;
 use App\Models\Role;
@@ -52,7 +54,7 @@ class SampleDataSeeder extends Seeder
         $pad = Product::firstOrCreate(['name' => 'Honda Brake Pad'], ['category_id' => $catParts->id, 'code' => 'HN-BP01', 'selling_price' => 1500]);
 
         // 3. Stock Batches
-        StockBatch::firstOrCreate(['product_id' => $oil->id], [
+        $oilBatch = StockBatch::firstOrCreate(['product_id' => $oil->id], [
             'store_id' => $store->id,
             'purchased_qty' => 20,
             'available_qty' => 20,
@@ -61,7 +63,7 @@ class SampleDataSeeder extends Seeder
             'batch_no' => 'B-001',
             'purchase_date' => today(),
         ]);
-        StockBatch::firstOrCreate(['product_id' => $pad->id], [
+        $padBatch = StockBatch::firstOrCreate(['product_id' => $pad->id], [
             'store_id' => $store->id,
             'purchased_qty' => 15,
             'available_qty' => 15,
@@ -78,8 +80,8 @@ class SampleDataSeeder extends Seeder
         $bike1 = Bike::firstOrCreate(['number' => 'WP ABC-1234'], ['customer_id' => $customer1->id, 'brand' => 'Honda', 'model' => 'Dio']);
         $bike2 = Bike::firstOrCreate(['number' => 'SP XYZ-9876'], ['customer_id' => $customer2->id, 'brand' => 'Yamaha', 'model' => 'FZ']);
 
-        // 5. Intakes & Job Cards (For today and yesterday)
-        $dates = [today()->subDay(), today()];
+        // 5. Intakes & Job Cards (For the last 5 days)
+        $dates = collect(range(0, 4))->map(fn($days) => today()->subDays($days))->reverse()->values();
 
         foreach ($dates as $index => $date) {
             // Intake
@@ -101,6 +103,26 @@ class SampleDataSeeder extends Seeder
                 'created_at' => $date,
             ]);
 
+            // Job Card Parts
+            JobCardPart::firstOrCreate(['job_card_id' => $job->id, 'product_id' => $oil->id], [
+                'store_id' => $store->id,
+                'stock_batch_id' => $oilBatch->id,
+                'cost_price' => 1500,
+                'selling_price' => 2200,
+                'quantity' => 1,
+                'unit_price' => 2200,
+                'total' => 2200,
+                'profit' => 700,
+                'created_at' => $date
+            ]);
+
+            // Job Card Services
+            JobCardService::firstOrCreate(['job_card_id' => $job->id, 'description' => 'Full Service Charge'], [
+                'type' => 'Service',
+                'amount' => 2500,
+                'created_at' => $date
+            ]);
+
             // Invoice for Job
             $invoice = Invoice::firstOrCreate(['number' => 'INV-'.$date->format('Ymd').'-'.($index + 1)], [
                 'job_card_id' => $job->id,
@@ -114,7 +136,7 @@ class SampleDataSeeder extends Seeder
                 'paid_amount' => 4500,
                 'due_amount' => 0,
                 'payment_method' => 'Cash',
-                'invoice_type' => 'job',
+                'invoice_type' => 'Job Card Bill',
                 'status' => 'final',
                 'public_token' => Str::random(32),
                 'store_id' => $store->id,
@@ -137,6 +159,8 @@ class SampleDataSeeder extends Seeder
                 'account_id' => $mainAcc->id,
                 'transaction_type' => 'income',
                 'amount' => 4500,
+                'credit' => 4500,
+                'debit' => 0,
                 'description' => 'Payment for Invoice ' . $invoice->number,
                 'payment_method' => 'Cash',
                 'transaction_date' => $date,
@@ -145,60 +169,66 @@ class SampleDataSeeder extends Seeder
             ]);
         }
 
-        // 6. Direct Spare Parts Sale
-        $saleInv = Invoice::firstOrCreate(['number' => 'INV-SP-'.today()->format('Ymd').'-1'], [
-            'customer_id' => $customer2->id,
-            'subtotal' => 1500,
-            'total' => 1500,
-            'parts_amount' => 1500,
-            'paid_amount' => 1500,
-            'due_amount' => 0,
-            'payment_method' => 'Card',
-            'invoice_type' => 'parts',
-            'status' => 'final',
-            'public_token' => Str::random(32),
-            'store_id' => $store->id,
-            'created_by' => $admin->id,
-            'created_at' => today(),
-        ]);
-        InvoiceItem::firstOrCreate(['invoice_id' => $saleInv->id, 'product_id' => $pad->id], [
-            'store_id' => $store->id,
-            'quantity' => 1,
-            'unit_price' => 1500,
-            'total' => 1500,
-        ]);
-        AccountTransaction::firstOrCreate(['reference_id' => $saleInv->id, 'reference_type' => Invoice::class], [
-            'transaction_no' => 'TRN-' . time() . rand(100, 999),
-            'account_type' => 'spare_parts',
-            'account_id' => $partsAcc->id,
-            'transaction_type' => 'income',
-            'amount' => 1500,
-            'description' => 'Payment for Spare Parts Sale ' . $saleInv->number,
-            'payment_method' => 'Card',
-            'transaction_date' => today(),
-            'created_by' => $admin->id,
-            'created_at' => today()
-        ]);
+        // 6. Direct Spare Parts Sale (Multiple dates)
+        foreach ($dates as $index => $date) {
+            $saleInv = Invoice::firstOrCreate(['number' => 'INV-SP-' . $date->format('Ymd') . '-1'], [
+                'customer_id' => $customer2->id,
+                'subtotal' => 1500,
+                'total' => 1500,
+                'parts_amount' => 1500,
+                'paid_amount' => 1500,
+                'due_amount' => 0,
+                'payment_method' => 'Card',
+                'invoice_type' => 'Parts Sale',
+                'status' => 'final',
+                'public_token' => Str::random(32),
+                'store_id' => $store->id,
+                'created_by' => $admin->id,
+                'created_at' => $date
+            ]);
+            InvoiceItem::firstOrCreate(['invoice_id' => $saleInv->id, 'product_id' => $pad->id], [
+                'store_id' => $store->id,
+                'quantity' => 1,
+                'unit_price' => 1500,
+                'total' => 1500
+            ]);
+            AccountTransaction::firstOrCreate(['reference_id' => $saleInv->id, 'reference_type' => Invoice::class], [
+                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'account_type' => 'spare_parts',
+                'account_id' => $partsAcc->id,
+                'transaction_type' => 'income',
+                'amount' => 1500,
+                'credit' => 1500,
+                'debit' => 0,
+                'description' => 'Payment for Spare Parts Sale ' . $saleInv->number,
+                'payment_method' => 'Card',
+                'transaction_date' => $date,
+                'created_by' => $admin->id,
+                'created_at' => $date
+            ]);
 
-        // Add a bank transfer for spare parts (from parts to bank)
-        AccountTransaction::firstOrCreate(['account_id' => $partsAcc->id, 'transaction_type' => 'transfer_out', 'amount' => 1000], [
-            'transaction_no' => 'TRN-' . time() . rand(100, 999),
-            'account_type' => 'spare_parts',
-            'description' => 'Transfer to Bank',
-            'payment_method' => 'Transfer',
-            'transaction_date' => today(),
-            'created_by' => $admin->id,
-            'created_at' => today()
-        ]);
-        AccountTransaction::firstOrCreate(['account_id' => $bankAcc->id, 'transaction_type' => 'transfer_in', 'amount' => 1000], [
-            'transaction_no' => 'TRN-' . time() . rand(100, 999),
-            'account_type' => 'bank',
-            'description' => 'Transfer from Spare Parts',
-            'payment_method' => 'Transfer',
-            'transaction_date' => today(),
-            'created_by' => $admin->id,
-            'created_at' => today()
-        ]);
+            // Add a bank transfer for spare parts (from parts to bank)
+            AccountTransaction::firstOrCreate(['account_id' => $partsAcc->id, 'transaction_type' => 'transfer_out', 'amount' => 1000, 'transaction_date' => $date], [
+                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'account_type' => 'spare_parts',
+                'debit' => 1000,
+                'credit' => 0,
+                'description' => 'Transfer to Bank',
+                'payment_method' => 'Transfer',
+                'created_by' => $admin->id,
+                'created_at' => $date
+            ]);
+            AccountTransaction::firstOrCreate(['account_id' => $bankAcc->id, 'transaction_type' => 'transfer_in', 'amount' => 1000, 'transaction_date' => $date], [
+                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'account_type' => 'bank',
+                'debit' => 0,
+                'credit' => 1000,
+                'description' => 'Transfer from Spare Parts',
+                'payment_method' => 'Transfer',
+                'created_by' => $admin->id,
+                'created_at' => $date
+            ]);
+        }
 
         // 7. Expenses
         $expense = Expense::firstOrCreate(['description' => 'Electricity Bill', 'amount' => 500, 'expense_date' => today()], [
@@ -215,6 +245,8 @@ class SampleDataSeeder extends Seeder
             'account_id' => $mainAcc->id,
             'transaction_type' => 'expense',
             'amount' => 500,
+            'debit' => 500,
+            'credit' => 0,
             'description' => 'Electricity Bill',
             'payment_method' => 'Cash',
             'transaction_date' => today(),
