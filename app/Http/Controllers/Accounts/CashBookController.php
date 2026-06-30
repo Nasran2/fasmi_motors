@@ -2,52 +2,27 @@
 
 namespace App\Http\Controllers\Accounts;
 
-use Illuminate\Http\Request;
-use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Models\AccountTransaction;
 use App\Services\AccountService;
+use Illuminate\Http\Request;
 
 class CashBookController extends BaseAccountController
 {
     public function index(Request $request)
     {
-        $query = $this->getLedgerQuery($request, 'cash');
-        
-        $transactions = $query->latest('transaction_date')->latest('id')->paginate(50);
-        $allTransactions = $query->get();
+        $d = $this->ledgerData($request, 'cash');
+        $p = $d['periodTransactions'];
+        $d += ['title' => 'Cash Book', 'subtitle' => 'Daily cash received, cash paid, and cash balance', 'type' => 'cash', 'cards' => ['Cash Opening Balance' => $d['totals']['opening'], 'Cash Sales' => $p->where('transaction_type', 'income')->sum('credit'), 'Cash Collections' => $p->where('transaction_type', 'payment_received')->sum('credit'), 'Cash Expenses' => $p->where('transaction_type', 'expense')->sum('debit'), 'Cash Drawings' => $p->where('transaction_type', 'drawing')->sum('debit'), 'Cash Closing Balance' => $d['totals']['closing']]];
 
-        $openingBalance = $allTransactions->where('transaction_type', 'opening_balance')->sum('credit') 
-                        - $allTransactions->where('transaction_type', 'opening_balance')->sum('debit');
-
-        $summary = [
-            'opening_balance' => $openingBalance,
-            'cash_collections' => $allTransactions->where('transaction_type', 'income')->sum('credit'),
-            'cash_sales' => $allTransactions->where('transaction_type', 'income')->where('category', 'parts_sale')->sum('credit'),
-            'cash_expenses' => $allTransactions->where('transaction_type', 'expense')->sum('debit'),
-            'cash_drawings' => $allTransactions->where('transaction_type', 'drawing')->sum('debit'),
-        ];
-        
-        $summary['closing_balance'] = $summary['opening_balance'] 
-                                    + $summary['cash_collections'] 
-                                    + $allTransactions->where('transaction_type', 'transfer_in')->sum('credit')
-                                    - $summary['cash_expenses']
-                                    - $summary['cash_drawings']
-                                    - $allTransactions->where('transaction_type', 'transfer_out')->sum('debit');
-
-        return view('accounts.cash-book', compact('transactions', 'summary'));
+        return view('accounts.ledger', $d);
     }
 
-    public function reverse(Request $request, AccountTransaction $transaction, AccountService $service)
+    public function reverse(Request $r, AccountTransaction $transaction, AccountService $s)
     {
-        $request->validate(['reason' => 'required|string|max:255']);
-        
-        if ($transaction->account_type !== 'cash') {
-            abort(403, 'Unauthorized');
-        }
+        $r->validate(['reason' => 'required|min:5|max:500']);
+        abort_unless($transaction->account_type === 'cash', 403);
+        $s->reverseTransaction($transaction, $r->reason);
 
-        $service->reverseTransaction($transaction, $request->reason);
-
-        return back()->with('success', 'Transaction reversed successfully.');
+        return back()->with('success', 'Transaction reversed with a compensating entry.');
     }
 }

@@ -1,8 +1,18 @@
 <?php
 
+use App\Http\Controllers\Accounts\AccountExportController;
+use App\Http\Controllers\Accounts\AccountTransferController;
+use App\Http\Controllers\Accounts\BankAccountController;
+use App\Http\Controllers\Accounts\CashBookController;
+use App\Http\Controllers\Accounts\ChequeController;
+use App\Http\Controllers\Accounts\DailyClosingController;
+use App\Http\Controllers\Accounts\MainAccountController;
+use App\Http\Controllers\Accounts\OpeningBalanceController;
+use App\Http\Controllers\Accounts\SparePartsAccountController;
 use App\Http\Controllers\BikeIntakeController;
 use App\Http\Controllers\CustomerBikeController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
@@ -11,6 +21,7 @@ use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SalesBillingController;
+use App\Http\Controllers\ServiceReminderController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\WorkspacePageController;
@@ -104,41 +115,63 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('accounts', [FinanceController::class, 'index'])->name('finance.index');
     Route::post('expenses', [FinanceController::class, 'expense'])->name('expenses.store');
     Route::post('drawings', [FinanceController::class, 'drawing'])->name('drawings.store');
+    Route::get('expenses/list', [ExpenseDrawingController::class, 'expenses'])->name('expenses.index');
+    Route::get('expenses/create', [ExpenseDrawingController::class, 'createExpense'])->name('expenses.create');
+    Route::post('expenses/create', [ExpenseDrawingController::class, 'storeExpense'])->name('expenses.store.full');
+    Route::get('expenses/categories', [ExpenseDrawingController::class, 'expenseCategories'])->name('expenses.categories');
+    Route::get('drawings/list', [ExpenseDrawingController::class, 'drawings'])->name('drawings.index');
+    Route::get('drawings/create', [ExpenseDrawingController::class, 'createDrawing'])->name('drawings.create');
+    Route::post('drawings/create', [ExpenseDrawingController::class, 'storeDrawing'])->name('drawings.store.full');
+    Route::get('drawings/categories', [ExpenseDrawingController::class, 'drawingCategories'])->name('drawings.categories');
+    Route::post('finance-categories/{module}', [ExpenseDrawingController::class, 'storeCategory'])->name('finance-categories.store');
+    Route::post('finance-module/{module}/{id}/cancel', [ExpenseDrawingController::class, 'cancel'])->name('finance-module.cancel');
+    Route::get('finance-module/{module}/export', [ExpenseDrawingController::class, 'export'])->name('finance-module.export');
+    Route::get('service-reminders/{page}', [ServiceReminderController::class, 'page'])->name('service-reminders.page');
+    Route::post('service-reminders', [ServiceReminderController::class, 'store'])->name('service-reminders.store');
+    Route::post('service-reminders/{reminder}/send', [ServiceReminderController::class, 'send'])->name('service-reminders.send');
+    Route::post('service-reminders/{reminder}/complete', [ServiceReminderController::class, 'complete'])->name('service-reminders.complete');
+    Route::post('service-reminders/{reminder}/reschedule', [ServiceReminderController::class, 'reschedule'])->name('service-reminders.reschedule');
+    Route::post('service-reminder-settings', [ServiceReminderController::class, 'saveSettings'])->name('service-reminders.settings.save');
     Route::post('account-transfers', [FinanceController::class, 'transfer'])->name('transfers.store');
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('system-settings', [SettingController::class, 'index'])->name('system-settings.index');
     Route::put('system-settings', [SettingController::class, 'update'])->name('system-settings.update');
-    
+
     // Accounts Module
     Route::prefix('accounts')->name('accounts.')->group(function () {
-        Route::get('main-ledger', [\App\Http\Controllers\Accounts\MainAccountController::class, 'index'])->name('main-ledger.index');
-        Route::post('main-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\MainAccountController::class, 'reverse'])->name('main-ledger.reverse');
-        
-        Route::get('spare-parts-ledger', [\App\Http\Controllers\Accounts\SparePartsAccountController::class, 'index'])->name('spare-parts-ledger.index');
-        Route::post('spare-parts-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\SparePartsAccountController::class, 'reverse'])->name('spare-parts-ledger.reverse');
+        Route::get('main-ledger', [MainAccountController::class, 'index'])->name('main-ledger.index');
+        Route::post('main-ledger/{transaction}/reverse', [MainAccountController::class, 'reverse'])->name('main-ledger.reverse');
 
-        Route::get('bank-ledger', [\App\Http\Controllers\Accounts\BankAccountController::class, 'index'])->name('bank-ledger.index');
-        Route::post('bank-ledger/{transaction}/reverse', [\App\Http\Controllers\Accounts\BankAccountController::class, 'reverse'])->name('bank-ledger.reverse');
+        Route::get('spare-parts-ledger', [SparePartsAccountController::class, 'index'])->name('spare-parts-ledger.index');
+        Route::post('spare-parts-ledger/{transaction}/reverse', [SparePartsAccountController::class, 'reverse'])->name('spare-parts-ledger.reverse');
 
-        Route::get('cash-book', [\App\Http\Controllers\Accounts\CashBookController::class, 'index'])->name('cash-book.index');
-        Route::post('cash-book/{transaction}/reverse', [\App\Http\Controllers\Accounts\CashBookController::class, 'reverse'])->name('cash-book.reverse');
+        Route::get('bank-ledger', [BankAccountController::class, 'index'])->name('bank-ledger.index');
+        Route::post('bank-ledger/{transaction}/reverse', [BankAccountController::class, 'reverse'])->name('bank-ledger.reverse');
 
-        Route::get('transfers', [\App\Http\Controllers\Accounts\AccountTransferController::class, 'index'])->name('transfers.index');
-        Route::post('transfers', [\App\Http\Controllers\Accounts\AccountTransferController::class, 'store'])->name('transfers.store');
+        Route::get('cash-book', [CashBookController::class, 'index'])->name('cash-book.index');
+        Route::post('cash-book/{transaction}/reverse', [CashBookController::class, 'reverse'])->name('cash-book.reverse');
 
-        Route::get('daily-closing', [\App\Http\Controllers\Accounts\DailyClosingController::class, 'index'])->name('daily-closing.index');
-        Route::post('daily-closing', [\App\Http\Controllers\Accounts\DailyClosingController::class, 'store'])->name('daily-closing.store');
+        Route::get('transfers', [AccountTransferController::class, 'index'])->name('transfers.index');
+        Route::post('transfers', [AccountTransferController::class, 'store'])->name('transfers.store');
+        Route::post('transfers/{transfer}/reverse', [AccountTransferController::class, 'reverse'])->name('transfers.reverse');
 
-        Route::get('cheques', [\App\Http\Controllers\Accounts\ChequeController::class, 'index'])->name('cheques.index');
-        Route::patch('cheques/{cheque}/status', [\App\Http\Controllers\Accounts\ChequeController::class, 'updateStatus'])->name('cheques.status');
+        Route::get('daily-closing', [DailyClosingController::class, 'index'])->name('daily-closing.index');
+        Route::post('daily-closing', [DailyClosingController::class, 'store'])->name('daily-closing.store');
+        Route::post('daily-closing/adjustment', [DailyClosingController::class, 'adjustment'])->name('daily-closing.adjustment');
+        Route::get('daily-closing/export', [DailyClosingController::class, 'export'])->name('daily-closing.export');
+        Route::post('daily-closing/{closing}/reopen', [DailyClosingController::class, 'reopen'])->name('daily-closing.reopen');
+
+        Route::get('cheques', [ChequeController::class, 'index'])->name('cheques.index');
+        Route::post('cheques', [ChequeController::class, 'store'])->name('cheques.store');
+        Route::patch('cheques/{cheque}/status', [ChequeController::class, 'updateStatus'])->name('cheques.status');
 
         // Card payments is essentially a filtered view of bank ledger. Using BankAccountController for now.
-        Route::get('card-payments', [\App\Http\Controllers\Accounts\BankAccountController::class, 'index'])->name('card-payments.index');
+        Route::get('card-payments', [BankAccountController::class, 'index'])->name('card-payments.index');
 
-        Route::get('opening-balances', [\App\Http\Controllers\Accounts\OpeningBalanceController::class, 'index'])->name('opening-balances.index');
-        Route::post('opening-balances', [\App\Http\Controllers\Accounts\OpeningBalanceController::class, 'store'])->name('opening-balances.store');
-        
-        Route::get('export/{type}', [\App\Http\Controllers\Accounts\AccountExportController::class, 'export'])->name('export');
+        Route::get('opening-balances', [OpeningBalanceController::class, 'index'])->name('opening-balances.index');
+        Route::post('opening-balances', [OpeningBalanceController::class, 'store'])->name('opening-balances.store');
+
+        Route::get('export/{type}', [AccountExportController::class, 'export'])->name('export');
     });
 
     Route::get('workspace/{section}/{page}', WorkspacePageController::class)

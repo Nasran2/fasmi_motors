@@ -21,4 +21,9 @@ class Drawing extends Model
     {
         return $this->belongsTo(Account::class);
     }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

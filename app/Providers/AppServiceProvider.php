@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use App\Models\AccountTransaction;
+use App\Models\AccountTransfer;
 use App\Models\AuditLog;
 use App\Models\Bike;
 use App\Models\BikeIntake;
+use App\Models\Cheque;
+use App\Models\DailyClosing;
 use App\Models\Drawing;
 use App\Models\Expense;
 use App\Models\Invoice;
@@ -48,7 +52,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class] as $model) {
+        foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class, AccountTransaction::class, AccountTransfer::class, DailyClosing::class, Cheque::class] as $model) {
             $model::created(fn (Model $item) => $this->audit('created', $item, [], $item->getAttributes()));
             $model::updated(fn (Model $item) => $this->audit('updated', $item, $item->getOriginal(), $item->getChanges()));
             $model::deleted(fn (Model $item) => $this->audit('deleted', $item, $item->getOriginal(), []));

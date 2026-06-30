@@ -61,7 +61,7 @@
                 Period: {{ $from ? \Carbon\Carbon::parse($from)->format('d/m/Y') : 'Start' }} to {{ $to ? \Carbon\Carbon::parse($to)->format('d/m/Y') : 'End' }}
             </div>
         @endif
-        <div class="subtitle">Generated on: {{ now()->format('d/m/Y h:i A') }}</div>
+        <div class="subtitle">Generated on: {{ now()->format('d/m/Y h:i A') }} by {{ $printedBy?->name ?? 'System' }}</div>
     </div>
 
     <table>
@@ -82,8 +82,8 @@
                 <tr>
                     <td>{{ $t->transaction_date->format('d/m/Y H:i A') }}</td>
                     <td>
-                        <span class="badge {{ $t->type === 'income' || $t->type === 'transfer_in' ? 'bg-green' : 'bg-red' }}">
-                            {{ ucfirst(str_replace('_', ' ', $t->type)) }}
+                        <span class="badge {{ $t->credit > 0 ? 'bg-green' : 'bg-red' }}">
+                            {{ ucfirst(str_replace('_', ' ', $t->transaction_type)) }}
                         </span>
                     </td>
                     <td>{{ $t->payment_method ?? '-' }}</td>
@@ -105,6 +105,7 @@
                 </tr>
             @endforelse
         </tbody>
+        <tfoot><tr><th colspan="5">Opening: Rs. {{ number_format($totals['opening'],2) }}</th><th class="text-right">{{ number_format($totals['debit'],2) }}</th><th class="text-right">{{ number_format($totals['credit'],2) }}</th><th class="text-right">{{ number_format($totals['closing'],2) }}</th></tr></tfoot>
     </table>
 </body>
 </html>

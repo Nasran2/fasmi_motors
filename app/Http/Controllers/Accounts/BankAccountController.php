@@ -2,53 +2,30 @@
 
 namespace App\Http\Controllers\Accounts;
 
-use Illuminate\Http\Request;
-use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Models\AccountTransaction;
 use App\Services\AccountService;
+use Illuminate\Http\Request;
 
 class BankAccountController extends BaseAccountController
 {
     public function index(Request $request)
     {
-        $query = $this->getLedgerQuery($request, 'bank');
-        
-        $transactions = $query->latest('transaction_date')->latest('id')->paginate(50);
-        $allTransactions = $query->get();
+        $d = $this->ledgerData($request, 'bank');
+        $p = $d['periodTransactions'];
+        $cardMode = $request->routeIs('accounts.card-payments.index');
+        if ($cardMode) {
+            $d['transactions'] = $d['transactions']->appends(request()->query());
+        }$d += ['title' => $cardMode ? 'Card / Bank Payments' : 'Bank Account Ledger', 'subtitle' => $cardMode ? 'Track card, bank transfer, QR, and settlement payments' : 'Card, bank transfer, QR, cheque, and online payment records', 'type' => 'bank', 'cardMode' => $cardMode, 'cards' => ['Opening Balance' => $d['totals']['opening'], 'Bank Transfers Received' => $p->where('payment_method', 'Bank Transfer')->sum('credit'), 'Card Payments' => $p->where('payment_method', 'Card')->sum('credit'), 'QR Payments' => $p->where('payment_method', 'QR')->sum('credit'), 'Cheque Payments' => $p->where('payment_method', 'Cheque')->sum('credit'), 'Bank Expenses' => $d['totals']['expense'], 'Closing Balance' => $d['totals']['closing']]];
 
-        $openingBalance = $allTransactions->where('transaction_type', 'opening_balance')->sum('credit') 
-                        - $allTransactions->where('transaction_type', 'opening_balance')->sum('debit');
-
-        $summary = [
-            'opening_balance' => $openingBalance,
-            'bank_receipts' => $allTransactions->whereIn('payment_method', ['bank_transfer', 'qr', 'card', 'bank_deposit', 'online_transfer'])->sum('credit'),
-            'card_payments' => $allTransactions->where('payment_method', 'card')->sum('credit'),
-            'cheque_payments' => $allTransactions->where('payment_method', 'cheque')->sum('credit'),
-            'bank_expenses' => $allTransactions->where('transaction_type', 'expense')->sum('debit'),
-            'transfers' => $allTransactions->where('transaction_type', 'transfer_in')->sum('credit') - $allTransactions->where('transaction_type', 'transfer_out')->sum('debit'),
-        ];
-        
-        $summary['closing_balance'] = $summary['opening_balance'] 
-                                    + $summary['bank_receipts'] 
-                                    + $summary['cheque_payments']
-                                    + $allTransactions->where('transaction_type', 'transfer_in')->sum('credit')
-                                    - $summary['bank_expenses']
-                                    - $allTransactions->where('transaction_type', 'transfer_out')->sum('debit');
-
-        return view('accounts.bank-ledger', compact('transactions', 'summary'));
+        return view('accounts.ledger', $d);
     }
 
-    public function reverse(Request $request, AccountTransaction $transaction, AccountService $service)
+    public function reverse(Request $r, AccountTransaction $transaction, AccountService $s)
     {
-        $request->validate(['reason' => 'required|string|max:255']);
-        
-        if ($transaction->account_type !== 'bank') {
-            abort(403, 'Unauthorized');
-        }
+        $r->validate(['reason' => 'required|min:5|max:500']);
+        abort_unless($transaction->account_type === 'bank', 403);
+        $s->reverseTransaction($transaction, $r->reason);
 
-        $service->reverseTransaction($transaction, $request->reason);
-
-        return back()->with('success', 'Transaction reversed successfully.');
+        return back()->with('success', 'Transaction reversed with a compensating entry.');
     }
 }

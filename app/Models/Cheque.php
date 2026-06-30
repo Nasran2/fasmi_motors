@@ -30,4 +30,9 @@ class Cheque extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'bank_account_id');
+    }
 }

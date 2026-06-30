@@ -3,68 +3,48 @@
 namespace App\Http\Controllers\Accounts;
 
 use App\Http\Controllers\Controller;
+use App\Models\Account;
 use App\Models\AccountTransaction;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
 class BaseAccountController extends Controller
 {
-    /**
-     * Get base query with global date filters.
-     */
-    protected function getLedgerQuery(Request $request, string $accountType)
+    protected function ledgerData(Request $request, string $accountType): array
     {
-        $query = AccountTransaction::with(['creator', 'reference'])
-            ->where('account_type', $accountType);
+        [$from, $to, $range] = $this->range($request);
+        $account = Account::where('code', match ($accountType) {
+            'main' => 'MAIN','spare_parts' => 'SPARE','bank' => 'BANK','cash' => 'MAIN'
+        })->first();
+        $base = AccountTransaction::with(['creator', 'account', 'reference'])->where('account_type', $accountType)
+            ->whereBetween('transaction_date', [$from, $to])->where('status', 'active')
+            ->when($request->transaction_type, fn (Builder $q, string $type) => $q->where('transaction_type', $type))
+            ->when($request->payment_method, fn (Builder $q, string $method) => $q->where('payment_method', $method))
+            ->when($request->created_by, fn (Builder $q, string $user) => $q->where('created_by', $user))
+            ->when($request->search, fn (Builder $q, string $term) => $q->where(fn (Builder $nested) => $nested->where('transaction_no', 'like', "%{$term}%")->orWhere('description', 'like', "%{$term}%")));
+        $period = (clone $base)->orderBy('transaction_date')->orderBy('id')->get();
+        $opening = (float) ($account?->opening_balance ?? 0) + (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->where('transaction_date', '<', $from)->sum('credit') - (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->where('transaction_date', '<', $from)->sum('debit');
+        $credit = (float) $period->sum('credit');
+        $debit = (float) $period->sum('debit');
 
-        if ($request->filled('date_range')) {
-            switch ($request->date_range) {
-                case 'today':
-                    $query->whereDate('transaction_date', today());
-                    break;
-                case 'yesterday':
-                    $query->whereDate('transaction_date', today()->subDay());
-                    break;
-                case 'this_week':
-                    $query->whereBetween('transaction_date', [now()->startOfWeek(), now()->endOfWeek()]);
-                    break;
-                case 'last_week':
-                    $query->whereBetween('transaction_date', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()]);
-                    break;
-                case 'this_month':
-                    $query->whereBetween('transaction_date', [now()->startOfMonth(), now()->endOfMonth()]);
-                    break;
-                case 'last_month':
-                    $query->whereBetween('transaction_date', [now()->subMonth()->startOfMonth(), now()->subMonth()->endOfMonth()]);
-                    break;
-                case 'this_year':
-                    $query->whereBetween('transaction_date', [now()->startOfYear(), now()->endOfYear()]);
-                    break;
-                case 'last_year':
-                    $query->whereBetween('transaction_date', [now()->subYear()->startOfYear(), now()->subYear()->endOfYear()]);
-                    break;
-                case 'custom':
-                    if ($request->filled('start_date') && $request->filled('end_date')) {
-                        $query->whereBetween('transaction_date', [$request->start_date . ' 00:00:00', $request->end_date . ' 23:59:59']);
-                    }
-                    break;
-            }
-        }
+        return ['transactions' => (clone $base)->latest('transaction_date')->latest('id')->paginate(25)->withQueryString(), 'periodTransactions' => $period, 'account' => $account, 'users' => User::orderBy('name')->get(['id', 'name']), 'from' => $from, 'to' => $to, 'range' => $range, 'totals' => ['opening' => $opening, 'debit' => $debit, 'credit' => $credit, 'income' => (float) $period->whereIn('transaction_type', ['income', 'payment_received'])->sum('credit'), 'expense' => (float) $period->whereIn('transaction_type', ['expense', 'drawing', 'purchase_payment', 'supplier_payment'])->sum('debit'), 'transfer_in' => (float) $period->where('transaction_type', 'transfer_in')->sum('credit'), 'transfer_out' => (float) $period->where('transaction_type', 'transfer_out')->sum('debit'), 'closing' => $opening + $credit - $debit]];
+    }
 
-        if ($request->filled('transaction_type')) {
-            $query->where('transaction_type', $request->transaction_type);
-        }
+    protected function range(Request $request): array
+    {
+        $range = $request->date_range ?: 'today';
+        [$from,$to] = match ($range) {
+            'yesterday' => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],
+            'this_week' => [now()->startOfWeek(), now()->endOfWeek()], 'last_week' => [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()],
+            'this_month' => [now()->startOfMonth(), now()->endOfMonth()], 'last_month' => [now()->subMonth()->startOfMonth(), now()->subMonth()->endOfMonth()],
+            'this_year' => [now()->startOfYear(), now()->endOfYear()], 'last_year' => [now()->subYear()->startOfYear(), now()->subYear()->endOfYear()],
+            'custom' => [Carbon::parse($request->start_date ?: today())->startOfDay(), Carbon::parse($request->end_date ?: today())->endOfDay()],
+            default => [today()->startOfDay(), today()->endOfDay()],
+        };
+        $request->merge(['date_range' => $range, 'from' => $from->toDateString(), 'to' => $to->toDateString()]);
 
-        if ($request->filled('payment_method')) {
-            $query->where('payment_method', $request->payment_method);
-        }
-
-        if ($request->filled('search')) {
-            $query->where(function($q) use ($request) {
-                $q->where('transaction_no', 'like', '%' . $request->search . '%')
-                  ->orWhere('description', 'like', '%' . $request->search . '%');
-            });
-        }
-
-        return $query;
+        return [$from, $to, $range];
     }
 }

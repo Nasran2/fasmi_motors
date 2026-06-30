@@ -11,10 +11,9 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\StockBatch;
 use App\Models\Store;
-use App\Models\Store;
 use App\Models\Technician;
-use App\Services\WorkshopService;
 use App\Services\AccountService;
+use App\Services\WorkshopService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -140,10 +139,8 @@ class SalesBillingController extends Controller
             if ($v['account_id']) {
                 $accountService = app(AccountService::class);
                 $accountService->recordTransaction('spare_parts', 'income', $paid, "Payment for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
-                
-                if (in_array($v['payment_method'], ['Cash'])) {
-                    $accountService->recordTransaction('cash', 'income', $paid, "Cash receipt for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
-                } else {
+
+                if (! in_array($v['payment_method'], ['Cash'])) {
                     $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for Sale #$invoice->number", $payment, $v['payment_method'], null, $v['account_id']);
                 }
             }
@@ -288,30 +285,28 @@ class SalesBillingController extends Controller
         $invoice->refresh();
         $invoice->update(['status' => (float) $invoice->due_amount <= 0 ? 'Paid' : 'Partially Paid', 'payment_method' => $method]);
         $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => $method, 'reference' => $reference, 'paid_at' => $paidAt, 'note' => $note, 'status' => 'Completed', 'created_by' => auth()->id()]);
-        
+
         $accountService = app(AccountService::class);
         $this->postIncomeLedgers($invoice, $payment, $amount, $method, $accountService, false, $accountId);
 
         return $payment;
     }
 
-    private function postIncomeLedgers(Invoice $invoice, Payment $payment, float $amount, string $method, AccountService $service, bool $reversal, int $accountId = null): void
+    private function postIncomeLedgers(Invoice $invoice, Payment $payment, float $amount, string $method, AccountService $service, bool $reversal, ?int $accountId = null): void
     {
         $partsShare = (float) $invoice->total > 0 ? min($amount, $amount * ((float) $invoice->parts_amount / (float) $invoice->total)) : 0;
         $mainShare = max(0, $amount - $partsShare);
-        
+
         $type = $reversal ? 'refund' : 'income';
-        
+
         if ($partsShare > 0) {
             $service->recordTransaction('spare_parts', $type, $partsShare, ($reversal ? 'Reversal ' : '')."parts income {$invoice->number}", $payment, $method, null, $accountId);
         }
         if ($mainShare > 0) {
             $service->recordTransaction('main', $type, $mainShare, ($reversal ? 'Reversal ' : '')."service income {$invoice->number}", $payment, $method, null, $accountId);
         }
-        
-        if (in_array($method, ['Cash'], true)) {
-            $service->recordTransaction('cash', $reversal ? 'expense' : 'income', $amount, ($reversal ? 'Reversal ' : '')."cash receipt {$invoice->number}", $payment, $method, null, $accountId);
-        } else {
+
+        if (! in_array($method, ['Cash'], true)) {
             $service->recordTransaction('bank', $reversal ? 'expense' : 'income', $amount, ($reversal ? 'Reversal ' : '')."bank receipt {$invoice->number}", $payment, $method, null, $accountId);
         }
     }

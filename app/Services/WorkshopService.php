@@ -18,14 +18,24 @@ class WorkshopService
 {
     public function ledger(Account $account, string $type, float $amount, string $description, ?Model $reference = null, ?string $category = null): AccountTransaction
     {
-        $outgoing = in_array($type, ['expense', 'drawing', 'transfer_out', 'refund', 'purchase', 'supplier_payment'], true);
+        $accountType = match ($account->code) {
+            'SPARE' => 'spare_parts',
+            'BANK' => 'bank',
+            default => 'main',
+        };
 
-        return $account->transactions()->create([
-            'transaction_date' => now(), 'type' => $type, 'debit' => $outgoing ? $amount : 0,
-            'credit' => $outgoing ? 0 : $amount, 'amount' => $amount, 'category' => $category,
-            'description' => $description, 'created_by' => auth()->id(),
-            'reference_type' => $reference?->getMorphClass(), 'reference_id' => $reference?->getKey(),
-        ]);
+        return app(AccountService::class)->recordTransaction(
+            $accountType,
+            $type,
+            $amount,
+            $description,
+            $reference,
+            null,
+            null,
+            $account->id,
+            now(),
+            $category,
+        );
     }
 
     public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null): Invoice
@@ -56,9 +66,9 @@ class WorkshopService
             }
             $partsPaid = $total > 0 ? min((float) $job->parts_total, $paid * ((float) $job->parts_total / $total)) : 0;
             $servicePaid = max(0, $paid - $partsPaid);
-            
-            $accountService = app(\App\Services\AccountService::class);
-            
+
+            $accountService = app(AccountService::class);
+
             if ($partsPaid > 0) {
                 $accountService->recordTransaction('spare_parts', 'income', $partsPaid, "Parts income for {$invoice->number}", $payment, $method, null, $accountId);
             }
@@ -66,9 +76,7 @@ class WorkshopService
                 $accountService->recordTransaction('main', 'income', $servicePaid, "Workshop income for {$invoice->number}", $payment, $method, null, $accountId);
             }
             if ($paid > 0) {
-                if (in_array($method, ['Cash'])) {
-                    $accountService->recordTransaction('cash', 'income', $paid, "Cash receipt for {$invoice->number}", $payment, $method, null, $accountId);
-                } else {
+                if (! in_array($method, ['Cash'])) {
                     $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for {$invoice->number}", $payment, $method, null, $accountId);
                 }
             }

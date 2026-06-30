@@ -13,8 +13,8 @@ use App\Models\TechnicianBikeDeduction;
 use App\Models\TechnicianCommission;
 use App\Models\TechnicianContribution;
 use App\Models\TechnicianSalarySheet;
-use App\Services\WorkshopService;
 use App\Services\AccountService;
+use App\Services\WorkshopService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -152,7 +152,7 @@ class TechnicianController extends Controller
         $deductions = $advances + $bikeDeduction + $late + $noPay + (float) ($data['other_deductions'] ?? 0);
         $net = max(0, $gross - $deductions - $employeeEpf);
         $paid = min($net, (float) ($data['paid_amount'] ?? 0));
-        $sheet = DB::transaction(function () use ($data, $technician, $start, $end, $attendance, $present, $absent, $otHours, $basic, $ot, $commission, $advances, $bikeDeduction, $late, $noPay, $employeeEpf, $companyEpf, $companyEtf, $gross, $deductions, $net, $paid, $service) {
+        $sheet = DB::transaction(function () use ($data, $technician, $start, $end, $attendance, $present, $absent, $otHours, $basic, $ot, $commission, $advances, $bikeDeduction, $late, $noPay, $employeeEpf, $companyEpf, $companyEtf, $gross, $deductions, $net, $paid) {
             $sheet = TechnicianSalarySheet::create(['number' => 'PAY-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'technician_id' => $technician->id, 'period_start' => $start, 'period_end' => $end, 'working_days' => $attendance->count(), 'present_days' => $present, 'absent_days' => $absent, 'ot_hours' => $otHours, 'basic_salary' => $basic, 'ot_amount' => $ot, 'commission' => $commission, 'gross_salary' => $gross, 'advances' => $advances, 'late_deduction' => $late, 'no_pay_deduction' => $noPay, 'own_bike_deduction' => $bikeDeduction, 'other_deductions' => $data['other_deductions'] ?? 0, 'deductions' => $deductions, 'epf_employee' => $employeeEpf, 'epf_company' => $companyEpf, 'etf_company' => $companyEtf, 'net_payable' => $net, 'paid_amount' => $paid, 'balance_amount' => $net - $paid, 'status' => $paid >= $net ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Draft'), 'account_id' => $data['account_id'] ?? null, 'payment_method' => $data['payment_method'] ?? null, 'created_by' => auth()->id()]);
             TechnicianContribution::create(['technician_id' => $technician->id, 'salary_sheet_id' => $sheet->id, 'month' => $start, 'basic_salary' => $basic, 'employee_epf_percentage' => $technician->epf_employee_percentage, 'employee_epf_amount' => $employeeEpf, 'company_epf_percentage' => $technician->epf_company_percentage, 'company_epf_amount' => $companyEpf, 'company_etf_percentage' => $technician->etf_company_percentage, 'company_etf_amount' => $companyEtf]);
             if ($paid > 0) {
@@ -178,14 +178,14 @@ class TechnicianController extends Controller
     public function advanceStore(Request $request, WorkshopService $service)
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'payment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', 'max:50'], 'deduct_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000']]);
-        DB::transaction(function () use ($data, $service) {
+        DB::transaction(function () use ($data) {
             $advance = TechnicianAdvance::create($data + ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'deduct_month' => $data['deduct_month'].'-01', 'created_by' => auth()->id()]);
-            
+
             $accountService = app(AccountService::class);
             if (in_array($data['payment_method'], ['Cash'])) {
-                $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id']);
+                $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id'], $data['payment_date'], 'salary_advance');
             } else {
-                $accountService->recordTransaction('bank', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id']);
+                $accountService->recordTransaction('bank', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id'], $data['payment_date'], 'salary_advance');
             }
         });
 

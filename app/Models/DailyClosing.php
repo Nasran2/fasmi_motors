@@ -28,6 +28,11 @@ class DailyClosing extends Model
         'cash_expense' => 'decimal:2',
         'cash_closing_balance' => 'decimal:2',
         'difference' => 'decimal:2',
+        'main_actual_balance' => 'decimal:2', 'main_difference' => 'decimal:2',
+        'spare_parts_actual_balance' => 'decimal:2', 'spare_parts_difference' => 'decimal:2',
+        'bank_actual_balance' => 'decimal:2', 'bank_difference' => 'decimal:2',
+        'cash_actual_balance' => 'decimal:2', 'cash_difference' => 'decimal:2',
+        'reopened_at' => 'datetime',
     ];
 
     public function closer(): BelongsTo

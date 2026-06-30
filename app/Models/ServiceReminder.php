@@ -11,7 +11,7 @@ class ServiceReminder extends Model
 
     protected function casts(): array
     {
-        return ['due_date' => 'date', 'sent_at' => 'datetime'];
+        return ['due_date' => 'date', 'last_service_date' => 'date', 'sent_at' => 'datetime', 'completed_at' => 'datetime'];
     }
 
     /** @return BelongsTo<Bike, $this> */

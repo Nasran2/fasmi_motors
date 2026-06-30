@@ -2,53 +2,32 @@
 
 namespace App\Http\Controllers\Accounts;
 
-use Illuminate\Http\Request;
-use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Models\AccountTransaction;
+use App\Models\InvoiceItem;
+use App\Models\Product;
 use App\Services\AccountService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SparePartsAccountController extends BaseAccountController
 {
     public function index(Request $request)
     {
-        $query = $this->getLedgerQuery($request, 'spare_parts');
-        
-        $transactions = $query->latest('transaction_date')->latest('id')->paginate(50);
-        $allTransactions = $query->get();
+        $d = $this->ledgerData($request, 'spare_parts');
+        $p = $d['periodTransactions'];
+        $sales = (float) $p->where('transaction_type', 'income')->sum('credit');
+        $cost = (float) InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$d['from'], $d['to']])->where('status', '!=', 'Cancelled'))->sum(DB::raw('quantity*cost_price'));
+        $d += ['title' => 'Spare Parts Ledger', 'subtitle' => 'Parts sales, purchase payments, drawings, and spare parts account balance', 'type' => 'spare_parts', 'cards' => ['Opening Balance' => $d['totals']['opening'], 'Parts Sales' => $sales, 'Parts Cost' => $cost, 'Gross Profit' => $sales - $cost, 'Purchase Payments' => $p->whereIn('transaction_type', ['purchase_payment', 'supplier_payment'])->sum('debit'), 'Drawings' => $p->where('transaction_type', 'drawing')->sum('debit'), 'Transfer In' => $d['totals']['transfer_in'], 'Transfer Out' => $d['totals']['transfer_out'], 'Closing Balance' => $d['totals']['closing']], 'extra' => ['Stock Value at Cost' => Product::join('store_stocks', 'products.id', '=', 'store_stocks.product_id')->sum(DB::raw('store_stocks.quantity*products.cost_price')), 'Stock Value at Selling Price' => Product::join('store_stocks', 'products.id', '=', 'store_stocks.product_id')->sum(DB::raw('store_stocks.quantity*products.selling_price'))]];
 
-        $openingBalance = $allTransactions->where('transaction_type', 'opening_balance')->sum('credit') 
-                        - $allTransactions->where('transaction_type', 'opening_balance')->sum('debit');
-
-        $summary = [
-            'opening_balance' => $openingBalance,
-            'parts_sales' => $allTransactions->where('transaction_type', 'income')->sum('credit'),
-            'purchase_payments' => $allTransactions->where('transaction_type', 'purchase_payment')->sum('debit'),
-            'drawings' => $allTransactions->where('transaction_type', 'drawing')->sum('debit'),
-            'transfer_in' => $allTransactions->where('transaction_type', 'transfer_in')->sum('credit'),
-            'transfer_out' => $allTransactions->where('transaction_type', 'transfer_out')->sum('debit'),
-        ];
-        
-        $summary['closing_balance'] = $summary['opening_balance'] 
-                                    + $summary['parts_sales'] 
-                                    + $summary['transfer_in']
-                                    - $summary['purchase_payments']
-                                    - $summary['drawings']
-                                    - $summary['transfer_out'];
-
-        return view('accounts.spare-parts-ledger', compact('transactions', 'summary'));
+        return view('accounts.ledger', $d);
     }
 
-    public function reverse(Request $request, AccountTransaction $transaction, AccountService $service)
+    public function reverse(Request $r, AccountTransaction $transaction, AccountService $s)
     {
-        $request->validate(['reason' => 'required|string|max:255']);
-        
-        if ($transaction->account_type !== 'spare_parts') {
-            abort(403, 'Unauthorized');
-        }
+        $r->validate(['reason' => 'required|min:5|max:500']);
+        abort_unless($transaction->account_type === 'spare_parts', 403);
+        $s->reverseTransaction($transaction, $r->reason);
 
-        $service->reverseTransaction($transaction, $request->reason);
-
-        return back()->with('success', 'Transaction reversed successfully.');
+        return back()->with('success', 'Transaction reversed with a compensating entry.');
     }
 }
