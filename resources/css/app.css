@@ -273,3 +273,106 @@ select:focus[data-flux-control] {
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */
+
+/* ============================================================
+   GLOBAL INPUT / FORM FIELD VISIBILITY FIX
+   Ensures all inputs, selects, and textareas have clear borders
+   ============================================================ */
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-flux-control]):not(.erp-search):not(.noinput),
+select:not([data-flux-control]):not(.noinput),
+textarea:not([data-flux-control]):not(.noinput) {
+    min-height: 44px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1 !important;
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 500;
+    transition: border-color .2s ease, box-shadow .2s ease;
+    outline: none;
+    width: 100%;
+}
+
+select:not([data-flux-control]):not(.noinput) {
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+textarea:not([data-flux-control]):not(.noinput) {
+    min-height: 100px;
+    resize: vertical;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-flux-control]):not(.noinput):hover,
+select:not([data-flux-control]):not(.noinput):hover,
+textarea:not([data-flux-control]):not(.noinput):hover {
+    border-color: #94a3b8 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-flux-control]):not(.noinput):focus,
+select:not([data-flux-control]):not(.noinput):focus,
+textarea:not([data-flux-control]):not(.noinput):focus {
+    border-color: #ef233c !important;
+    box-shadow: 0 0 0 3px rgba(239, 35, 60, .1) !important;
+    outline: none !important;
+}
+
+input:not([data-flux-control]):not(.noinput):disabled,
+select:not([data-flux-control]):not(.noinput):disabled,
+textarea:not([data-flux-control]):not(.noinput):disabled {
+    background: #f1f5f9 !important;
+    color: #64748b !important;
+    cursor: not-allowed;
+    border-color: #e2e8f0 !important;
+}
+
+input[readonly]:not([data-flux-control]) {
+    background: #f8fafc !important;
+    color: #475569 !important;
+    border-style: dashed !important;
+}
+
+.field {
+    @apply min-h-[44px] w-full rounded-xl bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400;
+    border: 1.5px solid #cbd5e1 !important;
+}
+
+.field:hover { border-color: #94a3b8 !important; }
+.field:focus { border-color: #ef233c !important; box-shadow: 0 0 0 3px rgba(239,35,60,.1) !important; }
+
+.label {
+    @apply block text-[13px] font-bold text-slate-700;
+    margin-bottom: 6px;
+}
+
+.required-star { color: #ef233c; }
+
+.form-help {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 5px;
+}
+
+.is-invalid, input.is-invalid, select.is-invalid, textarea.is-invalid {
+    border-color: #dc2626 !important;
+    background: #fff5f5 !important;
+}
+
+.invalid-feedback {
+    color: #dc2626;
+    font-size: 12px;
+    margin-top: 4px;
+    display: block;
+}
+
+/* SMS Center specific badge classes */
+.badge-sent    { @apply inline-block rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700; }
+.badge-failed  { @apply inline-block rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700; }
+.badge-pending { @apply inline-block rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700; }
+.badge-delivered { @apply inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700; }
