@@ -22,7 +22,11 @@ class JobCardController extends Controller
     {
         $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
         if ($r->status) {
-            $q->where('status', $r->status);
+            if ($r->status === 'Completed') {
+                $q->whereIn('status', ['Completed', 'Billed', 'Delivered']);
+            } else {
+                $q->where('status', $r->status);
+            }
         }
 
         return view('jobs.index', [
@@ -98,6 +102,13 @@ class JobCardController extends Controller
             ])->values(),
         ])->values();
 
+        $statusLogs = DB::table('job_card_status_logs')
+            ->leftJoin('users', 'job_card_status_logs.changed_by', '=', 'users.id')
+            ->where('job_card_id', $job->id)
+            ->select('job_card_status_logs.*', 'users.name as changer_name')
+            ->orderBy('job_card_status_logs.created_at', 'desc')
+            ->get();
+
         return view('jobs.show', [
             'job' => $job->load('intake.bike.customer', 'technician', 'parts.product', 'services', 'invoice.payments'),
             'technicians' => Technician::where('active', 1)->get(),
@@ -106,18 +117,49 @@ class JobCardController extends Controller
             'stores' => Store::where('active', 1)->get(),
             'statuses' => self::statuses(),
             'accounts' => Account::where('active', 1)->get(),
+            'statusLogs' => $statusLogs,
         ]);
     }
 
     public function update(Request $r, JobCard $job)
     {
-        $v = $r->validate(['status' => 'required|in:'.implode(',', self::statuses()), 'main_technician_id' => 'nullable|required_if:status,Assigned|exists:technicians,id', 'change_reason' => 'nullable|max:500', 'parts_total' => 'nullable|numeric|min:0', 'service_total' => 'nullable|numeric|min:0', 'labor_total' => 'nullable|numeric|min:0', 'washing_total' => 'nullable|numeric|min:0', 'other_total' => 'nullable|numeric|min:0', 'discount' => 'nullable|numeric|min:0', 'tax' => 'nullable|numeric|min:0']);
+        $isCurrentLocked = in_array($job->status, ['Billed', 'Completed', 'Delivered']);
+        
+        if ($isCurrentLocked) {
+            $v = $r->validate([
+                'status' => 'required|in:Billed,Completed,Delivered',
+                'change_reason' => 'required|string|max:500',
+            ]);
+        } else {
+            $v = $r->validate([
+                'status' => 'required|in:'.implode(',', self::statuses()),
+                'main_technician_id' => 'nullable|required_if:status,Assigned|exists:technicians,id',
+                'change_reason' => 'nullable|max:500',
+                'parts_total' => 'nullable|numeric|min:0',
+                'service_total' => 'nullable|numeric|min:0',
+                'labor_total' => 'nullable|numeric|min:0',
+                'washing_total' => 'nullable|numeric|min:0',
+                'other_total' => 'nullable|numeric|min:0',
+                'discount' => 'nullable|numeric|min:0',
+                'tax' => 'nullable|numeric|min:0',
+            ]);
+        }
+
         $old = $job->status;
         $changeReason = $v['change_reason'] ?? null;
         unset($v['change_reason']);
         $job->update($v);
+
         if ($old !== $job->status) {
-            DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'old_status' => $old, 'new_status' => $job->status, 'note' => $changeReason, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('job_card_status_logs')->insert([
+                'job_card_id' => $job->id,
+                'old_status' => $old,
+                'new_status' => $job->status,
+                'note' => $changeReason,
+                'changed_by' => auth()->id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         }
 
         $this->syncInvoice($job);
@@ -212,6 +254,31 @@ class JobCardController extends Controller
         }
 
         return redirect()->route('invoices.public', $invoice->public_token)->with('success', 'Invoice generated.');
+    }
+
+    public function unlock(Request $r, JobCard $job)
+    {
+        $v = $r->validate([
+            'status' => 'required|in:In Progress,Diagnosis,Waiting for Parts,On Hold,Repair Ready,Ready for Delivery',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $old = $job->status;
+        $job->update(['status' => $v['status']]);
+
+        DB::table('job_card_status_logs')->insert([
+            'job_card_id' => $job->id,
+            'old_status' => $old,
+            'new_status' => $v['status'],
+            'note' => '[Unlocked] ' . $v['reason'],
+            'changed_by' => auth()->id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->syncInvoice($job);
+
+        return back()->with('success', 'Job card unlocked and status set to ' . $v['status']);
     }
 
     private function syncInvoice(JobCard $job)

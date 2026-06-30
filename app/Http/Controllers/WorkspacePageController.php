@@ -157,7 +157,14 @@ class WorkspacePageController extends Controller
 
     private function jobRecords(Request $request, array $group, array $page, string $status): View
     {
-        $query = JobCard::with('intake.bike.customer', 'technician', 'invoice')->where('status', $status)->latest();
+        $query = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
+        if ($status === 'Completed') {
+            $query->whereIn('status', ['Completed', 'Billed', 'Delivered']);
+            $jobIds = JobCard::whereIn('status', ['Completed', 'Billed', 'Delivered'])->pluck('id');
+        } else {
+            $query->where('status', $status);
+            $jobIds = JobCard::where('status', $status)->pluck('id');
+        }
 
         if ($request->filled('q')) {
             $term = trim((string) $request->q);
@@ -167,8 +174,6 @@ class WorkspacePageController extends Controller
                     ->orWhereHas('intake.bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
             });
         }
-
-        $jobIds = JobCard::where('status', $status)->pluck('id');
 
         return view('workspace.job-records', [
             'group' => $group,

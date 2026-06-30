@@ -12,9 +12,20 @@
       'Delivered'         => 'bg-teal-100 text-teal-700 border border-teal-200',
       'Cancelled'         => 'bg-rose-100 text-rose-700 border border-rose-200',
   ];
+  $isLocked = in_array($job->status, ['Completed', 'Billed', 'Delivered']);
 @endphp
 <div class="space-y-5"><div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">{{ $job->number }} · {{ $job->intake->bike->number }}</h1><p class="page-subtitle">{{ $job->intake->bike->model }} · {{ $job->intake->bike->customer->name ?: 'Walk-in customer' }} · {{ $job->intake->bike->customer->phone }}</p></div><span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusColors[$job->status] ?? 'bg-slate-100 text-slate-700' }}">{{ $job->status }}</span></div><x-flash/>
-<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf @method('PUT')<label><span class="label">Status</span><select name="status" class="field">@foreach($statuses as $s)<option @selected($job->status===$s)>{{ $s }}</option>@endforeach</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field"><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes</span><input name="change_reason" class="field"></label>@foreach(['service_total'=>'Service','labor_total'=>'Labor','washing_total'=>'Washing','other_total'=>'Other income','discount'=>'Discount','tax'=>'Tax'] as $name=>$label)<label><span class="label">{{ $label }} (LKR)</span><input type="number" step=".01" name="{{ $name }}" value="{{ $job->$name }}" class="field"></label>@endforeach<div class="sm:col-span-2 text-right"><button class="btn-primary">Update job</button></div></form></div>
+<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
+@if($isLocked)
+    @foreach(['Billed', 'Completed', 'Delivered'] as $s)
+        <option @selected($job->status===$s)>{{ $s }}</option>
+    @endforeach
+@else
+    @foreach($statuses as $s)
+        <option @selected($job->status===$s)>{{ $s }}</option>
+    @endforeach
+@endif
+</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes @if($isLocked) * @endif</span><input name="change_reason" class="field" @required($isLocked) placeholder="@if($isLocked)Enter reason for status change (required)...@endif"></label>@foreach(['service_total'=>'Service','labor_total'=>'Labor','washing_total'=>'Washing','other_total'=>'Other income','discount'=>'Discount','tax'=>'Tax'] as $name=>$label)<label><span class="label">{{ $label }} (LKR)</span><input type="number" step=".01" name="{{ $name }}" value="{{ $job->$name }}" class="field" @disabled($isLocked)></label>@endforeach<div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
     <div class="panel">
         <h2 class="mb-4 font-bold">Bill summary</h2>
@@ -94,6 +105,11 @@
         <h2 class="font-extrabold text-slate-800">⚙️ Spare Parts</h2>
     </div>
 
+    @if($isLocked)
+    <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center mb-5" style="background-color: #f8fafc !important; border: 1px dashed #cbd5e1 !important;">
+        <p class="text-xs font-extrabold text-slate-500">⚙️ Spare parts list is locked because this Job Card is Billed or Completed. To edit spare parts, click **Request Changes / Edit Job** in the Work details panel.</p>
+    </div>
+    @else
     {{-- POS Aligned Form Layout --}}
     <form method="POST" action="{{ route('jobs.parts.store',$job) }}" id="job-part-form" class="mb-5 grid gap-3 grid-cols-2 md:grid-cols-6 items-end border border-slate-100 bg-slate-50/30 p-4 rounded-xl">
         @csrf
@@ -131,13 +147,14 @@
             <button class="btn-primary !min-h-9 !py-1 !px-4">Add / issue part</button>
         </div>
     </form>
+    @endif
 
     {{-- Issued Parts List --}}
     <div class="table-wrap">
         <table class="data-table text-xs">
             <thead>
                 <tr>
-                    <th class="font-bold">Product Name (Click to edit price)</th>
+                    <th class="font-bold">{{ $isLocked ? 'Product Name' : 'Product Name (Click to edit price)' }}</th>
                     <th class="font-bold">Store</th>
                     <th class="font-bold">Qty</th>
                     <th class="font-bold">Price</th>
@@ -149,9 +166,13 @@
                 @forelse($job->parts as $part)
                 <tr>
                     <td>
+                        @if($isLocked)
+                        <span class="font-extrabold text-slate-755 text-slate-700">{{ $part->product->name }}</span>
+                        @else
                         <button type="button" onclick="openPriceModal('{{ $part->id }}', '{{ $part->product->name }}', '{{ $part->cost_price }}', '{{ $part->unit_price }}')" class="font-extrabold text-blue-600 hover:underline text-left">
                             {{ $part->product->name }}
                         </button>
+                        @endif
                     </td>
                     <td>{{ $stores->firstWhere('id',$part->store_id)?->name }}</td>
                     <td>{{ $part->quantity }}</td>
@@ -168,6 +189,49 @@
                 @endforelse
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="panel mt-4">
+    <h2 class="mb-4 font-bold text-slate-800 flex items-center gap-2">
+        <span>⏱️ Status History & Change Logs</span>
+    </h2>
+    <div class="flow-root">
+        <ul role="list" class="-mb-8">
+            @forelse($statusLogs as $index => $log)
+            <li>
+                <div class="relative pb-8">
+                    @if($index !== count($statusLogs) - 1)
+                    <span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true"></span>
+                    @endif
+                    <div class="relative flex space-x-3">
+                        <div>
+                            <span class="flex size-8 items-center justify-center rounded-full bg-slate-100 ring-8 ring-white text-xs">
+                                📌
+                            </span>
+                        </div>
+                        <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                            <div>
+                                <p class="text-xs text-slate-600">
+                                    Status changed from <span class="font-extrabold text-slate-500">{{ $log->old_status }}</span> to <span class="font-extrabold text-emerald-600">{{ $log->new_status }}</span> by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>
+                                </p>
+                                @if($log->note)
+                                <p class="mt-1 text-[11px] font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded p-1.5 inline-block">
+                                    Note: {{ $log->note }}
+                                </p>
+                                @endif
+                            </div>
+                            <div class="whitespace-nowrap text-right text-[10px] font-bold text-slate-400">
+                                <time datetime="{{ $log->created_at }}">{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y, h:i A') }}</time>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </li>
+            @empty
+            <p class="text-xs font-semibold text-slate-400 text-center py-4">No status logs recorded for this Job Card.</p>
+            @endforelse
+        </ul>
     </div>
 </div>
 </div>
@@ -391,5 +455,44 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
     
     dialog.showModal();
 }
+
+function openUnlockModal() {
+    document.getElementById('unlock-job-dialog').showModal();
+}
 </script>
+
+{{-- Unlock Job Dialog --}}
+<dialog id="unlock-job-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <form method="POST" action="{{ route('jobs.unlock', $job) }}" class="p-6">
+        @csrf
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-amber-600">Reopen Job Card</p>
+                <h2 class="mt-1 text-xl font-black text-slate-900" style="color: #0f172a !important;">Unlock Job Card</h2>
+            </div>
+            <button type="button" onclick="document.getElementById('unlock-job-dialog').close()" class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-slate-500 hover:bg-slate-200">×</button>
+        </div>
+        <div class="mt-4 grid gap-4">
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Change Status To *</span>
+                <select name="status" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Diagnosis">Diagnosis</option>
+                    <option value="Waiting for Parts">Waiting for Parts</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Repair Ready">Repair Ready</option>
+                    <option value="Ready for Delivery">Ready for Delivery</option>
+                </select>
+            </label>
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Reason for Changes *</span>
+                <textarea name="reason" rows="3" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" placeholder="Enter the reason why you are modifying this billed/completed job card..." required></textarea>
+            </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('unlock-job-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
+            <button class="btn-primary" style="background-color: #d97706 !important;">Unlock & Edit</button>
+        </div>
+    </form>
+</dialog>
 </div></x-layouts::app>

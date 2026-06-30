@@ -41,6 +41,10 @@ class LiveBoardController extends Controller
         $jobs = JobCard::query()
             ->with(['intake.bike.customer', 'technician', 'parts', 'invoice'])
             ->whereNotIn('status', self::TERMINAL_STATUSES)
+            ->where(function ($q) {
+                $q->where('status', '!=', 'Billed')
+                    ->orWhereHas('invoice', fn ($inv) => $inv->where('due_amount', '>', 0));
+            })
             ->when($request->filled('technician_id'), fn ($query) => $query->where('main_technician_id', $request->integer('technician_id')))
             ->when($request->filled('priority'), fn ($query) => $query->where('priority', $request->string('priority')))
             ->when($request->filled('q'), function ($query) use ($request) {
@@ -79,6 +83,8 @@ class LiveBoardController extends Controller
                 'due_today' => (bool) $intake?->estimated_delivery_date?->isToday(),
                 'parts_shortage' => $job->parts->where('out_of_stock', true)->count(),
                 'due_amount' => $invoiceDue,
+                'invoice_id' => $job->invoice?->id,
+                'invoice_number' => $job->invoice?->number,
                 'job_url' => route('jobs.show', $job),
                 'parts_url' => route('jobs.show', $job).'#spare-parts',
                 'bill_url' => route('sales.job-billing', ['job' => $job->id]),

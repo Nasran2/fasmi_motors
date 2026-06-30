@@ -1,4 +1,5 @@
 @php
+    $accounts = \App\Models\Account::where('active', 1)->get();
     $columns = [
         'new_intake' => ['New Intake', '#2563eb', 'bike'],
         'diagnosis' => ['Diagnosis', '#f97316', 'search'],
@@ -106,8 +107,8 @@
     </section>
     @endunless
 
-    <section class="board-scroll overflow-x-auto pb-3" aria-label="Live bike status columns">
-        <div class="board-grid grid min-w-[1880px] grid-cols-8 gap-3 {{ $fullscreen ? '2xl:min-w-full' : '' }}">
+    <section aria-label="Live bike status columns">
+        <div class="board-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
             @foreach($columns as $key => [$label, $color, $iconName])
                 <article data-board-column="{{ $key }}" class="board-column rounded-2xl border border-slate-200/90 p-2.5" style="--column-color:{{ $color }};background:linear-gradient(180deg,color-mix(in srgb,{{ $color }} 7%,white),rgba(255,255,255,.68))">
                     <div class="mb-2 flex items-center justify-between px-1 py-1.5">
@@ -156,6 +157,19 @@
     </div>
 </dialog>
 
+{{-- Status Change Confirmation Dialog --}}
+<dialog id="status-confirm-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 24rem !important;">
+    <div class="p-5 text-center">
+        <span class="mx-auto grid size-12 place-items-center rounded-full bg-red-50 text-red-600 text-2xl mb-3">❓</span>
+        <h3 class="text-base font-extrabold text-slate-900" style="color: #0f172a !important;">Confirm Status Change</h3>
+        <p class="mt-2 text-xs text-slate-500 font-semibold leading-relaxed" id="status-confirm-text" style="color: #64748b !important;">Are you sure you want to change the status of this job?</p>
+        <div class="mt-5 flex justify-center gap-2">
+            <button type="button" id="status-confirm-cancel" class="rounded-xl px-4 py-2.5 text-xs font-bold transition-colors" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
+            <button type="button" id="status-confirm-ok" class="rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 transition-colors shadow-lg shadow-red-100">Yes, Change</button>
+        </div>
+    </div>
+</dialog>
+
 <script>
 (() => {
     const root = document.getElementById('live-bike-board');
@@ -177,7 +191,7 @@
 
     function card(job, index) {
         const priority = ['Urgent','High'].includes(job.priority) ? `<span class="rounded-md bg-red-50 px-1.5 py-1 text-[9px] font-black text-red-600">🔥 ${esc(job.priority)}</span>` : '';
-        const warning = job.due_amount > 0 ? `<span class="rounded-md bg-rose-50 px-1.5 py-1 text-[9px] font-black text-rose-700">⚠ ${money(job.due_amount)} due</span>` : '';
+        const warning = job.due_amount > 0 ? `<span class="inline-flex items-center gap-1 rounded-md bg-rose-50 px-1.5 py-1 text-[9px] font-black text-rose-700"><span>⚠ ${money(job.due_amount)} due</span><button type="button" onclick="openDuePaymentModal(${job.invoice_id}, ${job.due_amount}, '${job.invoice_number}')" class="rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-extrabold px-1.5 py-0.5 leading-none ml-1 transition-colors">Pay</button></span>` : '';
         const shortage = job.parts_shortage ? `<span class="rounded-md bg-violet-50 px-1.5 py-1 text-[9px] font-black text-violet-700">📦 ${job.parts_shortage} part${job.parts_shortage > 1 ? 's' : ''} short</span>` : '';
         const due = job.due_today ? '<span class="rounded-md bg-orange-50 px-1.5 py-1 text-[9px] font-black text-orange-600">⏱ Due today</span>' : (job.due ? `<span class="rounded-md bg-slate-50 px-1.5 py-1 text-[9px] font-bold text-slate-500">Due ${esc(job.due)}</span>` : '');
         const statusControl = job.is_intake ? '' : `<select data-status-job="${job.id}" data-current-status="${job.status}" class="mt-2.5 h-8 w-full !border-slate-200 !bg-white !px-2 !py-1 text-[10px] font-bold" style="color:${colors[job.status]}">${Object.entries(labels).map(([key,label]) => `<option value="${key}" ${key === job.status ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
@@ -222,8 +236,40 @@
         }
     }
 
+    function showStatusConfirm(jobId, status) {
+        return new Promise((resolve) => {
+            const dialog = document.getElementById('status-confirm-dialog');
+            const confirmBtn = document.getElementById('status-confirm-ok');
+            const cancelBtn = document.getElementById('status-confirm-cancel');
+            
+            document.getElementById('status-confirm-text').textContent = `Change job status to ${labels[status]}?`;
+            
+            const onConfirm = () => {
+                cleanup();
+                resolve(true);
+            };
+            
+            const onCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+            
+            const cleanup = () => {
+                confirmBtn.removeEventListener('click', onConfirm);
+                cancelBtn.removeEventListener('click', onCancel);
+                dialog.close();
+            };
+            
+            confirmBtn.addEventListener('click', onConfirm);
+            cancelBtn.addEventListener('click', onCancel);
+            
+            dialog.showModal();
+        });
+    }
+
     async function changeStatus(jobId, status, previousStatus = null) {
-        if (!confirm(`Change job status to ${labels[status]}?`)) return false;
+        const confirmed = await showStatusConfirm(jobId, status);
+        if (!confirmed) return false;
         const response = await fetch(`{{ url('/workshop/live-board/jobs') }}/${jobId}/status`, {method:'PATCH', headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-TOKEN':csrf}, body:JSON.stringify({status})});
         if (!response.ok) { alert('Status could not be updated. Please try again.'); return false; }
         await loadBoard();
@@ -287,4 +333,69 @@
     updateClock(); setInterval(updateClock, 1000);
     loadBoard(); setInterval(loadBoard, root.dataset.fullscreen === '1' ? 30000 : 15000);
 })();
+
+function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
+    const dialog = document.getElementById('due-payment-dialog');
+    const form = document.getElementById('due-payment-form');
+    
+    form.action = `{{ url('customer-dues') }}/${invoiceId}/payment`;
+    document.getElementById('due-payment-title').textContent = `Pay Bill ${invoiceNumber}`;
+    document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    const amountInput = document.getElementById('due-payment-amount');
+    amountInput.value = parseFloat(dueAmount).toFixed(2);
+    amountInput.max = parseFloat(dueAmount);
+    
+    dialog.showModal();
+}
 </script>
+
+{{-- Due Payment Dialog --}}
+<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <form method="POST" id="due-payment-form" class="p-6">
+        @csrf
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-red-600">Payment Collection</p>
+                <h2 class="mt-1 text-xl font-black text-slate-900" id="due-payment-title" style="color: #0f172a !important;">Receive Payment</h2>
+            </div>
+            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-slate-500 hover:bg-slate-200">×</button>
+        </div>
+        <div class="mt-4 rounded-2xl bg-red-50 p-4" style="background-color: #fef2f2 !important; border: 1px solid #fee2e2 !important;">
+            <p class="text-xs font-bold text-red-500">Outstanding Due</p>
+            <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
+        </div>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Payment Amount *</span>
+                <input type="number" step="0.01" min="0.01" name="amount" id="due-payment-amount" class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+            </label>
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Payment Method *</span>
+                <select name="method" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
+                    <option>Cash</option>
+                    <option>Card</option>
+                    <option>Bank Transfer</option>
+                    <option>Cheque</option>
+                    <option>QR</option>
+                </select>
+            </label>
+            <label class="sm:col-span-2 block">
+                <span class="label" style="color: #475569 !important;">Deposit Account *</span>
+                <select name="account_id" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+                    @foreach($accounts as $account)
+                    <option value="{{ $account->id }}">{{ $account->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <label class="sm:col-span-2 block">
+                <span class="label" style="color: #475569 !important;">Note</span>
+                <textarea name="note" rows="2" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;"></textarea>
+            </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
+            <button class="btn-primary">Save Payment</button>
+        </div>
+    </form>
+</dialog>

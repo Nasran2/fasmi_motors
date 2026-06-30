@@ -59,6 +59,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
     Route::post('job-cards/{job}/parts/{part}/update-price', [JobCardController::class, 'updatePartPrice'])->name('jobs.parts.update-price');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
+    Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');
     Route::resource('job-cards', JobCardController::class)->parameters(['job-cards' => 'job'])->only(['index', 'create', 'store', 'show', 'update'])->names('jobs');
     Route::get('products/references', [ProductController::class, 'references'])->name('products.references');
     Route::post('products/references/{type}', [ProductController::class, 'referenceStore'])->name('products.references.store');
