@@ -162,6 +162,38 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('system-settings', [SettingController::class, 'index'])->name('system-settings.index');
     Route::put('system-settings', [SettingController::class, 'update'])->name('system-settings.update');
 
+    Route::prefix('system-settings')->name('system-settings.')->group(function () {
+        Route::get('general-settings', [SettingController::class, 'generalSettings'])->name('general-settings');
+        Route::get('business-profile', [SettingController::class, 'businessProfile'])->name('business-profile');
+        Route::get('branch-store-settings', [SettingController::class, 'branchStoreSettings'])->name('branch-store-settings');
+        Route::get('invoice-settings', [SettingController::class, 'invoiceSettings'])->name('invoice-settings');
+        Route::get('job-card-settings', [SettingController::class, 'jobCardSettings'])->name('job-card-settings');
+        Route::get('account-settings', [SettingController::class, 'accountSettings'])->name('account-settings');
+        Route::get('stock-settings', [SettingController::class, 'stockSettings'])->name('stock-settings');
+        Route::get('technician-settings', [SettingController::class, 'technicianSettings'])->name('technician-settings');
+        Route::get('salary-settings', [SettingController::class, 'salarySettings'])->name('salary-settings');
+        Route::get('epf-etf-settings', [SettingController::class, 'epfEtfSettings'])->name('epf-etf-settings');
+        Route::get('sms-settings', [SettingController::class, 'smsSettings'])->name('sms-settings');
+        Route::get('service-reminder-settings', [SettingController::class, 'serviceReminderSettings'])->name('service-reminder-settings');
+        Route::get('payment-method-settings', [SettingController::class, 'paymentMethodSettings'])->name('payment-method-settings');
+        Route::get('tax-discount-settings', [SettingController::class, 'taxDiscountSettings'])->name('tax-discount-settings');
+        Route::get('backup-settings', [SettingController::class, 'backupSettings'])->name('backup-settings');
+        Route::get('system-security', [SettingController::class, 'systemSecurity'])->name('system-security');
+        Route::get('audit-log-settings', [SettingController::class, 'auditLogSettings'])->name('audit-log-settings');
+
+        // Actions
+        Route::post('save', [SettingController::class, 'save'])->name('save');
+        Route::post('test-sms', [SettingController::class, 'testSms'])->name('test-sms');
+        Route::post('create-backup', [SettingController::class, 'createBackup'])->name('create-backup');
+        Route::post('restore-backup', [SettingController::class, 'restoreBackup'])->name('restore-backup');
+        Route::post('delete-backup', [SettingController::class, 'deleteBackup'])->name('delete-backup');
+        Route::post('verify-developer-pin', [SettingController::class, 'verifyDeveloperPin'])->name('verify-developer-pin');
+
+        // Store CRUD
+        Route::post('stores', [SettingController::class, 'storeStore'])->name('stores.store');
+        Route::put('stores/{store}', [SettingController::class, 'updateStore'])->name('stores.update');
+    });
+
     // User Management Module
     Route::prefix('user-management')->name('user-management.')->group(function () {
         // Users

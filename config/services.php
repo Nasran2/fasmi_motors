@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'developer' => [
+        'pin' => env('DEVELOPER_PIN', '4921'),
+    ],
+
 ];
