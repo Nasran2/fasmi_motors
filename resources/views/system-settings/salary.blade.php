@@ -395,6 +395,28 @@
           </div>
         </div>
 
+        {{-- Section 9: Payslip Printing --}}
+        <div class="panel bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+          <h3 class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Payslip Printing</h3>
+          
+          <div class="space-y-4">
+            <div>
+              <label class="label">Slip Paper Size <span class="required-star">*</span></label>
+              <select name="slip_paper_size" class="w-full">
+                <option value="A4" @selected($salarySetting->slip_paper_size === 'A4')>A4 Size</option>
+                <option value="A5" @selected($salarySetting->slip_paper_size === 'A5')>A5 Size</option>
+                <option value="POS" @selected($salarySetting->slip_paper_size === 'POS')>80mm POS Thermal</option>
+              </select>
+            </div>
+
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="hidden" name="slip_show_attendance" value="0">
+              <input type="checkbox" name="slip_show_attendance" value="1" @checked($salarySetting->slip_show_attendance) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+              <span class="text-xs font-bold text-slate-700">Show daily attendance breakdown on printed slip</span>
+            </label>
+          </div>
+        </div>
+
       </div>
 
     </form>
