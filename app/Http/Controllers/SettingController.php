@@ -66,6 +66,11 @@ class SettingController extends Controller
             $data = $r->validate([
                 'salary_cycle' => 'required|string',
                 'salary_month_start_day' => 'required|integer|min:1|max:31',
+                'salary_cycle_mode' => 'required|in:normal_calendar,custom_cutoff',
+                'custom_cutoff_enabled' => 'nullable|boolean',
+                'cycle_start_rule' => 'nullable|string|max:100',
+                'cycle_end_day' => 'nullable|integer|min:1|max:31',
+                'carry_missing_days' => 'nullable|boolean',
                 'allow_daily_advance' => 'nullable|boolean',
                 'opening_time' => 'required|string',
                 'closing_time' => 'required|string',
@@ -102,14 +107,17 @@ class SettingController extends Controller
                 
                 'paysheet_finalize_lock' => 'nullable|boolean',
                 'require_reason_reopen_paysheet' => 'nullable|boolean',
+                
+                'slip_show_attendance' => 'nullable|boolean',
+                'slip_paper_size' => 'required|string',
             ]);
 
             // Booleans fallback
             $booleans = [
-                'allow_daily_advance', 'enable_late_deduction', 'require_reason_late_edit',
+                'allow_daily_advance', 'custom_cutoff_enabled', 'carry_missing_days', 'enable_late_deduction', 'require_reason_late_edit',
                 'enable_early_leave_deduction', 'require_reason_early_leave', 'enable_ot',
                 'require_ot_approval', 'allow_manual_ot_override', 'enable_half_day',
-                'paysheet_finalize_lock', 'require_reason_reopen_paysheet'
+                'paysheet_finalize_lock', 'require_reason_reopen_paysheet', 'slip_show_attendance'
             ];
             foreach ($booleans as $b) {
                 $data[$b] = $r->has($b) ? (bool)$r->input($b) : false;
@@ -117,7 +125,18 @@ class SettingController extends Controller
             $data['work_days'] = $r->input('work_days', []);
 
             $oldVal = $salarySetting->toArray();
+            $cycleData = [
+                'salary_cycle_mode' => $data['salary_cycle_mode'],
+                'custom_cutoff_enabled' => $data['custom_cutoff_enabled'],
+                'cycle_start_rule' => $data['cycle_start_rule'] ?: 'previous_month_balance_day',
+                'cycle_end_day' => $data['cycle_end_day'] ?: 30,
+                'carry_missing_days' => $data['carry_missing_days'],
+                'updated_by' => auth()->id(),
+            ];
+            unset($data['salary_cycle_mode'], $data['custom_cutoff_enabled'], $data['cycle_start_rule'], $data['cycle_end_day'], $data['carry_missing_days']);
+
             $salarySetting->update($data);
+            \App\Models\SalaryCycleSetting::current()->update($cycleData);
             $newVal = $salarySetting->fresh()->toArray();
 
             // Handle OT Slabs
@@ -322,8 +341,9 @@ class SettingController extends Controller
     {
         $settings = $this->getSettings();
         $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
+        $salaryCycleSetting = \App\Models\SalaryCycleSetting::current();
         $otSlabs = \App\Models\OtSlabRule::orderBy('sort_order')->orderBy('from_minutes')->get();
-        return view('system-settings.salary', compact('settings', 'salarySetting', 'otSlabs'));
+        return view('system-settings.salary', compact('settings', 'salarySetting', 'salaryCycleSetting', 'otSlabs'));
     }
 
     // ─── 10. EPF / ETF SETTINGS ──────────────────────────────────

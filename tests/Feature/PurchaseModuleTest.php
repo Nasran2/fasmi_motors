@@ -18,6 +18,26 @@ test('all purchase module pages render complete live interfaces', function () {
     }
 });
 
+test('supplier list shows a clickable product count and filters the product list', function () {
+    $user = User::factory()->create();
+    $supplier = Supplier::create(['name' => 'Counted Supplier', 'active' => true]);
+    $otherSupplier = Supplier::create(['name' => 'Other Supplier', 'active' => true]);
+    Product::create(['code' => 'COUNTED-1', 'name' => 'Counted Product One', 'supplier_id' => $supplier->id]);
+    Product::create(['code' => 'COUNTED-2', 'name' => 'Counted Product Two', 'supplier_id' => $supplier->id]);
+    Product::create(['code' => 'OTHER-1', 'name' => 'Other Product', 'supplier_id' => $otherSupplier->id]);
+
+    $this->actingAs($user)->get(route('purchases.suppliers'))
+        ->assertOk()
+        ->assertSee(route('products.index', ['supplier' => $supplier->id]))
+        ->assertSeeText('2');
+
+    $this->actingAs($user)->get(route('products.index', ['supplier' => $supplier->id]))
+        ->assertOk()
+        ->assertSeeText('Counted Product One')
+        ->assertSeeText('Counted Product Two')
+        ->assertDontSeeText('Other Product');
+});
+
 test('purchase payment and return workflows keep stock supplier due and ledger aligned', function () {
     $user = User::factory()->create();
     $supplier = Supplier::create(['name' => 'Workflow Parts Supplier', 'phone' => '0775550001', 'active' => true]);

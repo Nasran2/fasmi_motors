@@ -23,7 +23,7 @@ return [
         ['slug' => 'sms-center', 'title' => 'SMS Center', 'icon' => 'sms', 'children' => $items(['SMS Dashboard', 'Send SMS', 'SMS Templates', 'SMS Logs', 'Failed SMS', 'SMS Provider Settings'])],
         ['slug' => 'reports', 'title' => 'Reports', 'icon' => 'reports', 'children' => $items(['Sales Report', 'Job Card Report', 'Spare Parts Sales Report', 'Profit & Loss', 'Stock Report', 'Purchase Report', 'Expense Report', 'Drawing Report', 'Due Bills Report', 'Customer Due Report', 'Technician Report', 'Attendance Report', 'Salary Report', 'EPF Report', 'ETF Report', 'Main Account Report', 'Spare Parts Account Report', 'Bank Account Report', 'Daily Closing Report', 'Service Reminder Report', 'SMS Report'])],
         ['slug' => 'user-management', 'title' => 'User Management', 'icon' => 'users', 'children' => $items(['Users', 'Add User', 'Roles', 'Permissions', 'Activity Logs', 'Login History'])],
-        ['slug' => 'settings', 'title' => 'Settings', 'icon' => 'settings', 'children' => $items(['General Settings', 'Business Profile', 'Branch / Store Settings', 'Invoice Settings', 'Job Card Settings', 'Account Settings', 'Stock Settings', 'Technician Settings', 'Salary Settings', 'EPF / ETF Settings', 'SMS Settings', 'Service Reminder Settings', 'Payment Method Settings', 'Tax / Discount Settings', 'Backup Settings', 'System Security', 'Audit Log Settings'])],
+        ['slug' => 'settings', 'title' => 'Settings', 'icon' => 'settings', 'children' => $items(['General Settings', 'Business Profile', 'Branch / Store Settings', 'Invoice Settings', 'Job Card Settings', 'Account Settings', 'Stock Settings', 'Technician Settings', 'Salary Settings', 'EPF / ETF Settings', 'Leave & Holiday Settings', 'SMS Settings', 'Service Reminder Settings', 'Payment Method Settings', 'Tax / Discount Settings', 'Backup Settings', 'System Security', 'Audit Log Settings'])],
     ],
 
     'direct' => [
@@ -41,6 +41,7 @@ return [
         'customers-bikes.bike-ownership-change' => ['route' => 'customers.ownership', 'active' => ['customers.ownership', 'customers.ownership.store']],
         'products-stock.product-list' => ['route' => 'products.index'],
         'products-stock.add-product' => ['route' => 'products.create'],
+        'products-stock.import-products' => ['route' => 'products.import', 'active' => ['products.import', 'products.import.store']],
         'products-stock.suppliers' => ['route' => 'products.suppliers', 'active' => ['products.suppliers', 'products.suppliers.store']],
         'products-stock.categories' => ['route' => 'products.references', 'parameters' => ['tab' => 'categories'], 'query' => ['tab' => 'categories']],
         'products-stock.brands' => ['route' => 'products.references', 'parameters' => ['tab' => 'brands'], 'query' => ['tab' => 'brands']],
@@ -137,6 +138,7 @@ return [
         'settings.technician-settings' => ['route' => 'system-settings.technician-settings'],
         'settings.salary-settings' => ['route' => 'system-settings.salary-settings'],
         'settings.epf-etf-settings' => ['route' => 'system-settings.epf-etf-settings'],
+        'settings.leave-holiday-settings' => ['route' => 'system-settings.leave-holiday-settings', 'active' => ['system-settings.leave-holiday-settings', 'system-settings.leave-holiday-settings.*']],
         'settings.sms-settings' => ['route' => 'system-settings.sms-settings'],
         'settings.service-reminder-settings' => ['route' => 'system-settings.service-reminder-settings'],
         'settings.payment-method-settings' => ['route' => 'system-settings.payment-method-settings'],

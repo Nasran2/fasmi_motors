@@ -54,6 +54,58 @@
           </div>
         </div>
 
+        {{-- Section 1B: Salary Month Calculation Rule --}}
+        <div class="panel bg-white border border-red-100 rounded-xl p-6 space-y-4 shadow-sm">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-base font-black text-slate-800">📅 Salary Month Calculation Rule</h2>
+              <p class="mt-1 text-xs text-slate-500">Use calendar months by default, or enable the custom cut-off cycle for carried salary days.</p>
+            </div>
+            <span class="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider {{ $salaryCycleSetting->isCustomCutoffActive() ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600' }}">
+              {{ $salaryCycleSetting->isCustomCutoffActive() ? 'Custom ON' : 'Calendar Month' }}
+            </span>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="label">Salary Calculation Mode</label>
+              <select name="salary_cycle_mode" class="w-full">
+                <option value="normal_calendar" @selected($salaryCycleSetting->salary_cycle_mode === 'normal_calendar')>Normal Calendar Month</option>
+                <option value="custom_cutoff" @selected($salaryCycleSetting->salary_cycle_mode === 'custom_cutoff')>Custom Cut-Off Cycle</option>
+              </select>
+            </div>
+            <div class="pt-7">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="hidden" name="custom_cutoff_enabled" value="0">
+                <input type="checkbox" name="custom_cutoff_enabled" value="1" @checked($salaryCycleSetting->custom_cutoff_enabled) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+                <span class="text-xs font-bold text-slate-700">Enable Custom Cut-Off Cycle</span>
+              </label>
+            </div>
+            <div>
+              <label class="label">Cycle Start Rule</label>
+              <select name="cycle_start_rule" class="w-full">
+                <option value="previous_month_balance_day" @selected(($salaryCycleSetting->cycle_start_rule ?: 'previous_month_balance_day') === 'previous_month_balance_day')>Start from previous month balance day</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Cycle End Day</label>
+              <select name="cycle_end_day" class="w-full">
+                @foreach(range(1, 31) as $day)
+                <option value="{{ $day }}" @selected((int) ($salaryCycleSetting->cycle_end_day ?: 30) === $day)>{{ $day }}</option>
+                @endforeach
+              </select>
+              <p class="mt-1 text-[10px] text-slate-400">Example with day 30: July 2026 = 30 Jun to 30 Jul, August 2026 = 31 Jul to 29 Aug.</p>
+            </div>
+            <div class="sm:col-span-2 pt-2">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="hidden" name="carry_missing_days" value="0">
+                <input type="checkbox" name="carry_missing_days" value="1" @checked($salaryCycleSetting->carry_missing_days) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+                <span class="text-xs font-bold text-slate-700">Carry missing days to next salary month</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         {{-- Section 2: Workshop Time Settings --}}
         <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🕒 Workshop Time Settings</h2>

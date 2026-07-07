@@ -3,22 +3,31 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AttendanceImportBatch;
 use App\Models\AuditLog;
 use App\Models\Bike;
 use App\Models\JobCard;
+use App\Models\OtSlabRule;
+use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAdvance;
 use App\Models\TechnicianAttendance;
 use App\Models\TechnicianBikeDeduction;
 use App\Models\TechnicianCommission;
 use App\Models\TechnicianContribution;
+use App\Models\TechnicianDeduction;
 use App\Models\TechnicianSalarySheet;
 use App\Services\AccountService;
+use App\Services\AttendanceCalculationService;
+use App\Services\AttendanceImportService;
+use App\Services\SalaryCalculationService;
+use App\Services\SalaryCycleService;
 use App\Services\WorkshopService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -54,6 +63,11 @@ class TechnicianController extends Controller
         return view('technicians.create');
     }
 
+    public function edit(Technician $technician)
+    {
+        return view('technicians.edit', compact('technician'));
+    }
+
     public function store(Request $request)
     {
         $data = $this->technicianData($request);
@@ -80,22 +94,39 @@ class TechnicianController extends Controller
     public function attendanceIndex(Request $request)
     {
         $date = $request->date ? Carbon::parse($request->date) : today();
+        if ($request->filled('month')) {
+            $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
+            $to = $from->copy()->endOfMonth();
+        } elseif ($request->filled('from') || $request->filled('to')) {
+            $from = $request->filled('from') ? Carbon::parse($request->from) : $date->copy()->startOfWeek();
+            $to = $request->filled('to') ? Carbon::parse($request->to) : $date->copy()->endOfWeek();
+        } else {
+            $from = $date->copy();
+            $to = $date->copy();
+        }
         $records = TechnicianAttendance::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))
             ->when($request->status, fn (Builder $q, $status) => $q->where('status', $status))
-            ->whereDate('date', $date)->latest('date')->paginate(20)->withQueryString();
+            ->whereBetween('date', [$from, $to])->orderByDesc('date')->paginate(31)->withQueryString();
 
         $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+        $batch = $request->filled('batch') ? AttendanceImportBatch::where('imported_by', auth()->id())->find($request->batch) : null;
+        $recentBatches = AttendanceImportBatch::with('importer')->latest()->limit(8)->get();
 
-        return view('technicians.attendance', ['records' => $records, 'technicians' => $this->technicians(), 'date' => $date, 'stats' => [
-            'present' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', $presentStatuses)->count(),
-            'absent' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
-            'late' => TechnicianAttendance::whereDate('date', $date)->where('status', 'Late')->count(),
-            'leave' => TechnicianAttendance::whereDate('date', $date)->whereIn('status', ['Leave', 'Paid Leave'])->count(),
-            'ot' => TechnicianAttendance::whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()])->sum('ot_hours'),
-        ]]);
+        return view('technicians.attendance', [
+            'records' => $records, 'technicians' => $this->technicians(), 'date' => $date, 'from' => $from, 'to' => $to,
+            'previewBatch' => $batch, 'recentBatches' => $recentBatches,
+            'salarySettings' => SalarySetting::firstOrCreate([])->refresh(), 'otSlabs' => OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get(),
+            'stats' => [
+                'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', $presentStatuses)->count(),
+                'absent' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
+                'late' => TechnicianAttendance::whereBetween('date', [$from, $to])->where('late_minutes', '>', 0)->count(),
+                'leave' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
+                'ot' => TechnicianAttendance::whereBetween('date', [$from, $to])->sum('ot_hours'),
+            ],
+        ]);
     }
 
-    public function attendanceStore(Request $request)
+    public function attendanceStore(Request $request, AttendanceCalculationService $calculator)
     {
         $bulk = $request->has('technician_ids') && is_array($request->input('technician_ids'));
         $ids = $bulk ? $request->input('technician_ids') : [$request->input('technician_id')];
@@ -119,8 +150,6 @@ class TechnicianController extends Controller
         }
 
         $date = $request->input('date');
-        $start = Carbon::parse($date)->startOfMonth();
-        
         $savedCount = 0;
 
         foreach ($ids as $techId) {
@@ -130,8 +159,9 @@ class TechnicianController extends Controller
 
             // 1. Check finalized salary sheets
             $isFinalized = TechnicianSalarySheet::where('technician_id', $technician->id)
-                ->whereDate('period_start', $start)
-                ->where('status', 'Finalized')
+                ->whereDate('period_start', '<=', $date)
+                ->whereDate('period_end', '>=', $date)
+                ->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])
                 ->exists();
             if ($isFinalized) {
                 if ($bulk) continue;
@@ -148,22 +178,24 @@ class TechnicianController extends Controller
             $status = $request->input('status');
             $isManual = $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
 
-            // Calculate metrics
-            $metrics = $this->calculateAttendance(
+            $metrics = $calculator->calculateDailyAttendance(
                 $technician,
                 $date,
                 $status,
                 $request->input('in_time'),
                 $request->input('out_time'),
-                $request->filled('ot_amount') ? (float)$request->input('ot_amount') : null,
-                $request->filled('deduction_amount') ? (float)$request->input('deduction_amount') : null,
-                $isManual
+                $isManual ? [
+                    'ot_amount' => $request->filled('ot_amount') ? (float) $request->input('ot_amount') : null,
+                    'deduction_amount' => $request->filled('deduction_amount') ? (float) $request->input('deduction_amount') : null,
+                ] : []
             );
+            $status = $metrics['status'];
 
             $payload = array_merge($request->only(['date', 'in_time', 'out_time', 'note', 'edit_reason']), $metrics, [
                 'technician_id' => $technician->id,
                 'status' => $status,
                 'is_manual_edit' => $isManual,
+                'is_manual_entry' => true,
                 'edited_by' => auth()->id(),
                 'updated_by' => auth()->id()
             ]);
@@ -205,6 +237,93 @@ class TechnicianController extends Controller
         }
 
         return back()->with('success', "Attendance saved for {$savedCount} technician(s) and metrics calculated.");
+    }
+
+    public function attendanceImportPreview(Request $request, AttendanceImportService $importer)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:20480'],
+            'technician_id' => ['nullable', 'exists:technicians,id'],
+        ]);
+        try {
+            $batch = $importer->preview($data['file'], auth()->id(), $data['technician_id'] ?? null);
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages(['file' => $exception->getMessage()]);
+        }
+
+        return redirect()->route('technicians.attendance.index', ['batch' => $batch->id, 'month' => $batch->month?->format('Y-m')])
+            ->with('success', "Preview ready: {$batch->total_rows} attendance rows found.");
+    }
+
+    public function attendanceRangeStore(Request $request, AttendanceCalculationService $calculator)
+    {
+        $data = $request->validate([
+            'technician_ids' => ['required', 'array', 'min:1'], 'technician_ids.*' => ['required', 'distinct', 'exists:technicians,id'],
+            'date_from' => ['required', 'date'], 'date_to' => ['required', 'date', 'after_or_equal:date_from'],
+            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday'])],
+            'in_time' => ['nullable', 'date_format:H:i'], 'out_time' => ['nullable', 'date_format:H:i'], 'note' => ['nullable', 'max:1000'],
+        ]);
+        $from = Carbon::parse($data['date_from']);
+        $to = Carbon::parse($data['date_to']);
+        if ($from->diffInDays($to) > 62) {
+            throw ValidationException::withMessages(['date_to' => 'Bulk attendance is limited to 63 days at a time.']);
+        }
+        $saved = 0;
+        foreach ($from->copy()->daysUntil($to) as $date) {
+            foreach ($data['technician_ids'] as $technicianId) {
+                $technician = Technician::findOrFail($technicianId);
+                if (TechnicianSalarySheet::where('technician_id', $technicianId)
+                    ->whereDate('period_start', '<=', $date)
+                    ->whereDate('period_end', '>=', $date)
+                    ->whereIn('status', ['Finalized', 'Paid', 'Partially Paid'])
+                    ->exists()) {
+                    continue;
+                }
+                $existing = TechnicianAttendance::where('technician_id', $technicianId)->whereDate('date', $date)->first();
+                $metrics = $calculator->calculateDailyAttendance($technician, $date, $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null);
+                TechnicianAttendance::updateOrCreate(['technician_id' => $technicianId, 'date' => $date->toDateString()], array_merge($metrics, [
+                    'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? null, 'note' => $data['note'] ?? 'Bulk attendance entry',
+                    'is_manual_entry' => true, 'is_manual_edit' => (bool) $existing, 'created_by' => $existing?->created_by ?? auth()->id(), 'edited_by' => $existing ? auth()->id() : null, 'updated_by' => auth()->id(),
+                ]));
+                $saved++;
+            }
+        }
+
+        return back()->with('success', "{$saved} daily attendance records saved across the selected period.");
+    }
+
+    public function attendanceImportConfirm(Request $request, AttendanceImportBatch $batch, AttendanceImportService $importer, AttendanceCalculationService $calculator)
+    {
+        abort_unless($batch->imported_by === auth()->id() && $batch->status === 'Preview', 403);
+
+        if ($request->has('rows') && is_array($request->input('rows'))) {
+            $submittedRows = collect($request->input('rows'))->keyBy('row');
+            $updatedPreviewData = [];
+            foreach ($batch->preview_data as $item) {
+                $rowId = $item['row'];
+                if ($submittedRows->has($rowId)) {
+                    $rowInput = $submittedRows->get($rowId);
+                    $item['date'] = $rowInput['date'] ?? $item['date'];
+                    $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'] . (strlen($rowInput['check_in']) == 5 ? ':00' : '');
+                    $item['check_out'] = empty($rowInput['check_out']) ? null : $rowInput['check_out'] . (strlen($rowInput['check_out']) == 5 ? ':00' : '');
+                    if (!empty($rowInput['technician_id'])) {
+                        $item['technician_id'] = (int) $rowInput['technician_id'];
+                        $item['will_create_technician'] = false;
+                    } else {
+                        $item['technician_id'] = null;
+                        $item['will_create_technician'] = true;
+                    }
+                }
+                $updatedPreviewData[] = $item;
+            }
+            $batch->update(['preview_data' => $updatedPreviewData]);
+        }
+
+        $batch = $importer->confirm($batch, $calculator, auth()->id());
+        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Attendance Import Completed', 'auditable_type' => $batch->getMorphClass(), 'auditable_id' => $batch->id, 'old_values' => null, 'new_values' => $batch->only(['file_name', 'total_rows', 'success_rows', 'skipped_rows', 'duplicate_rows', 'error_rows', 'status']), 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+
+        return redirect()->route('technicians.attendance.index', ['month' => $batch->month?->format('Y-m')])
+            ->with('success', "Import complete: {$batch->success_rows} saved, {$batch->duplicate_rows} updated duplicates, {$batch->skipped_rows} skipped, {$batch->error_rows} errors.");
     }
 
     private function calculateAttendance($technician, $date, &$status, $inTime, $outTime, $manualOtAmount = null, $manualDeductionAmount = null, $isManualEdit = false)
@@ -381,98 +500,207 @@ class TechnicianController extends Controller
             'balance' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('balance_amount'),
             'employee_epf' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('epf_employee'),
             'company' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum(DB::raw('epf_company+etf_company')),
+            'overpaid' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('overpaid_amount'),
         ]]);
     }
 
-    public function salaryStore(Request $request, WorkshopService $service)
+    public function salaryPreview(Request $request, SalaryCalculationService $calculator)
     {
-        $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'], 'other_deductions' => ['nullable', 'numeric', 'min:0'], 'paid_amount' => ['nullable', 'numeric', 'min:0'], 'account_id' => ['nullable', 'required_if:paid_amount,>0', 'exists:accounts,id'], 'payment_method' => ['nullable', 'max:50']]);
+        $data = $request->validate([
+            'technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'],
+            'other_allowances' => ['nullable', 'numeric', 'min:0'], 'manual_addition' => ['nullable', 'numeric', 'min:0'],
+            'other_deductions' => ['nullable', 'numeric', 'min:0'], 'manual_deduction' => ['nullable', 'numeric', 'min:0'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
+        ]);
+        $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+        $existing = TechnicianSalarySheet::where('technician_id', $data['technician_id'])
+            ->whereDate('period_start', $response['period_start'])
+            ->whereDate('period_end', $response['period_end'])
+            ->first();
+        $response['existing_sheet_status'] = $existing ? $existing->status : null;
+        
+        return response()->json($response);
+    }
+
+    public function salaryStore(Request $request, SalaryCalculationService $calculator)
+    {
+        $data = $request->validate([
+            'technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'],
+            'allowances' => ['nullable', 'numeric', 'min:0'], 'manual_additions' => ['nullable', 'numeric', 'min:0'],
+            'other_deductions' => ['nullable', 'numeric', 'min:0'],
+            'manual_deductions' => ['nullable'],
+            'manual_deductions.*.name' => ['required_with:manual_deductions.*.amount', 'string', 'max:150'],
+            'manual_deductions.*.amount' => ['required_with:manual_deductions.*.name', 'numeric', 'min:0'],
+            'addition_name' => ['nullable', 'max:150'], 'addition_reason' => ['nullable', 'max:500'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', \Illuminate\Validation\Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])],
+            'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
+            'action' => ['nullable', \Illuminate\Validation\Rule::in(['preview', 'save'])],
+        ]);
+        
+        $manualDeductionsInput = $data['manual_deductions'] ?? null;
+        $manualDeductionsList = is_array($manualDeductionsInput) ? $manualDeductionsInput : [];
+        $data['manual_deductions'] = is_array($manualDeductionsInput)
+            ? collect($manualDeductionsList)->sum('amount')
+            : max(0, (float) ($manualDeductionsInput ?? 0));
         $technician = Technician::findOrFail($data['technician_id']);
-        $start = Carbon::createFromFormat('Y-m', $data['month'])->startOfMonth();
-        $end = $start->copy()->endOfMonth();
-        if (TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $start)->exists()) {
-            throw ValidationException::withMessages(['month' => 'A salary sheet already exists for this technician and month.']);
+        $calculation = $calculator->generateMonthlySalary($technician, $data['month'].'-01', $data);
+
+        if (($data['action'] ?? 'save') === 'preview') {
+            return back()->withInput()->with('salary_preview', $calculation + ['technician_name' => $technician->name]);
         }
-        
-        $attendance = TechnicianAttendance::where('technician_id', $technician->id)->whereBetween('date', [$start, $end])->get();
-        
-        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
-        $present = $attendance->whereIn('status', $presentStatuses)->count();
-        $absent = $attendance->whereIn('status', ['Absent', 'No Pay Leave'])->count();
-        
-        $otHours = (float) $attendance->sum('ot_hours');
-        $otAmount = (float) $attendance->sum('ot_amount');
-        
-        $commission = (float) TechnicianCommission::where('technician_id', $technician->id)->whereBetween('earned_date', [$start, $end])->where('status', 'Pending')->sum('amount');
-        $advances = (float) TechnicianAdvance::where('technician_id', $technician->id)->where('status', 'Pending Deduction')->whereDate('deduct_month', $start)->sum('amount');
-        $bikeDeduction = (float) TechnicianBikeDeduction::where('technician_id', $technician->id)->where('status', 'Active')->whereDate('next_deduction_month', '<=', $start)->sum('installment_amount');
-        
-        $basic = $technician->salary_type === 'Daily' ? (float) $technician->daily_salary * $present : (float) $technician->basic_salary;
-        
-        // Sum deductions directly from daily attendance details
-        $lateDeduction = (float) $attendance->sum('late_deduction_amount');
-        $earlyLeaveDeduction = (float) $attendance->sum('early_leave_deduction_amount');
-        $halfDayDeduction = (float) $attendance->sum('half_day_deduction_amount');
-        $noPay = $absent * (float) $technician->no_pay_deduction_rate;
-        
-        $employeeEpf = $technician->epf_eligible ? $basic * (float) $technician->epf_employee_percentage / 100 : 0;
-        $companyEpf = $technician->epf_eligible ? $basic * (float) $technician->epf_company_percentage / 100 : 0;
-        $companyEtf = $technician->etf_eligible ? $basic * (float) $technician->etf_company_percentage / 100 : 0;
-        
-        $gross = $basic + $otAmount + $commission;
-        $deductions = $advances + $bikeDeduction + $lateDeduction + $earlyLeaveDeduction + $halfDayDeduction + $noPay + (float) ($data['other_deductions'] ?? 0);
-        $net = max(0, $gross - $deductions - $employeeEpf);
-        $paid = min($net, (float) ($data['paid_amount'] ?? 0));
-        
-        $sheet = DB::transaction(function () use ($data, $technician, $start, $end, $attendance, $present, $absent, $otHours, $otAmount, $basic, $commission, $advances, $bikeDeduction, $lateDeduction, $earlyLeaveDeduction, $halfDayDeduction, $noPay, $employeeEpf, $companyEpf, $companyEtf, $gross, $deductions, $net, $paid) {
-            $sheet = TechnicianSalarySheet::create([
+        $existing = TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $calculation['period_start'])->first();
+        if ($existing) {
+            if ($existing->status === 'Draft') {
+                $existing->additions()->delete();
+                $existing->paymentDeductions()->delete();
+                \App\Models\TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
+                $existing->delete();
+            } else {
+                throw ValidationException::withMessages(['month' => 'A finalized or paid salary sheet already exists for this technician and month. Please reopen it first to edit.']);
+            }
+        }
+
+        $sheet = DB::transaction(function () use ($data, $technician, $calculation, $manualDeductionsList) {
+            $sheetFields = [
+                'period_start', 'period_end', 'salary_cycle_mode', 'salary_period_days', 'carried_from_previous_month_days',
+                'carried_to_next_month_days', 'excluded_dates', 'basic_salary', 'daily_salary', 'attendance_salary_amount', 'working_days', 'worked_days',
+                'present_days', 'absent_days', 'half_days', 'weekly_leave_days', 'public_holiday_days', 'poya_holiday_days',
+                'custom_holiday_days', 'approved_leave_days', 'auto_checkout_days', 'salary_month_days', 'total_working_days',
+                'total_present_days', 'total_absent_days', 'leave_days', 'late_days', 'early_leave_days', 'worked_on_leave_days',
+                'total_worked_hours', 'total_ot_hours', 'leave_summary', 'ot_hours', 'ot_amount', 'commission', 'allowances',
+                'manual_additions', 'worked_on_leave_pay', 'gross_salary', 'advances', 'total_advance_deduction', 'late_deduction',
+                'early_leave_deduction', 'half_day_deduction', 'no_pay_deduction', 'own_bike_deduction', 'total_job_deduction',
+                'other_deductions', 'total_other_deduction', 'manual_deductions', 'deductions', 'total_deductions', 'epf_employee',
+                'epf_company', 'etf_company', 'net_payable', 'paid_amount', 'balance_amount', 'overpaid_amount', 'calculation_snapshot',
+            ];
+            // Drafts never record money movement. Payments are posted only through salaryPay,
+            // which also creates the account-ledger transaction.
+            $calculation['paid_amount'] = 0;
+            $calculation['balance_amount'] = $calculation['net_payable'];
+            $calculation['overpaid_amount'] = 0;
+            $sheet = TechnicianSalarySheet::create(Arr::only($calculation, $sheetFields) + [
                 'number' => 'PAY-'.now()->format('ymd').'-'.Str::upper(Str::random(5)),
                 'technician_id' => $technician->id,
-                'period_start' => $start,
-                'period_end' => $end,
-                'working_days' => $attendance->count(),
-                'present_days' => $present,
-                'absent_days' => $absent,
-                'ot_hours' => $otHours,
-                'basic_salary' => $basic,
-                'ot_amount' => $otAmount,
-                'commission' => $commission,
-                'gross_salary' => $gross,
-                'advances' => $advances,
-                'late_deduction' => $lateDeduction,
-                'early_leave_deduction' => $earlyLeaveDeduction,
-                'half_day_deduction' => $halfDayDeduction,
-                'no_pay_deduction' => $noPay,
-                'own_bike_deduction' => $bikeDeduction,
-                'other_deductions' => $data['other_deductions'] ?? 0,
-                'deductions' => $deductions,
-                'epf_employee' => $employeeEpf,
-                'epf_company' => $companyEpf,
-                'etf_company' => $companyEtf,
-                'net_payable' => $net,
-                'paid_amount' => $paid,
-                'balance_amount' => $net - $paid,
-                'status' => $paid >= $net ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Draft'),
-                'account_id' => $data['account_id'] ?? null,
                 'payment_method' => $data['payment_method'] ?? null,
-                'created_by' => auth()->id()
+                'payment_date' => $data['payment_date'] ?? null,
+                'payment_note' => $data['payment_note'] ?? null,
+                'status' => 'Draft',
+                'created_by' => auth()->id(),
             ]);
-            
-            TechnicianContribution::create(['technician_id' => $technician->id, 'salary_sheet_id' => $sheet->id, 'month' => $start, 'basic_salary' => $basic, 'employee_epf_percentage' => $technician->epf_employee_percentage, 'employee_epf_amount' => $employeeEpf, 'company_epf_percentage' => $technician->epf_company_percentage, 'company_epf_amount' => $companyEpf, 'company_etf_percentage' => $technician->etf_company_percentage, 'company_etf_amount' => $companyEtf]);
-            
-            if ($paid > 0) {
-                $accountService = app(AccountService::class);
-                if (in_array($data['payment_method'], ['Cash'])) {
-                    $accountService->recordTransaction('cash', 'expense', $paid, "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id'] ?? null);
-                } else {
-                    $accountService->recordTransaction('bank', 'expense', $paid, "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id'] ?? null);
+            TechnicianContribution::create([
+                'technician_id' => $technician->id, 'salary_sheet_id' => $sheet->id, 'month' => $calculation['salary_month'] ?? $calculation['period_start'],
+                'basic_salary' => $calculation['basic_salary'], 'employee_epf_percentage' => $technician->epf_employee_percentage,
+                'employee_epf_amount' => $calculation['epf_employee'], 'company_epf_percentage' => $technician->epf_company_percentage,
+                'company_epf_amount' => $calculation['epf_company'], 'company_etf_percentage' => $technician->etf_company_percentage,
+                'company_etf_amount' => $calculation['etf_company'],
+            ]);
+            if ((float) ($data['manual_additions'] ?? 0) > 0) {
+                $sheet->additions()->create(['technician_id' => $technician->id, 'addition_name' => ($data['addition_name'] ?? null) ?: 'Manual addition', 'amount' => $data['manual_additions'], 'reason' => $data['addition_reason'] ?? null, 'addition_date' => today(), 'created_by' => auth()->id()]);
+            }
+            if (count($manualDeductionsList) > 0) {
+                foreach ($manualDeductionsList as $md) {
+                    if (!empty($md['amount']) && $md['amount'] > 0) {
+                        $sheet->paymentDeductions()->create(['technician_id' => $technician->id, 'deduction_name' => $md['name'] ?? 'Manual deduction', 'amount' => $md['amount'], 'reason' => null, 'deduction_date' => today(), 'created_by' => auth()->id()]);
+                    }
                 }
+            } elseif ((float) ($data['manual_deductions'] ?? 0) > 0) {
+                $sheet->paymentDeductions()->create(['technician_id' => $technician->id, 'deduction_name' => 'Manual deduction', 'amount' => $data['manual_deductions'], 'reason' => null, 'deduction_date' => today(), 'created_by' => auth()->id()]);
             }
 
             return $sheet;
         });
 
-        return redirect()->route('technicians.salaries')->with('success', "Salary sheet {$sheet->number} generated.");
+        return redirect()->route('technicians.salaries')->with('success', "Salary sheet {$sheet->number} saved as draft.");
+    }
+
+    public function salaryFinalize(Request $request, TechnicianSalarySheet $sheet, SalaryCalculationService $calculator)
+    {
+        abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be finalized.');
+        
+        $data = $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:0'], 
+            'account_id' => ['nullable', 'exists:accounts,id'], 
+            'payment_method' => ['nullable', 'string', 'max:50'], 
+            'payment_date' => ['nullable', 'date'], 
+            'payment_note' => ['nullable', 'max:1000']
+        ]);
+
+        $calculator->finalizeSalaryPayment($sheet, auth()->id());
+        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Finalized', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Finalized'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+
+        if (!empty($data['amount']) && $data['amount'] > 0) {
+            $request->validate(['account_id' => 'required', 'payment_method' => 'required']);
+            DB::transaction(function () use ($sheet, $data) {
+                $paid = (float) $sheet->paid_amount + (float) $data['amount'];
+                $balance = round((float) $sheet->net_payable - $paid, 2);
+                $overpaid = max(0, -$balance);
+                $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'] ?? today(), 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? now() : null, 'paid_by' => auth()->id()]);
+                if ($overpaid > 0) {
+                    TechnicianDeduction::updateOrCreate(
+                        ['technician_id' => $sheet->technician_id, 'source_type' => 'salary_overpayment', 'source_id' => $sheet->id],
+                        ['reference_no' => $sheet->number, 'deduction_name' => 'Previous salary overpayment adjustment', 'amount' => $overpaid, 'reason' => 'Automatically carried forward from an overpaid salary.', 'deduction_date' => $sheet->period_start->copy()->addMonth(), 'status' => 'pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id()]
+                    );
+                }
+                app(AccountService::class)->recordTransaction($data['payment_method'] === 'Cash' ? 'cash' : 'bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id']);
+            });
+            AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+            
+            return back()->with('success', "{$sheet->number} finalized and payment of Rs. {$data['amount']} recorded.");
+        }
+
+        return back()->with('success', "{$sheet->number} finalized and attendance locked.");
+    }
+
+    public function salaryPay(Request $request, TechnicianSalarySheet $sheet)
+    {
+        abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
+        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', \Illuminate\Validation\Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
+        DB::transaction(function () use ($sheet, $data) {
+            $paid = (float) $sheet->paid_amount + (float) $data['amount'];
+            $balance = round((float) $sheet->net_payable - $paid, 2);
+            $overpaid = max(0, -$balance);
+            $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'] ?? today(), 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? now() : null, 'paid_by' => auth()->id()]);
+            if ($overpaid > 0) {
+                TechnicianDeduction::updateOrCreate(
+                    ['technician_id' => $sheet->technician_id, 'source_type' => 'salary_overpayment', 'source_id' => $sheet->id],
+                    ['reference_no' => $sheet->number, 'deduction_name' => 'Previous salary overpayment adjustment', 'amount' => $overpaid, 'reason' => 'Automatically carried forward from an overpaid salary.', 'deduction_date' => $sheet->period_start->copy()->addMonth(), 'status' => 'pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id()]
+                );
+            }
+            app(AccountService::class)->recordTransaction($data['payment_method'] === 'Cash' ? 'cash' : 'bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id']);
+        });
+        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+
+        return back()->with('success', 'Salary payment recorded.');
+    }
+
+    public function salaryReopen(Request $request, TechnicianSalarySheet $sheet, SalaryCalculationService $calculator)
+    {
+        $data = $request->validate(['reason' => ['required', 'min:5', 'max:1000']]);
+        $calculator->reopenSalaryPayment($sheet, $data['reason'], auth()->id());
+        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Reopened', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Draft', 'reason' => $data['reason']], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+
+        return back()->with('success', "{$sheet->number} reopened for correction.");
+    }
+
+    public function salaryDestroy(TechnicianSalarySheet $sheet)
+    {
+        abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be deleted.');
+        
+        DB::transaction(function () use ($sheet) {
+            \App\Models\TechnicianContribution::where('salary_sheet_id', $sheet->id)->delete();
+            $sheet->additions()->delete();
+            $sheet->paymentDeductions()->delete();
+            $sheet->delete();
+        });
+
+        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Sheet Deleted', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Deleted'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+
+        return back()->with('success', "Salary sheet {$sheet->number} deleted successfully.");
+    }
+
+    public function salarySlip(TechnicianSalarySheet $sheet)
+    {
+        return view('technicians.salary-slip', ['sheet' => $sheet->load(['technician', 'preparedBy', 'additions', 'paymentDeductions', 'sourceDeductions', 'advancesUsed'])]);
     }
 
     public function advances(Request $request)
@@ -535,11 +763,70 @@ class TechnicianController extends Controller
         return view('technicians.contributions', ['records' => $records, 'technicians' => $this->technicians(), 'stats' => ['employee' => TechnicianContribution::whereMonth('month', now()->month)->sum('employee_epf_amount'), 'company' => TechnicianContribution::whereMonth('month', now()->month)->sum('company_epf_amount'), 'etf' => TechnicianContribution::whereMonth('month', now()->month)->sum('company_etf_amount'), 'total' => TechnicianContribution::whereMonth('month', now()->month)->sum(DB::raw('employee_epf_amount+company_epf_amount+company_etf_amount'))]]);
     }
 
-    public function history(Request $request)
+    public function history(Request $request, SalaryCycleService $salaryCycle)
     {
-        $technician = $request->technician ? Technician::with(['jobs.intake.bike.customer', 'jobs.invoice', 'attendance', 'salarySheets', 'advances', 'commissions.jobCard', 'bikeDeductions.bike', 'contributions'])->find($request->technician) : null;
+        $technician = null;
+        $historyPeriod = null;
+        if ($request->technician) {
+            $from = null;
+            $to = null;
+            if ($request->month) {
+                $historyPeriod = $salaryCycle->previewSalaryPeriod($request->month.'-01');
+                $from = \Carbon\Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
+                $to = \Carbon\Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
+            } elseif ($request->from || $request->to) {
+                $from = $request->from ? \Carbon\Carbon::parse($request->from)->startOfDay() : null;
+                $to = $request->to ? \Carbon\Carbon::parse($request->to)->endOfDay() : null;
+                $historyPeriod = [
+                    'salary_cycle_label' => 'Custom Date Range',
+                    'salary_month_label' => 'Custom Range',
+                    'salary_period_start' => $from?->toDateString(),
+                    'salary_period_end' => $to?->toDateString(),
+                    'salary_period_days' => $from && $to ? $from->diffInDays($to) + 1 : null,
+                    'carried_from_previous_month_days' => 0,
+                    'carried_to_next_month_days' => 0,
+                    'excluded_date_labels' => [],
+                ];
+            } else {
+                $historyPeriod = $salaryCycle->previewSalaryPeriod(now()->startOfMonth());
+                $from = \Carbon\Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
+                $to = \Carbon\Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
+            }
+            
+            $technician = Technician::with([
+                'jobs' => function($q) use ($from, $to) {
+                    if ($from) $q->where('created_at', '>=', $from);
+                    if ($to) $q->where('created_at', '<=', $to);
+                    $q->with('intake.bike.customer', 'invoice');
+                },
+                'attendance' => function($q) use ($from, $to, $request) {
+                    if ($from) $q->where('date', '>=', $from);
+                    if ($to) $q->where('date', '<=', $to);
+                },
+                'salarySheets' => function($q) use ($from, $to) {
+                    if ($from && $to) {
+                        $q->whereDate('period_start', '<=', $to)->whereDate('period_end', '>=', $from);
+                    } elseif ($from) {
+                        $q->whereDate('period_end', '>=', $from);
+                    } elseif ($to) {
+                        $q->whereDate('period_start', '<=', $to);
+                    }
+                },
+                'advances' => function($q) use ($from, $to) {
+                    if ($from) $q->where('payment_date', '>=', $from);
+                    if ($to) $q->where('payment_date', '<=', $to);
+                },
+                'commissions' => function($q) use ($from, $to) {
+                    if ($from) $q->where('earned_date', '>=', $from);
+                    if ($to) $q->where('earned_date', '<=', $to);
+                    $q->with('jobCard');
+                },
+                'bikeDeductions.bike',
+                'contributions'
+            ])->find($request->technician);
+        }
 
-        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
+        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'historyPeriod' => $historyPeriod, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
     }
 
     private function technicians()
@@ -549,6 +836,6 @@ class TechnicianController extends Controller
 
     private function technicianData(Request $request, ?Technician $technician = null): array
     {
-        return $request->validate(['name' => ['required', 'max:150'], 'phone' => ['required', 'max:30', Rule::unique('technicians', 'phone')->ignore($technician)], 'alternative_phone' => ['nullable', 'max:30'], 'nic' => ['nullable', 'max:30'], 'address' => ['nullable', 'max:1000'], 'emergency_contact' => ['nullable', 'max:100'], 'joining_date' => ['nullable', 'date'], 'active' => ['required', 'boolean'], 'basic_salary' => ['required', 'numeric', 'min:0'], 'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])], 'daily_salary' => ['nullable', 'numeric', 'min:0'], 'ot_rate' => ['nullable', 'numeric', 'min:0'], 'late_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'commission_enabled' => ['nullable', 'boolean'], 'commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'commission_type' => ['required', 'max:100'], 'epf_number' => ['nullable', 'max:50'], 'etf_number' => ['nullable', 'max:50'], 'epf_eligible' => ['nullable', 'boolean'], 'etf_eligible' => ['nullable', 'boolean'], 'epf_employee_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100']]);
+        return $request->validate(['attendance_person_id' => ['nullable', 'max:80', Rule::unique('technicians', 'attendance_person_id')->ignore($technician)], 'department' => ['nullable', 'max:150'], 'name' => ['required', 'max:150'], 'phone' => ['required', 'max:30', Rule::unique('technicians', 'phone')->ignore($technician)], 'alternative_phone' => ['nullable', 'max:30'], 'nic' => ['nullable', 'max:30'], 'address' => ['nullable', 'max:1000'], 'emergency_contact' => ['nullable', 'max:100'], 'joining_date' => ['nullable', 'date'], 'active' => ['required', 'boolean'], 'basic_salary' => ['required', 'numeric', 'min:0'], 'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])], 'daily_salary' => ['nullable', 'numeric', 'min:0'], 'ot_rate' => ['nullable', 'numeric', 'min:0'], 'late_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'commission_enabled' => ['nullable', 'boolean'], 'commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'commission_type' => ['required', 'max:100'], 'epf_number' => ['nullable', 'max:50'], 'etf_number' => ['nullable', 'max:50'], 'epf_eligible' => ['nullable', 'boolean'], 'etf_eligible' => ['nullable', 'boolean'], 'epf_employee_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100']]);
     }
 }

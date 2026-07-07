@@ -49,6 +49,11 @@ class Technician extends Model
         return $this->hasMany(TechnicianBikeDeduction::class);
     }
 
+    public function deductions(): HasMany
+    {
+        return $this->hasMany(TechnicianDeduction::class);
+    }
+
     public function contributions(): HasMany
     {
         return $this->hasMany(TechnicianContribution::class);

@@ -12,11 +12,24 @@ class TechnicianAttendance extends Model
 
     protected function casts(): array
     {
-        return ['date' => 'date'];
+        return [
+            'date' => 'date', 
+            'is_ot_eligible' => 'boolean', 
+            'is_manual_entry' => 'boolean', 
+            'is_manual_edit' => 'boolean',
+            'is_auto_checkout' => 'boolean',
+            'is_leave_day' => 'boolean',
+            'worked_on_leave_day' => 'boolean',
+        ];
     }
 
     public function technician()
     {
         return $this->belongsTo(Technician::class);
+    }
+
+    public function importBatch()
+    {
+        return $this->belongsTo(AttendanceImportBatch::class, 'import_batch_id');
     }
 }

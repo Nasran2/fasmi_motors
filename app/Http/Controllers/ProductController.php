@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Throwable;
 
 class ProductController extends Controller
 {
@@ -29,8 +31,10 @@ class ProductController extends Controller
             ->when($request->filled('q'), fn ($q) => $q->where(fn ($x) => $x
                 ->where('name', 'like', '%'.$request->q.'%')
                 ->orWhere('code', 'like', '%'.$request->q.'%')
-                ->orWhere('barcode', 'like', '%'.$request->q.'%')))
+                ->orWhere('barcode', 'like', '%'.$request->q.'%')
+                ->orWhere('rack_number', 'like', '%'.$request->q.'%')))
             ->when($request->filled('category'), fn ($q) => $q->where('category_id', $request->category))
+            ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
             ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))
             ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'))
             ->latest()->paginate(10)->withQueryString();
@@ -39,6 +43,7 @@ class ProductController extends Controller
             'products' => $products,
             'categories' => ProductCategory::orderBy('name')->get(),
             'brands' => ProductBrand::orderBy('name')->get(),
+            'selectedSupplier' => $request->filled('supplier') ? Supplier::find($request->supplier) : null,
             'stats' => $this->stockStats(),
             'lowStocks' => StoreStock::with(['product', 'store'])->whereHas('product', fn ($q) => $q->whereColumn('store_stocks.quantity', '<=', 'products.minimum_stock'))->orderBy('quantity')->limit(6)->get(),
             'stores' => Store::withCount('stocks')->withSum('stocks', 'quantity')->where('active', true)->get(),
@@ -57,12 +62,16 @@ class ProductController extends Controller
             'name' => ['required', 'max:150'], 'category_id' => ['required', 'exists:product_categories,id'],
             'brand' => ['required', 'max:100'], 'unit' => ['required', 'max:30'], 'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'cost_price' => ['required', 'numeric', 'min:0'], 'selling_price' => ['required', 'numeric', 'min:0'],
+            'opening_amount' => ['nullable', 'numeric', 'min:0'], 'rack_number' => ['nullable', 'max:100'],
             'minimum_stock' => ['required', 'numeric', 'min:0'], 'reorder_level' => ['nullable', 'numeric', 'min:0'],
             'opening_quantity' => ['required', 'numeric', 'min:0'],
             'model_compatibility' => ['nullable', 'max:255'], 'image' => ['nullable', 'image', 'max:2048'],
         ]);
 
         $opening = (float) $data['opening_quantity'];
+        $data['opening_amount'] = filled($data['opening_amount'] ?? null)
+            ? (float) $data['opening_amount']
+            : $opening * (float) $data['cost_price'];
         $mainStore = Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first();
         if (! $mainStore) {
             throw ValidationException::withMessages(['opening_quantity' => 'Main Store must be configured before adding products.']);
@@ -87,6 +96,233 @@ class ProductController extends Controller
         return $request->boolean('save_new')
             ? redirect()->route('products.create')->with('success', "{$product->name} saved. Add another product.")
             : redirect()->route('products.index')->with('success', "{$product->name} was added to inventory.");
+    }
+
+    public function importForm()
+    {
+        return view('products.import', [
+            'mainStore' => Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first(),
+        ]);
+    }
+
+    public function importStore(Request $request, WorkshopService $service)
+    {
+        if (function_exists('set_time_limit')) {
+            set_time_limit(0);
+        }
+
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:20480'],
+        ]);
+
+        $mainStore = Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first();
+        if (! $mainStore) {
+            throw ValidationException::withMessages(['file' => 'Main Store must be configured before importing products.']);
+        }
+
+        try {
+            $rows = IOFactory::load($request->file('file')->getRealPath())
+                ->getActiveSheet()
+                ->toArray(null, true, true, false);
+        } catch (Throwable) {
+            throw ValidationException::withMessages(['file' => 'The spreadsheet could not be read. Please upload a valid Excel or CSV file.']);
+        }
+
+        [$headerRow, $columns] = $this->locateImportHeader($rows);
+        $imported = 0;
+        $skipped = 0;
+        $failed = 0;
+        $messages = [];
+        $knownProducts = Product::withTrashed()->get(['id', 'name', 'barcode', 'code']);
+        $existingNames = array_fill_keys($knownProducts->pluck('name')->map(fn ($name) => Str::lower($name))->all(), true);
+        $existingBarcodes = array_fill_keys($knownProducts->pluck('barcode')->filter()->map(fn ($barcode) => Str::lower($barcode))->all(), true);
+        $usedCodes = array_fill_keys($knownProducts->pluck('code')->map(fn ($code) => Str::lower($code))->all(), true);
+        $productIdsByName = $knownProducts->mapWithKeys(fn (Product $product) => [Str::lower($product->name) => $product->id]);
+        $productIdsByBarcode = $knownProducts->filter->barcode->mapWithKeys(fn (Product $product) => [Str::lower($product->barcode) => $product->id]);
+
+        foreach (array_slice($rows, $headerRow + 1, null, true) as $index => $row) {
+            $rowNumber = $index + 1;
+            $name = Str::limit(trim((string) ($row[$columns['name']] ?? '')), 150, '');
+            if ($name === '') {
+                continue;
+            }
+
+            $barcode = $this->importText($this->importColumnValue($row, $columns, 'barcode'), 100);
+            if (in_array(Str::lower($barcode ?? ''), ['', '0', '8', '-'], true)) {
+                $barcode = null;
+            }
+
+            $groupName = $this->importText($this->importColumnValue($row, $columns, 'group_name'), 100);
+            $supplierName = ($groupName && $groupName !== '-') ? $groupName : null;
+            if (! $groupName || $groupName === '-') {
+                $groupName = 'Uncategorized';
+            }
+
+            if (isset($existingNames[Str::lower($name)]) || ($barcode && isset($existingBarcodes[Str::lower($barcode)]))) {
+                $existingProductId = $productIdsByName[Str::lower($name)]
+                    ?? ($barcode ? $productIdsByBarcode[Str::lower($barcode)] ?? null : null);
+                if ($existingProductId && $supplierName) {
+                    $supplier = Supplier::firstOrCreate(
+                        ['name' => $supplierName],
+                        ['company_name' => $supplierName, 'supplier_type' => 'Spare Parts Supplier', 'active' => true]
+                    );
+                    Product::withTrashed()->whereKey($existingProductId)->whereNull('supplier_id')->update(['supplier_id' => $supplier->id]);
+                }
+                $skipped++;
+
+                continue;
+            }
+
+            try {
+                DB::transaction(function () use ($row, $columns, $name, $barcode, $groupName, $supplierName, $rowNumber, $mainStore, $service, &$usedCodes) {
+                    $costPrice = $this->importNumber($this->importColumnValue($row, $columns, 'cost_price'));
+                    $sellingPrice = $this->importNumber($this->importColumnValue($row, $columns, 'selling_price'));
+                    $openingQuantity = $this->importNumber($this->importColumnValue($row, $columns, 'opening_quantity'));
+                    $providedOpeningAmount = $this->importNullableNumber($this->importColumnValue($row, $columns, 'opening_amount'));
+                    $category = ProductCategory::firstOrCreate(['name' => $groupName]);
+                    ProductBrand::firstOrCreate(['name' => $groupName]);
+                    ProductUnit::firstOrCreate(['name' => 'Piece'], ['type' => 'Quantity']);
+                    $supplier = $supplierName ? Supplier::firstOrCreate(
+                        ['name' => $supplierName],
+                        ['company_name' => $supplierName, 'supplier_type' => 'Spare Parts Supplier', 'active' => true]
+                    ) : null;
+
+                    $product = Product::create([
+                        'code' => $this->uniqueImportCode($barcode ?: $name, $rowNumber, $usedCodes),
+                        'barcode' => $barcode,
+                        'name' => $name,
+                        'category_id' => $category->id,
+                        'supplier_id' => $supplier?->id,
+                        'brand' => $groupName,
+                        'unit' => 'Piece',
+                        'cost_price' => $costPrice,
+                        'selling_price' => $sellingPrice,
+                        'opening_amount' => $providedOpeningAmount ?? ($openingQuantity * $costPrice),
+                        'rack_number' => $this->importText($this->importColumnValue($row, $columns, 'rack_number'), 100),
+                        'minimum_stock' => 0,
+                        'active' => true,
+                    ]);
+
+                    StoreStock::firstOrCreate(
+                        ['store_id' => $mainStore->id, 'product_id' => $product->id],
+                        ['quantity' => 0]
+                    );
+                    if ($openingQuantity > 0) {
+                        $service->adjustStock(
+                            $mainStore->id,
+                            $product->id,
+                            $openingQuantity,
+                            'opening',
+                            $product,
+                            'Opening stock imported from spreadsheet',
+                            null,
+                            $costPrice,
+                            $sellingPrice,
+                        );
+                    }
+                });
+                $imported++;
+                $existingNames[Str::lower($name)] = true;
+                if ($barcode) {
+                    $existingBarcodes[Str::lower($barcode)] = true;
+                }
+            } catch (Throwable $exception) {
+                $failed++;
+                if (count($messages) < 8) {
+                    $messages[] = "Row {$rowNumber} ({$name}): {$exception->getMessage()}";
+                }
+            }
+        }
+
+        $summary = "{$imported} products imported to {$mainStore->name}. {$skipped} existing/duplicate rows skipped.";
+        if ($failed > 0) {
+            $summary .= " {$failed} rows could not be imported.";
+        }
+
+        return redirect()->route('products.import')
+            ->with('success', $summary)
+            ->with('import_errors', $messages);
+    }
+
+    private function locateImportHeader(array $rows): array
+    {
+        $aliases = [
+            'name' => ['name', 'product name'],
+            'barcode' => ['barcode'],
+            'group_name' => ['group name', 'category'],
+            'opening_amount' => ['op amount', 'opening amount'],
+            'opening_quantity' => ['op stock main', 'opening stock main', 'opening qty', 'opening quantity'],
+            'cost_price' => ['purc price', 'purchase price', 'cost price'],
+            'selling_price' => ['sale price', 'selling price', 'sell price'],
+            'rack_number' => ['rack no', 'rack number'],
+        ];
+
+        foreach (array_slice($rows, 0, 12, true) as $rowIndex => $row) {
+            $normalized = array_map(fn ($value) => $this->normalizeImportHeader((string) $value), $row);
+            $columns = [];
+            foreach ($aliases as $field => $names) {
+                foreach ($names as $alias) {
+                    $column = array_search($alias, $normalized, true);
+                    if ($column !== false) {
+                        $columns[$field] = $column;
+                        break;
+                    }
+                }
+            }
+            if (isset($columns['name'], $columns['cost_price'], $columns['selling_price'])) {
+                return [(int) $rowIndex, $columns];
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'file' => 'No supported product header row was found. Expected columns include Name, Purc. Price and Sale Price.',
+        ]);
+    }
+
+    private function normalizeImportHeader(string $header): string
+    {
+        return trim((string) preg_replace('/[^a-z0-9]+/', ' ', Str::lower($header)));
+    }
+
+    private function importText(mixed $value, int $limit): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+
+        return $text === '' ? null : Str::limit($text, $limit, '');
+    }
+
+    private function importColumnValue(array $row, array $columns, string $field): mixed
+    {
+        return isset($columns[$field]) ? ($row[$columns[$field]] ?? null) : null;
+    }
+
+    private function importNumber(mixed $value): float
+    {
+        return $this->importNullableNumber($value) ?? 0;
+    }
+
+    private function importNullableNumber(mixed $value): ?float
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return null;
+        }
+        $number = preg_replace('/[^0-9.\-]/', '', (string) $value);
+
+        return is_numeric($number) ? max(0, (float) $number) : 0;
+    }
+
+    private function uniqueImportCode(string $source, int $rowNumber, array &$usedCodes): string
+    {
+        $base = Str::upper(Str::slug($source));
+        $base = Str::limit($base ?: 'IMPORTED-PRODUCT', 42, '');
+        $candidate = $base;
+        $suffix = 1;
+        while (isset($usedCodes[Str::lower($candidate)])) {
+            $candidate = Str::limit($base, 42, '').'-'.$rowNumber.'-'.$suffix++;
+        }
+        $usedCodes[Str::lower($candidate)] = true;
+
+        return Str::limit($candidate, 50, '');
     }
 
     public function references()

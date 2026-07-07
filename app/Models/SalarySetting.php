@@ -25,6 +25,7 @@ class SalarySetting extends Model
             'enable_half_day' => 'boolean',
             'paysheet_finalize_lock' => 'boolean',
             'require_reason_reopen_paysheet' => 'boolean',
+            'slip_show_attendance' => 'boolean',
         ];
     }
 }

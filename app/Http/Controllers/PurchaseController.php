@@ -253,7 +253,7 @@ class PurchaseController extends Controller
 
     public function suppliers(Request $request)
     {
-        $suppliers = Supplier::withCount('purchases')->withSum(['purchases as purchase_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'total_amount')->withSum(['purchases as paid_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'paid_amount')->withSum(['purchases as due_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'due_amount')->withMax('purchases as last_purchase', 'purchase_date')
+        $suppliers = Supplier::withCount(['purchases', 'products'])->withSum(['purchases as purchase_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'total_amount')->withSum(['purchases as paid_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'paid_amount')->withSum(['purchases as due_total' => fn (Builder $q) => $q->where('status', 'Completed')], 'due_amount')->withMax('purchases as last_purchase', 'purchase_date')
             ->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('name', 'like', "%{$term}%")->orWhere('company_name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")))
             ->when($request->status !== null && $request->status !== '', fn (Builder $q) => $q->where('active', $request->status === 'active'))
             ->when($request->due === 'yes', fn (Builder $q) => $q->whereHas('purchases', fn (Builder $p) => $p->where('due_amount', '>', 0)))->latest()->paginate(15)->withQueryString();

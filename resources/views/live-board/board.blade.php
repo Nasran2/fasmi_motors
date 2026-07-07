@@ -384,7 +384,7 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
                 <span class="label" style="color: #475569 !important;">Deposit Account *</span>
                 <select name="account_id" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
                     @foreach($accounts as $account)
-                    <option value="{{ $account->id }}">{{ $account->name }}</option>
+                    <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
                     @endforeach
                 </select>
             </label>

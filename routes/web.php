@@ -75,6 +75,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('products/low-stock', [ProductController::class, 'lowStock'])->name('products.low-stock');
     Route::get('products/damages', [ProductController::class, 'damages'])->name('products.damages');
     Route::post('products/damages', [ProductController::class, 'damageStore'])->name('products.damages.store');
+    Route::get('products/import', [ProductController::class, 'importForm'])->name('products.import');
+    Route::post('products/import', [ProductController::class, 'importStore'])->name('products.import.store');
     Route::post('products/{product}/stock', [ProductController::class, 'stock'])->name('products.stock');
     Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'show']);
     Route::get('purchases/returns', [PurchaseController::class, 'returns'])->name('purchases.returns');
@@ -107,10 +109,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('sales/public-links/{invoice}/toggle', [SalesBillingController::class, 'toggleLink'])->name('sales.public-links.toggle');
     Route::post('sales/public-links/{invoice}/sms', [SalesBillingController::class, 'sendBillSms'])->name('sales.public-links.sms');
     Route::get('technicians/create', [TechnicianController::class, 'create'])->name('technicians.create');
+    Route::get('technicians/{technician}/edit', [TechnicianController::class, 'edit'])->name('technicians.edit');
     Route::get('technicians/attendance', [TechnicianController::class, 'attendanceIndex'])->name('technicians.attendance.index');
     Route::post('technicians/attendance', [TechnicianController::class, 'attendanceStore'])->name('technicians.attendance.store');
+    Route::post('technicians/attendance/range', [TechnicianController::class, 'attendanceRangeStore'])->name('technicians.attendance.range.store');
+    Route::post('technicians/attendance/import/preview', [TechnicianController::class, 'attendanceImportPreview'])->name('technicians.attendance.import.preview');
+    Route::post('technicians/attendance/import/{batch}/confirm', [TechnicianController::class, 'attendanceImportConfirm'])->name('technicians.attendance.import.confirm');
     Route::get('technicians/salaries', [TechnicianController::class, 'salaries'])->name('technicians.salaries');
+    Route::get('technicians/salaries/preview', [TechnicianController::class, 'salaryPreview'])->name('technicians.salaries.preview');
     Route::post('technicians/salaries', [TechnicianController::class, 'salaryStore'])->name('technicians.salaries.store');
+    Route::post('technicians/salaries/{sheet}/finalize', [TechnicianController::class, 'salaryFinalize'])->name('technicians.salaries.finalize');
+    Route::post('technicians/salaries/{sheet}/pay', [TechnicianController::class, 'salaryPay'])->name('technicians.salaries.pay');
+    Route::delete('technicians/salaries/{sheet}', [TechnicianController::class, 'salaryDestroy'])->name('technicians.salaries.destroy');
+    Route::post('technicians/salaries/{sheet}/reopen', [TechnicianController::class, 'salaryReopen'])->name('technicians.salaries.reopen');
+    Route::get('technicians/salaries/{sheet}/slip', [TechnicianController::class, 'salarySlip'])->name('technicians.salaries.slip');
     Route::get('technicians/advances', [TechnicianController::class, 'advances'])->name('technicians.advances');
     Route::post('technicians/advances', [TechnicianController::class, 'advanceStore'])->name('technicians.advances.store');
     Route::get('technicians/commissions', [TechnicianController::class, 'commissions'])->name('technicians.commissions');
@@ -187,6 +199,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('backup-settings', [SettingController::class, 'backupSettings'])->name('backup-settings');
         Route::get('system-security', [SettingController::class, 'systemSecurity'])->name('system-security');
         Route::get('audit-log-settings', [SettingController::class, 'auditLogSettings'])->name('audit-log-settings');
+        
+        // Leave & Holiday Settings
+        Route::get('leave-holiday-settings', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'index'])->name('leave-holiday-settings');
+        Route::post('leave-holiday-settings/weekly', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'storeWeeklyLeaves'])->name('leave-holiday-settings.weekly');
+        Route::post('leave-holiday-settings/import-sl', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'importSriLankaHolidays'])->name('leave-holiday-settings.import-sl');
+        Route::post('leave-holiday-settings/holidays', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'storeHoliday'])->name('leave-holiday-settings.holidays');
+        Route::delete('leave-holiday-settings/holidays/{holiday}', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'destroyHoliday'])->name('leave-holiday-settings.holidays.destroy');
+        Route::patch('leave-holiday-settings/holidays/{holiday}/toggle', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'toggleHoliday'])->name('leave-holiday-settings.holidays.toggle');
 
         // Actions
         Route::post('save', [SettingController::class, 'save'])->name('save');
