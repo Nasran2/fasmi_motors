@@ -8,7 +8,10 @@
         <h1 class="page-title">Technician Attendance</h1>
         <p class="page-subtitle">Track technician In/Out punches, working minutes, OT slabs, and attendance status</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
+        <button type="button" onclick="openImportModal()" class="btn-secondary flex items-center gap-1">
+          📥 Import Excel
+        </button>
         <button type="button" onclick="openBulkModal()" class="btn-secondary flex items-center gap-1">
           👥 Bulk Mark Attendance
         </button>
@@ -19,6 +22,80 @@
     </div>
 
     <x-flash />
+
+    @if($previewBatch)
+    <div class="panel bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
+        <div>
+          <h2 class="text-lg font-black text-yellow-800">Review & Confirm Import</h2>
+          <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing.</p>
+        </div>
+        <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" class="flex-shrink-0">
+          @csrf
+          <button class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm & Import {{ $previewBatch->total_rows }} Rows</button>
+      </div>
+
+      <div class="overflow-x-auto border border-yellow-200 rounded-lg bg-white max-h-[600px] relative">
+        <table class="w-full text-left text-xs whitespace-nowrap">
+          <thead class="bg-yellow-100 text-yellow-800 border-b border-yellow-200 sticky top-0 z-10 shadow-sm">
+            <tr>
+              <th class="px-4 py-2 font-bold">Row</th>
+              <th class="px-4 py-2 font-bold">Employee in File</th>
+              <th class="px-4 py-2 font-bold">Map to Technician</th>
+              <th class="px-4 py-2 font-bold">Date</th>
+              <th class="px-4 py-2 font-bold">Check In</th>
+              <th class="px-4 py-2 font-bold">Check Out</th>
+              <th class="px-4 py-2 font-bold">Duplicate?</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-yellow-100">
+            @foreach($previewBatch->preview_data as $i => $row)
+            <tr class="hover:bg-yellow-50/50 {{ $row['duplicate'] ? 'opacity-50' : '' }}">
+              <td class="px-4 py-2 font-mono text-slate-500">{{ $row['row'] }}
+                <input type="hidden" name="rows[{{ $row['row'] }}][row]" value="{{ $row['row'] }}">
+              </td>
+              <td class="px-4 py-2">
+                <b class="text-slate-800">{{ $row['name'] ?: 'Unknown Name' }}</b><br>
+                <small class="text-slate-400">ID: {{ $row['person_id'] ?: 'N/A' }}</small>
+              </td>
+              <td class="px-4 py-2">
+                <select name="rows[{{ $row['row'] }}][technician_id]" class="w-full max-w-[200px] py-1 px-2 border-slate-300 rounded text-xs bg-white {{ $row['will_create_technician'] ? 'border-red-300 text-red-700 font-bold' : '' }}">
+                  <option value="">-- Create New Technician --</option>
+                  @foreach($technicians as $t)
+                  <option value="{{ $t->id }}" @selected($row['technician_id'] == $t->id)>{{ $t->name }}</option>
+                  @endforeach
+                </select>
+                @if($row['will_create_technician'])
+                <span class="block mt-1 text-[9px] text-red-600 font-bold uppercase tracking-wider">Will Auto-Create</span>
+                @endif
+              </td>
+              <td class="px-4 py-2">
+                <input type="date" name="rows[{{ $row['row'] }}][date]" value="{{ $row['date'] }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[120px]" required>
+              </td>
+              <td class="px-4 py-2">
+                <input type="time" name="rows[{{ $row['row'] }}][check_in]" value="{{ $row['check_in'] ? substr($row['check_in'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px]">
+              </td>
+              <td class="px-4 py-2">
+                <input type="time" name="rows[{{ $row['row'] }}][check_out]" value="{{ $row['check_out'] ? substr($row['check_out'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px] {{ ($row['auto_filled_checkout'] ?? false) ? 'border-blue-300 bg-blue-50 text-blue-700' : '' }}">
+                @if($row['auto_filled_checkout'] ?? false)
+                  <span class="block mt-1 text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-tight">Auto (Shop Close)</span>
+                @endif
+              </td>
+              <td class="px-4 py-2">
+                @if($row['duplicate'])
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">Will Skip</span>
+                @else
+                <span class="text-slate-300">—</span>
+                @endif
+              </td>
+            </tr>
+            @endforeach
+          </tbody>
+        </table>
+      </div>
+        </form>
+    </div>
+    @endif
 
     {{-- Stats Summary --}}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -140,8 +217,13 @@
     {{-- Filter Search --}}
     <form class="panel bg-white border border-slate-200 rounded-xl p-5 shadow-sm grid gap-3 md:grid-cols-4">
       <div>
-        <label class="label">Date Filter</label>
-        <input type="date" name="date" value="{{ request('date', $date->toDateString()) }}" class="w-full">
+        <label class="label">Month Filter</label>
+        <div class="relative">
+          <input type="month" name="month" value="{{ request('month', $from->format('Y-m')) }}" class="w-full">
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            📅
+          </span>
+        </div>
       </div>
       <div>
         <label class="label">Technician</label>
@@ -273,6 +355,36 @@
     </div>
 
     {{-- Bulk Mark Attendance Dialog Modal --}}
+    {{-- Import Excel Modal --}}
+    <dialog id="importModal" class="rounded-xl border border-slate-200 bg-white p-6 shadow-2xl w-full max-w-lg backdrop:bg-slate-900/50 open:animate-in open:fade-in open:zoom-in-95">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <h3 class="font-extrabold text-lg text-slate-800">📥 Import Attendance (Excel/CSV)</h3>
+        <button type="button" onclick="closeImportModal()" class="text-slate-400 hover:text-slate-600 transition">✕</button>
+      </div>
+      <form method="POST" action="{{ route('technicians.attendance.import.preview') }}" enctype="multipart/form-data" class="space-y-4">
+        @csrf
+        <div>
+          <label class="label">Upload File <span class="required-star">*</span></label>
+          <input type="file" name="file" accept=".csv,.xlsx,.xls,.txt" required class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 cursor-pointer">
+          <p class="text-xs text-slate-400 mt-2">Supported formats: .xlsx, .xls, .csv, .txt (up to 20MB)</p>
+        </div>
+        <div>
+          <label class="label">Specific Technician (Optional)</label>
+          <select name="technician_id" class="w-full">
+            <option value="">Auto-match by name/ID from file</option>
+            @foreach($technicians as $t)
+              <option value="{{ $t->id }}">{{ $t->name }}</option>
+            @endforeach
+          </select>
+          <p class="text-[10px] text-slate-400 mt-1">If selected, all records in the file will be mapped to this technician regardless of the names in the file.</p>
+        </div>
+        <div class="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-6">
+          <button type="button" onclick="closeImportModal()" class="btn-secondary">Cancel</button>
+          <button type="submit" class="btn-primary">Upload & Preview</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="bulkModal" class="rounded-xl border border-slate-200 bg-white p-6 shadow-2xl w-full max-w-lg">
       <h3 class="text-base font-black text-slate-800 mb-2">👥 Bulk Mark Attendance</h3>
       <p class="text-xs text-slate-500 mb-4">Quickly log attendance punches for multiple technicians simultaneously.</p>
@@ -547,6 +659,12 @@
     }
     function closeBulkModal() {
       document.getElementById('bulkModal').close();
+    }
+    function openImportModal() {
+      document.getElementById('importModal').showModal();
+    }
+    function closeImportModal() {
+      document.getElementById('importModal').close();
     }
   </script>
 </x-layouts::app>

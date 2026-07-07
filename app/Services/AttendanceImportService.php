@@ -38,6 +38,9 @@ class AttendanceImportService
         $columns = array_flip($header);
         $preview = [];
         $errors = [];
+        $settings = \App\Models\SalarySetting::first();
+        $closingTime = $settings && $settings->closing_time ? Carbon::parse($settings->closing_time)->format('H:i:s') : '17:00:00';
+
         foreach (array_slice($rows, 1) as $offset => $row) {
             $rowNumber = $offset + 2;
             $personId = isset($columns['person id']) ? ltrim(trim((string) ($row[$columns['person id']] ?? '')), "' ") : '';
@@ -74,6 +77,15 @@ class AttendanceImportService
             }
             $existing = $technician ? TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->exists() : false;
 
+            $checkIn = $this->time($this->cell($row, $columns, 'check in'));
+            $checkOut = $this->time($this->cell($row, $columns, 'check out'));
+            $autoFilledCheckout = false;
+            
+            if ($checkIn && !$checkOut) {
+                $checkOut = $closingTime;
+                $autoFilledCheckout = true;
+            }
+
             $preview[] = [
                 'row' => $rowNumber,
                 'person_id' => $personId,
@@ -83,8 +95,9 @@ class AttendanceImportService
                 'shift' => $this->cell($row, $columns, 'shift'),
                 'timetable' => $this->cell($row, $columns, 'timetable'),
                 'source_status' => $this->cell($row, $columns, 'attendance status'),
-                'check_in' => $this->time($this->cell($row, $columns, 'check in')),
-                'check_out' => $this->time($this->cell($row, $columns, 'check out')),
+                'check_in' => $checkIn,
+                'check_out' => $checkOut,
+                'auto_filled_checkout' => $autoFilledCheckout,
                 'break_minutes' => $this->minutes($this->cell($row, $columns, 'break')),
                 'leave_type' => $this->cell($row, $columns, 'leave type'),
                 'technician_id' => $technician?->id,

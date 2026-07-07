@@ -97,12 +97,15 @@ class TechnicianController extends Controller
         if ($request->filled('month')) {
             $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
             $to = $from->copy()->endOfMonth();
+        } elseif ($request->filled('date')) {
+            $from = Carbon::parse($request->date);
+            $to = $from->copy();
         } elseif ($request->filled('from') || $request->filled('to')) {
-            $from = $request->filled('from') ? Carbon::parse($request->from) : $date->copy()->startOfWeek();
-            $to = $request->filled('to') ? Carbon::parse($request->to) : $date->copy()->endOfWeek();
+            $from = $request->filled('from') ? Carbon::parse($request->from) : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to) : today()->endOfMonth();
         } else {
-            $from = $date->copy();
-            $to = $date->copy();
+            $from = today()->startOfMonth();
+            $to = today()->endOfMonth();
         }
         $records = TechnicianAttendance::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))
             ->when($request->status, fn (Builder $q, $status) => $q->where('status', $status))
