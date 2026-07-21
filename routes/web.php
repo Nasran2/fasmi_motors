@@ -309,6 +309,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('settings/test', [SmsCenterController::class, 'testSms'])->name('settings.test');
         Route::get('search-recipients', [SmsCenterController::class, 'searchRecipients'])->name('search-recipients');
     });
+
+    Route::get('shop-switch/{mode}', function ($mode) {
+        if (in_array($mode, ['workshop', 'helmet'])) {
+            session(['shop_mode' => $mode]);
+        }
+        return redirect()->back();
+    })->name('shop.switch');
 });
 
 Route::get('invoice/{token}', PublicInvoiceController::class)->name('invoices.public');

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Purchase extends Model
 {
+    use \App\Traits\ShopScoped;
+
     protected $guarded = [];
 
     protected function casts(): array

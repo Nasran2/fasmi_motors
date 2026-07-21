@@ -3,6 +3,33 @@
     $directLinks = config('workshop-navigation.direct');
     $currentSection = request()->route('section');
     $currentPage = request()->route('page');
+
+    if (session('shop_mode', 'workshop') === 'helmet') {
+        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'reports', 'settings'];
+        $groups = collect($groups)->filter(fn($g) => in_array($g['slug'], $allowedGroups))->values()->toArray();
+        foreach ($groups as &$group) {
+            if ($group['slug'] === 'dashboard') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['overview']))->values()->toArray();
+            }
+            elseif ($group['slug'] === 'customers-bikes') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['customer-list', 'add-customer', 'customer-due']))->values()->toArray();
+                $group['title'] = 'Customers';
+            }
+            elseif ($group['slug'] === 'products-stock') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['product-list', 'add-product', 'suppliers', 'categories', 'brands', 'units', 'stores', 'store-stock', 'stock-transfer', 'stock-adjustment', 'low-stock', 'damage-write-off']))->values()->toArray();
+            }
+            elseif ($group['slug'] === 'sales-billing') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['parts-sales', 'invoice-list', 'payments', 'due-bills', 'customer-payments']))->values()->toArray();
+                $group['title'] = 'POS & Sales';
+            }
+            elseif ($group['slug'] === 'reports') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['sales-report', 'profit-loss', 'stock-report']))->values()->toArray();
+            }
+            elseif ($group['slug'] === 'settings') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['general-settings', 'business-profile', 'branch-store-settings', 'stock-settings']))->values()->toArray();
+            }
+        }
+    }
 @endphp
 
 <div class="relative flex min-h-0 flex-1 flex-col" data-erp-menu>

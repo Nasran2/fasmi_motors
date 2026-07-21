@@ -12,6 +12,8 @@ use Illuminate\Support\Carbon;
  */
 class Invoice extends Model
 {
+    use \App\Traits\ShopScoped;
+
     protected $guarded = [];
 
     protected function casts(): array

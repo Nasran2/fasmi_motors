@@ -19,8 +19,12 @@ class DashboardController extends Controller
 {
     public function __invoke(): View
     {
+        if (session('shop_mode', 'workshop') === 'helmet') {
+            return $this->helmetDashboard();
+        }
+
         $today = today();
-        $yesterday = $today->subDay();
+        $yesterday = $today->copy()->subDay();
         $finalStatuses = ['Completed', 'Billed', 'Delivered', 'Cancelled'];
         $completedStatuses = ['Completed', 'Billed', 'Delivered'];
 
@@ -133,5 +137,53 @@ class DashboardController extends Controller
         }
 
         return round((((float) $current - (float) $previous) / abs((float) $previous)) * 100, 1);
+    }
+
+    private function helmetDashboard(): View
+    {
+        $today = today();
+        $yesterday = $today->copy()->subDay();
+
+        $todaySales = (float) Invoice::whereDate('created_at', $today)->sum('total');
+        $yesterdaySales = (float) Invoice::whereDate('created_at', $yesterday)->sum('total');
+
+        $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
+        $lowStockCount = Product::withSum('stocks', 'quantity')->where('active', true)->get()
+            ->filter(fn (Product $p) => (float) ($p->stocks_sum_quantity ?? 0) <= (float) $p->minimum_stock)->count();
+
+        $cards = [
+            ['label' => 'Today Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => 'vs yesterday', 'icon' => 'money', 'tone' => 'blue'],
+            ['label' => 'Pending Due Amount', 'value' => $pendingDue, 'format' => 'money', 'trend' => null, 'note' => Invoice::where('due_amount', '>', 0)->count().' unpaid invoices', 'icon' => 'warning', 'tone' => 'rose'],
+            ['label' => 'Helmet Products', 'value' => Product::count(), 'format' => 'number', 'trend' => null, 'note' => 'active products in catalog', 'icon' => 'parts', 'tone' => 'violet'],
+            ['label' => 'Low Stock Items', 'value' => $lowStockCount, 'format' => 'number', 'trend' => null, 'note' => 'require attention', 'icon' => 'warning', 'tone' => 'orange'],
+        ];
+
+        $weekStart = now()->startOfWeek();
+        $salesSeries = collect(range(0, 6))->map(function (int $offset) use ($weekStart): array {
+            $date = $weekStart->addDays($offset);
+            return ['label' => $date->format('D'), 'date' => $date->format('d M'), 'value' => (float) Invoice::whereDate('created_at', $date)->sum('total')];
+        });
+        $salesMaximum = max(1, (float) $salesSeries->max('value'));
+        $salesPoints = $salesSeries->values()->map(fn (array $item, int $index): string => ($index * 100).','.round(155 - (($item['value'] / $salesMaximum) * 125), 2))->implode(' ');
+        $weekSales = (float) $salesSeries->sum('value');
+        $lastWeekSales = (float) Invoice::whereBetween('created_at', [$weekStart->subWeek(), $weekStart->subSecond()])->sum('total');
+
+        $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)->get()
+            ->filter(fn (Product $product): bool => (float) ($product->stocks_sum_quantity ?? 0) <= (float) $product->minimum_stock)
+            ->sortBy('stocks_sum_quantity')->take(5);
+
+        $recentSales = Invoice::with('customer')->latest()->limit(5)->get();
+
+        return view('dashboard-helmet', [
+            'cards' => $cards,
+            'salesSeries' => $salesSeries,
+            'salesPoints' => $salesPoints,
+            'salesMaximum' => $salesMaximum,
+            'weekSales' => $weekSales,
+            'averageDailySales' => $weekSales / max(1, min(7, now()->dayOfWeekIso)),
+            'weekTrend' => $this->trend($weekSales, $lastWeekSales),
+            'lowStock' => $lowStock,
+            'recentSales' => $recentSales,
+        ]);
     }
 }

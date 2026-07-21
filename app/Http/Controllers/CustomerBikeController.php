@@ -268,7 +268,7 @@ class CustomerBikeController extends Controller
 
     private function customerDueSubquery()
     {
-        return Invoice::selectRaw('coalesce(sum(invoices.due_amount),0)')->join('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
+        return Invoice::selectRaw('coalesce(sum(invoices.due_amount),0)')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
     }
 
     private function customerLastVisitSubquery()
@@ -278,7 +278,7 @@ class CustomerBikeController extends Controller
 
     private function customerDueExistsSubquery()
     {
-        return DB::table('invoices')->selectRaw('1')->join('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where('invoices.due_amount', '>', 0)->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
+        return Invoice::selectRaw('1')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where('invoices.due_amount', '>', 0)->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
     }
 
     private function bikeDueSubquery()
