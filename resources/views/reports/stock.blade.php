@@ -43,12 +43,12 @@
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->name }}</td>
-<td class="px-4 py-3">{{ $row->sku }}</td>
+<td class="px-4 py-3">{{ $row->code }}</td>
 <td class="px-4 py-3">{{ $row->category?->name }}</td>
 <td class="px-4 py-3">{{ $row->stocks_sum_quantity }}</td>
 <td class="px-4 py-3">{{ $row->minimum_stock }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->cost_price, 2) }}</td>
-<td class="px-4 py-3">{{ "Rs. " . number_format($row->price, 2) }}</td>
+<td class="px-4 py-3">{{ "Rs. " . number_format($row->selling_price, 2) }}</td>
             </tr>
             @empty
             <tr>

@@ -41,9 +41,9 @@
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->due_date->format("d M Y") }}</td>
-<td class="px-4 py-3">{{ $row->bike?->plate_number }}</td>
-<td class="px-4 py-3">{{ $row->customer?->name }}</td>
-<td class="px-4 py-3">{{ $row->customer?->phone }}</td>
+<td class="px-4 py-3">{{ $row->bike?->number }}</td>
+<td class="px-4 py-3">{{ $row->bike?->customer?->name }}</td>
+<td class="px-4 py-3">{{ $row->bike?->customer?->phone }}</td>
 <td class="px-4 py-3">
   @php
     $statusVal = strtolower($row->status ?? '');

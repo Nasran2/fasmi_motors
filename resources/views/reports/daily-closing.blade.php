@@ -44,7 +44,7 @@
               <td class="px-4 py-3">Rs. {{ number_format($row->main_income, 2) }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->spare_parts_income, 2) }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->main_expense + $row->spare_parts_expense + $row->bank_expense + $row->cash_expense, 2) }}</td>
-              <td class="px-4 py-3">{{ $row->closedBy?->name }}</td>
+              <td class="px-4 py-3">{{ $row->closer?->name }}</td>
             </tr>
             @empty
             <tr>

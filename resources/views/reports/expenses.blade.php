@@ -42,9 +42,9 @@
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->expense_date->format("d M Y") }}</td>
-<td class="px-4 py-3">{{ $row->reference_number }}</td>
+<td class="px-4 py-3">{{ $row->vendor }}</td>
 <td class="px-4 py-3">{{ $row->category }}</td>
-<td class="px-4 py-3">{{ $row->description }}</td>
+<td class="px-4 py-3">{{ $row->note }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->amount, 2) }}</td>
 <td class="px-4 py-3">{{ $row->creator?->name }}</td>
             </tr>

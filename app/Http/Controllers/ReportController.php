@@ -39,7 +39,7 @@ class ReportController extends Controller
             'yesterday'  => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],
             'this_week'  => [today()->startOfWeek()->startOfDay(), today()->endOfDay()],
             'last_week'  => [today()->subWeek()->startOfWeek()->startOfDay(), today()->subWeek()->endOfWeek()->endOfDay()],
-            'today' => [today()->startOfMonth()->startOfDay(), today()->endOfDay()],
+            'this_month' => [today()->startOfMonth()->startOfDay(), today()->endOfDay()],
             'last_month' => [today()->subMonth()->startOfMonth()->startOfDay(), today()->subMonth()->endOfMonth()->endOfDay()],
             'this_year'  => [today()->startOfYear()->startOfDay(), today()->endOfDay()],
             'last_year'  => [today()->subYear()->startOfYear()->startOfDay(), today()->subYear()->endOfYear()->endOfDay()],
@@ -48,6 +48,11 @@ class ReportController extends Controller
                 $to   ? Carbon::parse($to)->endOfDay()     : today()->endOfDay(),
             ],
         };
+    }
+
+    protected function activeRange(Request $r): string
+    {
+        return $r->input('date_range', 'today');
     }
 
     // ─── 1. SALES REPORT ───────────────────────────────────────
@@ -81,7 +86,7 @@ class ReportController extends Controller
 
         $customers = Customer::orderBy('name')->get(['id', 'name']);
 
-        return view('reports.sales', compact('rows', 'totals', 'byType', 'customers', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.sales', compact('rows', 'totals', 'byType', 'customers', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 2. JOB CARD REPORT ────────────────────────────────────
@@ -114,7 +119,7 @@ class ReportController extends Controller
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
         $statuses    = ['Pending', 'In Progress', 'Waiting for Parts', 'Completed', 'Delivered', 'Cancelled'];
 
-        return view('reports.job-cards', compact('rows', 'stats', 'technicians', 'statuses', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.job-cards', compact('rows', 'stats', 'technicians', 'statuses', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 3. SPARE PARTS SALES REPORT ──────────────────────────
@@ -140,7 +145,7 @@ class ReportController extends Controller
         ];
         $stats['gross_profit'] = $stats['total_sales'] - $stats['total_cost'];
 
-        return view('reports.spare-parts', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.spare-parts', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 4. PROFIT & LOSS ──────────────────────────────────────
@@ -177,7 +182,7 @@ class ReportController extends Controller
             'serviceIncome', 'partsSales', 'partsCost', 'partsProfit',
             'otherIncome', 'totalIncome', 'totalExpenses', 'totalDrawings',
             'netProfit', 'expenseByCategory', 'from', 'to'
-        ) + ['range' => $r->input('date_range', 'today')]);
+        ) + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 5. STOCK REPORT ───────────────────────────────────────
@@ -203,7 +208,7 @@ class ReportController extends Controller
             'value_selling' => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->price),
         ];
 
-        return view('reports.stock', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.stock', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 6. PURCHASE REPORT ───────────────────────────────────
@@ -226,7 +231,7 @@ class ReportController extends Controller
             'count'    => Purchase::whereBetween('purchase_date', [$from, $to])->count(),
         ];
 
-        return view('reports.purchases', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.purchases', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 7. EXPENSE REPORT ────────────────────────────────────
@@ -252,7 +257,7 @@ class ReportController extends Controller
 
         $categories = Expense::select('category')->distinct()->whereNotNull('category')->pluck('category');
 
-        return view('reports.expenses', compact('rows', 'stats', 'byCategory', 'categories', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.expenses', compact('rows', 'stats', 'byCategory', 'categories', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 8. DRAWING REPORT ───────────────────────────────────
@@ -271,7 +276,7 @@ class ReportController extends Controller
             'count' => Drawing::whereBetween('drawing_date', [$from, $to])->count(),
         ];
 
-        return view('reports.drawings', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.drawings', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 9. DUE BILLS REPORT ─────────────────────────────────
@@ -293,7 +298,7 @@ class ReportController extends Controller
             'customers'    => Invoice::where('due_amount', '>', 0)->distinct('customer_id')->count(),
         ];
 
-        return view('reports.due-bills', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.due-bills', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 10. CUSTOMER DUE REPORT ──────────────────────────────
@@ -316,7 +321,7 @@ class ReportController extends Controller
             'due_customers' => Customer::whereHas('invoices', fn ($q) => $q->where('due_amount', '>', 0))->count(),
         ];
 
-        return view('reports.customer-due', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.customer-due', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 11. TECHNICIAN REPORT ────────────────────────────────
@@ -343,7 +348,7 @@ class ReportController extends Controller
             'total_commission' => $rows->sum('commissions_sum_amount') ?? 0,
         ];
 
-        return view('reports.technicians', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.technicians', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 12. ATTENDANCE REPORT ───────────────────────────────
@@ -369,7 +374,7 @@ class ReportController extends Controller
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
 
-        return view('reports.attendance', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.attendance', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 13. SALARY REPORT ───────────────────────────────────
@@ -392,7 +397,7 @@ class ReportController extends Controller
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
 
-        return view('reports.salary', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.salary', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 14. EPF REPORT ──────────────────────────────────────
@@ -416,7 +421,7 @@ class ReportController extends Controller
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
 
-        return view('reports.epf', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.epf', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 15. ETF REPORT ──────────────────────────────────────
@@ -438,7 +443,7 @@ class ReportController extends Controller
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
 
-        return view('reports.etf', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.etf', compact('rows', 'stats', 'technicians', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 16. MAIN ACCOUNT REPORT ─────────────────────────────
@@ -462,7 +467,7 @@ class ReportController extends Controller
             'balance'   => $account?->balance ?? 0,
         ];
 
-        return view('reports.main-account', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.main-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 17. SPARE PARTS ACCOUNT REPORT ──────────────────────
@@ -486,7 +491,7 @@ class ReportController extends Controller
             'balance'   => $account?->balance ?? 0,
         ];
 
-        return view('reports.spare-parts-account', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.spare-parts-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 18. BANK ACCOUNT REPORT ─────────────────────────────
@@ -510,7 +515,7 @@ class ReportController extends Controller
             'balance'   => $account?->balance ?? 0,
         ];
 
-        return view('reports.bank-account', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.bank-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 19. DAILY CLOSING REPORT ────────────────────────────
@@ -531,7 +536,7 @@ class ReportController extends Controller
             'total_expenses' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum(DB::raw('main_expense + spare_parts_expense + bank_expense + cash_expense')),
         ];
 
-        return view('reports.daily-closing', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.daily-closing', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 20. SERVICE REMINDER REPORT ─────────────────────────
@@ -555,7 +560,7 @@ class ReportController extends Controller
             'total'     => ServiceReminder::count(),
         ];
 
-        return view('reports.service-reminders', compact('rows', 'stats', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.service-reminders', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 21. SMS REPORT ──────────────────────────────────────
@@ -584,6 +589,6 @@ class ReportController extends Controller
 
         $modules = SmsLog::select('module')->distinct()->whereNotNull('module')->pluck('module');
 
-        return view('reports.sms', compact('rows', 'stats', 'modules', 'from', 'to') + ['range' => $r->input('date_range', 'today')]);
+        return view('reports.sms', compact('rows', 'stats', 'modules', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
 }

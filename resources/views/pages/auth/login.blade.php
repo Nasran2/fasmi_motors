@@ -20,7 +20,7 @@
                 <span class="sr-only">Username or email</span>
                 <span class="relative block">
                     <svg class="pointer-events-none absolute left-4 top-1/2 size-6 -translate-y-1/2 text-slate-500 transition group-focus-within:text-[#ef172d]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4.5 21c.5-5 3-8 7.5-8s7 3 7.5 8"/></svg>
-                    <input name="login" value="{{ old('login') }}" type="text" required autofocus autocomplete="username" placeholder="Username / Email" class="h-14 w-full rounded-xl border border-slate-300 bg-white pl-14 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-[#ef172d] focus:ring-4 focus:ring-red-100 sm:h-16">
+                    <input name="login" value="{{ old('login') }}" type="text" required autofocus autocomplete="username" placeholder="Username / Email" class="h-14 w-full rounded-xl border border-slate-300 bg-white !pl-14 !pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-[#ef172d] focus:ring-4 focus:ring-red-100 sm:h-16">
                 </span>
             </label>
 
@@ -28,7 +28,7 @@
                 <span class="sr-only">Password</span>
                 <span class="relative block">
                     <svg class="pointer-events-none absolute left-4 top-1/2 size-6 -translate-y-1/2 text-slate-500 transition group-focus-within:text-[#ef172d]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></svg>
-                    <input id="login-password" name="password" type="password" required autocomplete="current-password" placeholder="Password" class="h-14 w-full rounded-xl border border-slate-300 bg-white pl-14 pr-14 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-[#ef172d] focus:ring-4 focus:ring-red-100 sm:h-16">
+                    <input id="login-password" name="password" type="password" required autocomplete="current-password" placeholder="Password" class="h-14 w-full rounded-xl border border-slate-300 bg-white !pl-14 !pr-14 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-[#ef172d] focus:ring-4 focus:ring-red-100 sm:h-16">
                     <button type="button" id="password-toggle" class="absolute right-3 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800" aria-label="Show password">
                         <svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>

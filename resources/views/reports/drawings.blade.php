@@ -42,7 +42,7 @@
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->drawing_date->format("d M Y") }}</td>
 <td class="px-4 py-3">{{ $row->person_name }}</td>
-<td class="px-4 py-3">{{ $row->description }}</td>
+<td class="px-4 py-3">{{ $row->note }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->amount, 2) }}</td>
 <td class="px-4 py-3">{{ $row->creator?->name }}</td>
             </tr>
