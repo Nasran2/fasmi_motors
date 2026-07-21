@@ -38,7 +38,7 @@
                 background: #f7f9fc;
             }
             .pos-right {
-                width: 380px;
+                width: 440px;
                 background-color: #ffffff;
                 border-left: 1px solid #e2e8f0;
                 display: flex;
@@ -47,9 +47,9 @@
                 z-index: 40;
                 box-shadow: -4px 0 15px rgba(0,0,0,0.03);
             }
-            @media (max-width: 1024px) {
+            @media (max-width: 1200px) {
                 .pos-right {
-                    width: 320px;
+                    width: 390px;
                 }
             }
             @media (max-width: 768px) {

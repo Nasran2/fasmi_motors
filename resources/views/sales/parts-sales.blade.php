@@ -142,11 +142,11 @@
             <!-- Cart Items -->
             <div class="flex-1 overflow-y-auto p-4 bg-slate-50/50">
                 <!-- Headers -->
-                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-4 mb-3 px-2">
+                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-2 mb-3 px-2 pr-10">
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Product</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center w-[80px]">Qty</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[70px]">Price</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[80px]">Subtotal</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center w-[72px]">Qty</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[80px]">Price</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[95px]">Subtotal</span>
                 </div>
 
                 <div class="space-y-3">
@@ -158,35 +158,35 @@
                         </div>
                     </template>
                     <template x-for="(item, index) in cart.items" :key="index">
-                        <div class="grid grid-cols-[1fr_auto_auto_auto] items-start gap-4 p-3 bg-white rounded-xl border border-slate-100 shadow-sm relative pr-8">
+                        <div class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 shadow-sm relative pr-10 min-h-[64px]">
                             <!-- Product Detail -->
-                            <div>
-                                <p class="text-xs font-black text-slate-900 leading-tight" x-text="item.product.name"></p>
-                                <p class="text-[10px] font-semibold text-slate-400 mt-1 uppercase tracking-wider" x-text="item.product.sku"></p>
+                            <div class="min-w-0">
+                                <p class="text-[11px] font-black text-slate-900 leading-tight truncate" x-text="item.product.name" :title="item.product.name"></p>
+                                <p class="text-[9px] font-semibold text-slate-400 mt-0.5 uppercase tracking-wider" x-text="item.product.sku"></p>
                                 <template x-if="item.batch_no">
-                                    <span class="inline-block mt-1.5 rounded bg-[#06162f] px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-white" x-text="'BATCH: ' + item.batch_no"></span>
+                                    <span class="inline-block mt-1 rounded bg-[#06162f] px-1 py-0.5 text-[8px] font-bold tracking-wider text-white" x-text="'B: ' + item.batch_no"></span>
                                 </template>
                             </div>
                             
                             <!-- Qty Control -->
-                            <div class="flex items-center gap-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                                <button @click="updateQty(index, -1)" class="size-7 grid place-items-center rounded-md hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg></button>
-                                <input type="number" x-model.number="item.qty" class="w-8 bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none" @change="recalculateTotals">
-                                <button @click="updateQty(index, 1)" class="size-7 grid place-items-center rounded-md hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg></button>
+                            <div class="flex items-center gap-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200 w-[72px]">
+                                <button @click="updateQty(index, -1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg></button>
+                                <input type="number" x-model.number="item.qty" class="w-6 bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none" @change="recalculateTotals">
+                                <button @click="updateQty(index, 1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg></button>
                             </div>
-
+                            
                             <!-- Price -->
-                            <div class="text-right w-[70px]">
-                                <input type="number" x-model.number="item.unit_price" class="w-full text-right bg-transparent text-xs font-bold text-slate-600 outline-none border-b border-dashed border-slate-300 focus:border-slate-500" @change="recalculateTotals">
+                            <div class="text-right w-[80px]">
+                                <input type="number" x-model.number="item.unit_price" class="w-full text-right text-xs font-black text-slate-700 focus:text-indigo-600" @change="recalculateTotals" style="min-height:30px; padding: 4px 6px;">
                             </div>
 
                             <!-- Subtotal -->
-                            <div class="text-right w-[80px]">
-                                <p class="text-sm font-black text-slate-900" x-text="'Rs. ' + formatNumber(item.qty * item.unit_price)"></p>
+                            <div class="text-right w-[95px]">
+                                <p class="text-xs font-black text-slate-950" x-text="'Rs. ' + formatNumber(item.qty * item.unit_price)"></p>
                             </div>
 
                             <!-- Delete -->
-                            <button @click="removeItem(index)" class="absolute right-2 top-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1 transition">
+                            <button @click="removeItem(index)" class="absolute right-2 top-1/2 -translate-y-1/2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1 transition">
                                 <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                             </button>
                         </div>
@@ -359,7 +359,7 @@
                         <label class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 block">Paid Amount</label>
                         <div class="relative">
                             <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
-                            <input type="number" x-model.number="paidAmount" class="w-full h-14 bg-white border-2 border-slate-200 rounded-xl pl-12 pr-4 text-xl font-black text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition">
+                            <input type="number" x-model.number="paidAmount" class="w-full h-14 bg-white border-2 border-slate-200 rounded-xl !pl-14 pr-4 text-xl font-black text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition">
                         </div>
                     </div>
 

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Supplier extends Model
 {
+    use \App\Traits\ShopScoped;
+
     protected $guarded = [];
 
     protected function casts(): array

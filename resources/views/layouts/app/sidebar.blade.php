@@ -12,20 +12,20 @@
                     <span class="min-w-0"><span class="block whitespace-nowrap text-[20px] font-black italic leading-none tracking-[-0.06em]"><span class="text-[#ff263d]">FASMIR</span> <span class="text-white">MOTORS</span></span><span class="mt-2 block whitespace-nowrap text-[9px] font-semibold uppercase tracking-[.12em] text-slate-400">Bike Repair Center System</span></span>
                 </a>
                 
-                <div class="mt-4 px-1">
-                    @if(session('shop_mode', 'workshop') === 'helmet')
-                        <a href="{{ route('shop.switch', ['mode' => 'workshop']) }}" class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-[11px] font-bold text-white hover:bg-slate-700 transition">
-                            🔧 Switch to Workshop
-                        </a>
-                    @else
-                        <a href="{{ route('shop.switch', ['mode' => 'helmet']) }}" class="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
-                            🪖 Switch to Helmet Shop
-                        </a>
-                    @endif
-                </div>
-
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
+
+            <div class="mt-4 px-3 relative z-10">
+                @if(session('shop_mode', 'workshop') === 'helmet')
+                    <a href="{{ route('shop.switch', ['mode' => 'workshop']) }}" class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-slate-700 transition">
+                        🔧 Switch to Workshop
+                    </a>
+                @else
+                    <a href="{{ route('shop.switch', ['mode' => 'helmet']) }}" class="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
+                        🪖 Switch to Helmet Shop
+                    </a>
+                @endif
+            </div>
 
             <x-erp-sidebar-menu />
 

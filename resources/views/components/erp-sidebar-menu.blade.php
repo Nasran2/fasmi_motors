@@ -5,7 +5,7 @@
     $currentPage = request()->route('page');
 
     if (session('shop_mode', 'workshop') === 'helmet') {
-        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'reports', 'settings'];
+        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'accounts', 'expenses-drawings', 'reports', 'settings'];
         $groups = collect($groups)->filter(fn($g) => in_array($g['slug'], $allowedGroups))->values()->toArray();
         foreach ($groups as &$group) {
             if ($group['slug'] === 'dashboard') {
@@ -21,6 +21,9 @@
             elseif ($group['slug'] === 'sales-billing') {
                 $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['parts-sales', 'invoice-list', 'payments', 'due-bills', 'customer-payments']))->values()->toArray();
                 $group['title'] = 'POS & Sales';
+            }
+            elseif ($group['slug'] === 'accounts') {
+                $group['children'] = collect($group['children'])->filter(fn($c) => $c['slug'] !== 'spare-parts-ledger')->values()->toArray();
             }
             elseif ($group['slug'] === 'reports') {
                 $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['sales-report', 'profit-loss', 'stock-report']))->values()->toArray();

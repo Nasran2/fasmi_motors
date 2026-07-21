@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Account extends Model
 {
+    use \App\Traits\ShopScoped;
+
     protected $guarded = [];
 
     public function transactions()
