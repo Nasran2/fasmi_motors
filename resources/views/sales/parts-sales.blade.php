@@ -144,7 +144,7 @@
                 <!-- Headers -->
                 <div class="grid grid-cols-[1fr_auto_auto_auto] gap-2 mb-3 px-2 pr-10">
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Product</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center w-[72px]">Qty</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center w-[84px]">Qty</span>
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[80px]">Price</span>
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[95px]">Subtotal</span>
                 </div>
@@ -169,9 +169,9 @@
                             </div>
                             
                             <!-- Qty Control -->
-                            <div class="flex items-center gap-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200 w-[72px]">
+                            <div class="flex items-center gap-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200 w-[84px]">
                                 <button @click="updateQty(index, -1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg></button>
-                                <input type="number" x-model.number="item.qty" class="w-6 bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none" @change="recalculateTotals">
+                                <input type="number" x-model.number="item.qty" class="noinput !w-9 !p-0 !bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none !border-0 focus:ring-0" @change="recalculateTotals">
                                 <button @click="updateQty(index, 1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg></button>
                             </div>
                             
@@ -195,6 +195,7 @@
             </div>
 
             <!-- Cart Actions -->
+            @if(session('shop_mode', 'workshop') !== 'helmet')
             <div class="grid grid-cols-4 gap-2 px-4 py-3 bg-white border-y border-slate-100">
                 <button class="flex flex-col items-center justify-center gap-1.5 py-2 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition">
                     <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -213,6 +214,7 @@
                     <span class="text-[9px] font-bold uppercase tracking-wider">Clear</span>
                 </button>
             </div>
+            @endif
 
             <!-- Totals -->
             <div class="px-4 py-4 bg-white">
@@ -231,9 +233,15 @@
                         </div>
                         <input type="number" x-model.number="cart.discountValue" @input="recalculateTotals" class="w-24 text-right bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-900 outline-none focus:border-red-400">
                     </div>
+                    @if(session('shop_mode', 'workshop') !== 'helmet')
                     <div class="flex justify-between items-center text-sm">
                         <span class="text-slate-500 font-bold">Tax</span>
                         <input type="number" x-model.number="cart.tax" @input="recalculateTotals" class="w-24 text-right bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-900 outline-none focus:border-red-400">
+                    </div>
+                    @endif
+                    <div class="flex justify-between items-center text-sm font-bold text-emerald-600 bg-emerald-50/50 px-2 py-1 rounded-lg mt-2" x-show="cart.discount > 0">
+                        <span>Discounted Amount</span>
+                        <span x-text="'- Rs. ' + formatNumber(cart.discount)"></span>
                     </div>
                 </div>
                 
@@ -249,6 +257,16 @@
 
             <!-- Payment Buttons -->
             <div class="px-4 pb-4 pt-0 bg-white space-y-2 shrink-0">
+                @if(session('shop_mode', 'workshop') === 'helmet')
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="btn-pos bg-orange-100 text-orange-700 hover:bg-orange-200"><x-dashboard-icon name="pause" class="size-4 mb-1"/> Hold (0)</button>
+                    <button class="btn-pos bg-purple-100 text-purple-700 hover:bg-purple-200"><x-dashboard-icon name="square-3-stack-3d" class="size-4 mb-1"/> Multi</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button @click="paymentMethod = 'Cash'; openPayment();" class="btn-pos bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20"><x-dashboard-icon name="banknotes" class="size-5 mb-1"/> Cash</button>
+                    <button @click="clearCart" class="btn-pos bg-red-600 text-white hover:bg-red-500 shadow-lg shadow-red-500/20"><x-dashboard-icon name="x-mark" class="size-5 mb-1"/> Cancel</button>
+                </div>
+                @else
                 <div class="grid grid-cols-4 gap-2">
                     <button @click="submitSale('Quotation')" class="btn-pos bg-slate-100 text-slate-700 hover:bg-slate-200"><x-dashboard-icon name="document-text" class="size-4 mb-1"/> Quotation</button>
                     <button class="btn-pos bg-orange-100 text-orange-700 hover:bg-orange-200"><x-dashboard-icon name="pause" class="size-4 mb-1"/> Hold (0)</button>
@@ -261,6 +279,7 @@
                     <button @click="paymentMethod = 'Bank Transfer'; openPayment();" class="btn-pos bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20"><x-dashboard-icon name="building-library" class="size-5 mb-1"/> Bank</button>
                     <button @click="clearCart" class="btn-pos bg-red-600 text-white hover:bg-red-500 shadow-lg shadow-red-500/20"><x-dashboard-icon name="x-mark" class="size-5 mb-1"/> Cancel</button>
                 </div>
+                @endif
             </div>
         </div>
 
@@ -315,57 +334,112 @@
         </dialog>
 
         <!-- Payment Modal -->
-        <dialog id="payment-modal" class="m-auto rounded-3xl p-0 shadow-2xl backdrop:bg-slate-900/60 open:animate-in open:fade-in border-0 w-full max-w-md">
-            <div class="bg-white flex flex-col relative overflow-hidden">
-                <div class="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-red-600 to-red-400"></div>
-                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h2 class="text-xl font-black text-slate-900 flex items-center gap-2">
-                        <svg class="size-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Checkout
+        <dialog id="payment-modal" class="m-auto rounded-3xl p-0 shadow-2xl backdrop:bg-slate-900/60 open:animate-in open:fade-in border-0 w-full max-w-2xl">
+            <div class="bg-white flex flex-col relative overflow-hidden rounded-3xl">
+                <div class="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-indigo-600 to-indigo-400"></div>
+                
+                <!-- Header -->
+                <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-white">
+                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <svg class="size-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        Checkout POS Sale
                     </h2>
                     <button @click="document.getElementById('payment-modal').close()" class="size-8 grid place-items-center rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition">
                         <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
                     </button>
                 </div>
                 
-                <div class="p-6 bg-slate-50/50 space-y-4">
-                    <div class="flex justify-between items-end mb-2">
-                        <span class="text-sm font-bold uppercase tracking-wider text-slate-400">Total Payable</span>
-                        <span class="text-4xl font-black text-red-600 tracking-tight" x-text="'Rs. ' + formatNumber(cart.total)"></span>
-                    </div>
-                    
-                    <div>
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 block">Payment Method</label>
-                        <select x-model="paymentMethod" class="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition">
-                            <option>Cash</option>
-                            <option>Card</option>
-                            <option>Bank Transfer</option>
-                            <option>Cheque</option>
-                            <option>Credit/Due</option>
-                        </select>
-                    </div>
+                <div class="grid sm:grid-cols-12 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-slate-50/30">
+                    <!-- Left: Details Column (cols-6) -->
+                    <div class="p-6 space-y-4 sm:col-span-6 flex flex-col justify-between">
+                        <div class="space-y-4">
+                            <div class="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex justify-between items-center">
+                                <span class="text-xs font-black uppercase tracking-wider text-slate-500">Total Payable</span>
+                                <span class="text-2xl font-black text-indigo-600 tracking-tight" x-text="'Rs. ' + formatNumber(cart.total)"></span>
+                            </div>
+                            
+                            <div>
+                                <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Payment Method</label>
+                                <select x-model="paymentMethod" class="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition">
+                                    @if(session('shop_mode', 'workshop') === 'helmet')
+                                        <option>Cash</option>
+                                        <option>Cheque</option>
+                                        <option>Credit/Due</option>
+                                    @else
+                                        <option>Cash</option>
+                                        <option>Card</option>
+                                        <option>Bank Transfer</option>
+                                        <option>Cheque</option>
+                                        <option>Credit/Due</option>
+                                    @endif
+                                </select>
+                            </div>
 
-                    <div x-show="paymentMethod !== 'Credit/Due'">
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 block">Account</label>
-                        <select x-model="accountId" class="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition">
-                            <option value="">Select Account...</option>
-                            @foreach($accounts as $account)
-                                <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    
-                    <div x-show="paymentMethod !== 'Credit/Due'">
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 block">Paid Amount</label>
-                        <div class="relative">
-                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
-                            <input type="number" x-model.number="paidAmount" class="w-full h-14 bg-white border-2 border-slate-200 rounded-xl !pl-14 pr-4 text-xl font-black text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition">
+                            <div x-show="paymentMethod !== 'Credit/Due'">
+                                @if($accounts->count() === 1)
+                                    <input type="hidden" x-model="accountId">
+                                    <div class="bg-slate-100 rounded-xl p-3 border border-slate-200">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Account</span>
+                                        <span class="text-xs font-bold text-slate-700 mt-0.5 block">{{ $accounts->first()->name }}</span>
+                                    </div>
+                                @else
+                                    <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Account</label>
+                                    <select x-model="accountId" class="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition">
+                                        <option value="">Select Account...</option>
+                                        @foreach($accounts as $account)
+                                            <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
+                                        @endforeach
+                                    </select>
+                                @endif
+                            </div>
+                            
+                            <div x-show="paymentMethod !== 'Credit/Due'">
+                                <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Paid Amount</label>
+                                <div class="relative">
+                                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rs.</span>
+                                    <input id="checkout-paid-amount" type="number" x-model.number="paidAmount" class="noinput w-full h-12 bg-white border-2 border-slate-200 rounded-xl !pl-14 pr-4 text-lg font-black text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex justify-between items-center mt-6" x-show="paymentMethod !== 'Credit/Due'">
+                            <span class="text-xs font-black uppercase tracking-wider text-slate-500">Change Due</span>
+                            <span class="text-xl font-black text-emerald-600" x-text="'Rs. ' + formatNumber(Math.max(0, paidAmount - cart.total))"></span>
                         </div>
                     </div>
 
-                    <div class="flex justify-between items-center pt-3 border-t border-slate-200" x-show="paymentMethod !== 'Credit/Due'">
-                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Change Due</span>
-                        <span class="text-lg font-black text-emerald-600" x-text="'Rs. ' + formatNumber(Math.max(0, paidAmount - cart.total))"></span>
+                    <!-- Right: Numpad Column (cols-6) -->
+                    <div class="p-6 sm:col-span-6 flex flex-col justify-between" x-show="paymentMethod !== 'Credit/Due'">
+                        <div>
+                            <span class="text-xs font-black uppercase tracking-wider text-slate-500 mb-3 block">Quick Cash / Numpad</span>
+                            
+                            <!-- Quick Cash Shortcuts -->
+                            <div class="grid grid-cols-4 gap-2 mb-3">
+                                @foreach([500, 1000, 2000, 5000] as $shortcutVal)
+                                    <button @click="paidAmount = {{ $shortcutVal }}" type="button" class="py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-indigo-300 transition text-[11px] font-black text-slate-700 active:scale-95">
+                                        +{{ $shortcutVal }}
+                                    </button>
+                                @endforeach
+                            </div>
+
+                            <!-- Numeric Pad -->
+                            <div class="grid grid-cols-3 gap-2">
+                                @foreach([1, 2, 3, 4, 5, 6, 7, 8, 9] as $numKey)
+                                    <button @click="pressKey('{{ $numKey }}')" type="button" class="h-12 rounded-xl border border-slate-100 bg-white shadow-sm hover:bg-slate-50 hover:border-indigo-100 transition text-lg font-black text-slate-800 active:scale-95">
+                                        {{ $numKey }}
+                                    </button>
+                                @endforeach
+                                <button @click="pressKey('C')" type="button" class="h-12 rounded-xl bg-red-50 hover:bg-red-100 transition text-sm font-black text-red-600 active:scale-95">
+                                    C
+                                </button>
+                                <button @click="pressKey('0')" type="button" class="h-12 rounded-xl border border-slate-100 bg-white shadow-sm hover:bg-slate-50 hover:border-indigo-100 transition text-lg font-black text-slate-800 active:scale-95">
+                                    0
+                                </button>
+                                <button @click="pressKey('B')" type="button" class="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 transition text-base font-black text-slate-600 active:scale-95 flex items-center justify-center">
+                                    <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM18 9l-6 6M12 9l6 6"/></svg>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -499,12 +573,23 @@
                 },
 
                 addToCart(product, batch = null) {
+                    const maxStock = batch ? parseFloat(batch.qty) : parseFloat(product.currentStock);
+                    
                     // Check if already in cart with same batch
                     const existingIndex = this.cart.items.findIndex(i => i.product.id === product.id && i.stock_batch_id === (batch ? batch.id : null));
                     
                     if (existingIndex > -1) {
-                        this.cart.items[existingIndex].qty += 1;
+                        const item = this.cart.items[existingIndex];
+                        if (item.qty + 1 > maxStock) {
+                            alert(`Cannot add more. Only ${maxStock} items available in stock.`);
+                            return;
+                        }
+                        item.qty += 1;
                     } else {
+                        if (1 > maxStock) {
+                            alert('This item is out of stock.');
+                            return;
+                        }
                         this.cart.items.unshift({
                             product: product,
                             stock_batch_id: batch ? batch.id : null,
@@ -512,6 +597,7 @@
                             cost_price: batch ? batch.cost : product.cost_price || 0,
                             unit_price: batch ? batch.selling : product.price,
                             qty: 1,
+                            max_qty: maxStock,
                             discount: 0
                         });
                     }
@@ -520,7 +606,14 @@
 
                 updateQty(index, change) {
                     const item = this.cart.items[index];
-                    item.qty += change;
+                    const maxStock = typeof item.max_qty !== 'undefined' ? item.max_qty : (item.product.currentStock || 99999);
+                    
+                    if (item.qty + change > maxStock) {
+                        alert(`Only ${maxStock} items available in stock.`);
+                        item.qty = maxStock;
+                    } else {
+                        item.qty += change;
+                    }
                     if (item.qty <= 0) item.qty = 1;
                     this.recalculateTotals();
                 },
@@ -545,7 +638,46 @@
                         return;
                     }
                     this.paidAmount = this.cart.total;
+                    
+                    // Auto-select the first account if there's only one
+                    const accountsList = {{ Illuminate\Support\Js::from($accounts->map(fn($a) => ['id' => $a->id, 'name' => $a->name])) }};
+                    if (accountsList.length === 1) {
+                        this.accountId = accountsList[0].id;
+                    } else if (accountsList.length > 1) {
+                        const defaultAcc = accountsList.find(a => a.name.toLowerCase().includes('main'));
+                        this.accountId = defaultAcc ? defaultAcc.id : accountsList[0].id;
+                    }
+
                     document.getElementById('payment-modal').showModal();
+
+                    // Autofocus and highlight the Paid Amount input
+                    this.$nextTick(() => {
+                        const inputEl = document.getElementById('checkout-paid-amount');
+                        if (inputEl) {
+                            inputEl.focus();
+                            inputEl.select();
+                        }
+                    });
+                },
+
+                pressKey(val) {
+                    if (val === 'C') {
+                        this.paidAmount = 0;
+                    } else if (val === 'B') {
+                        let str = this.paidAmount.toString();
+                        if (str.length > 1) {
+                            this.paidAmount = parseFloat(str.substring(0, str.length - 1)) || 0;
+                        } else {
+                            this.paidAmount = 0;
+                        }
+                    } else {
+                        let str = this.paidAmount.toString();
+                        if (this.paidAmount === 0 || str === '0') {
+                            this.paidAmount = parseFloat(val) || 0;
+                        } else {
+                            this.paidAmount = parseFloat(str + val) || 0;
+                        }
+                    }
                 },
 
                 async submitSale(type = 'Parts Sale') {
@@ -585,7 +717,16 @@
                         const data = await res.json();
                         if (data.success) {
                             localStorage.removeItem('pos_cart');
-                            window.location.href = `/sales/invoices/${data.invoice_id}`;
+                            if (type === 'Quotation') {
+                                alert(data.message);
+                                window.location.reload();
+                            } else {
+                                if (confirm('Sale completed successfully. Do you want to print the bill?')) {
+                                    window.location.href = `/invoice/${data.public_token}?print=1`;
+                                } else {
+                                    window.location.reload();
+                                }
+                            }
                         } else {
                             alert(data.message || 'Validation failed. Check the inputs.');
                         }
@@ -600,6 +741,12 @@
                 recalculateTotals() {
                     let sub = 0;
                     this.cart.items.forEach(i => {
+                        // Dynamically resolve max_qty if missing
+                        const maxStock = typeof i.max_qty !== 'undefined' ? i.max_qty : (i.product.currentStock || 99999);
+                        if (i.qty > maxStock) {
+                            i.qty = maxStock;
+                            alert(`Only ${maxStock} items available in stock for ${i.product.name}.`);
+                        }
                         sub += (i.qty * i.unit_price) - (i.discount || 0);
                     });
                     this.cart.subtotal = sub;

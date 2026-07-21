@@ -47,6 +47,25 @@ class SalesBillingController extends Controller
 
     public function partsSales()
     {
+        // Auto-initialize default store and account if none exist for active shop mode
+        if (Store::count() === 0) {
+            Store::create([
+                'name' => session('shop_mode', 'workshop') === 'helmet' ? 'Helmet Store' : 'Main Store',
+                'is_default' => true,
+                'active' => true,
+            ]);
+        }
+
+        if (Account::count() === 0) {
+            Account::create([
+                'name' => session('shop_mode', 'workshop') === 'helmet' ? 'Helmet Shop Main Account' : 'Main Account',
+                'code' => session('shop_mode', 'workshop') === 'helmet' ? 'HELMET_MAIN' : 'MAIN',
+                'type' => 'main',
+                'active' => true,
+                'opening_balance' => 0,
+            ]);
+        }
+
         $categories = ProductCategory::orderBy('name')->get();
         $products = Product::with(['stocks.store', 'stockBatches' => fn ($q) => $q->where('status', 'active')->where('available_qty', '>', 0)])->where('active', true)->orderBy('name')->get();
 
@@ -149,6 +168,7 @@ class SalesBillingController extends Controller
         return response()->json([
             'success' => true,
             'invoice_id' => $invoice->id,
+            'public_token' => $invoice->public_token,
             'message' => $invType === 'Quotation' ? 'Quotation saved successfully.' : 'Sale completed successfully.',
         ]);
     }
