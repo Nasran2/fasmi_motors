@@ -13,6 +13,7 @@ use App\Models\Drawing;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\JobCard;
+use App\Models\LoginHistory;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Purchase;
@@ -28,9 +29,13 @@ use App\Models\TechnicianCommission;
 use App\Models\TechnicianContribution;
 use App\Models\TechnicianSalarySheet;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -59,7 +64,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         // Authentication event logging
-        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Login::class, function ($event) {
+        Event::listen(Login::class, function ($event) {
             $user = $event->user;
             $user->update([
                 'last_login_at' => now(),
@@ -67,7 +72,7 @@ class AppServiceProvider extends ServiceProvider
                 'failed_login_attempts' => 0,
             ]);
 
-            \App\Models\LoginHistory::create([
+            LoginHistory::create([
                 'user_id' => $user->id,
                 'username_or_email' => $user->username ?: $user->email,
                 'ip_address' => request()->ip(),
@@ -79,7 +84,7 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
-        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Failed::class, function ($event) {
+        Event::listen(Failed::class, function ($event) {
             $username = $event->credentials['username'] ?? $event->credentials['email'] ?? 'Unknown';
             $user = $event->user;
 
@@ -90,7 +95,7 @@ class AppServiceProvider extends ServiceProvider
                 }
             }
 
-            \App\Models\LoginHistory::create([
+            LoginHistory::create([
                 'user_id' => $user?->id,
                 'username_or_email' => $username,
                 'ip_address' => request()->ip(),
@@ -103,10 +108,10 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
-        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Lockout::class, function ($event) {
+        Event::listen(Lockout::class, function ($event) {
             $username = $event->request->input('username') ?? $event->request->input('email') ?? 'Unknown';
-            
-            \App\Models\LoginHistory::create([
+
+            LoginHistory::create([
                 'user_id' => null,
                 'username_or_email' => $username,
                 'ip_address' => request()->ip(),
@@ -125,16 +130,28 @@ class AppServiceProvider extends ServiceProvider
         if (preg_match('/Mobi|Android|iPhone|iPad/i', $ua)) {
             return 'Mobile';
         }
+
         return 'Desktop';
     }
 
     private function getBrowser(string $ua): string
     {
-        if (preg_match('/chrome/i', $ua)) return 'Chrome';
-        if (preg_match('/firefox/i', $ua)) return 'Firefox';
-        if (preg_match('/safari/i', $ua)) return 'Safari';
-        if (preg_match('/edge/i', $ua)) return 'Edge';
-        if (preg_match('/opera/i', $ua)) return 'Opera';
+        if (preg_match('/chrome/i', $ua)) {
+            return 'Chrome';
+        }
+        if (preg_match('/firefox/i', $ua)) {
+            return 'Firefox';
+        }
+        if (preg_match('/safari/i', $ua)) {
+            return 'Safari';
+        }
+        if (preg_match('/edge/i', $ua)) {
+            return 'Edge';
+        }
+        if (preg_match('/opera/i', $ua)) {
+            return 'Opera';
+        }
+
         return 'Other';
     }
 

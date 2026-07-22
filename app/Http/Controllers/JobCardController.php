@@ -15,6 +15,7 @@ use App\Services\Sms\TextitSmsService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class JobCardController extends Controller
 {
@@ -45,7 +46,7 @@ class JobCardController extends Controller
     {
         $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
         $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
-        $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.str_pad((string) (JobCard::max('id') + 1), 4, '0', STR_PAD_LEFT), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
+        $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
         DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
 
         // Send SMS to Customer & Technician immediately
@@ -124,7 +125,7 @@ class JobCardController extends Controller
     public function update(Request $r, JobCard $job)
     {
         $isCurrentLocked = in_array($job->status, ['Billed', 'Completed', 'Delivered']);
-        
+
         if ($isCurrentLocked) {
             $v = $r->validate([
                 'status' => 'required|in:Billed,Completed,Delivered',
@@ -270,7 +271,7 @@ class JobCardController extends Controller
             'job_card_id' => $job->id,
             'old_status' => $old,
             'new_status' => $v['status'],
-            'note' => '[Unlocked] ' . $v['reason'],
+            'note' => '[Unlocked] '.$v['reason'],
             'changed_by' => auth()->id(),
             'created_at' => now(),
             'updated_at' => now(),
@@ -278,7 +279,7 @@ class JobCardController extends Controller
 
         $this->syncInvoice($job);
 
-        return back()->with('success', 'Job card unlocked and status set to ' . $v['status']);
+        return back()->with('success', 'Job card unlocked and status set to '.$v['status']);
     }
 
     private function syncInvoice(JobCard $job)

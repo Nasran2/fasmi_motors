@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\HolidayDate;
 use App\Models\LeaveHolidaySetting;
-use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class LeaveHolidaySettingController extends Controller
 {
@@ -23,7 +23,7 @@ class LeaveHolidaySettingController extends Controller
     {
         $request->validate([
             'days' => 'array',
-            'days.*' => 'string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday'
+            'days.*' => 'string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
         ]);
 
         $setting = LeaveHolidaySetting::firstOrCreate(['key' => 'weekly_leave_days']);
@@ -56,12 +56,14 @@ class LeaveHolidaySettingController extends Controller
     public function destroyHoliday(HolidayDate $holiday)
     {
         $holiday->delete();
+
         return back()->with('success', 'Holiday deleted successfully.');
     }
 
     public function toggleHoliday(HolidayDate $holiday)
     {
-        $holiday->update(['is_leave_enabled' => !$holiday->is_leave_enabled]);
+        $holiday->update(['is_leave_enabled' => ! $holiday->is_leave_enabled]);
+
         return back()->with('success', 'Holiday leave status updated.');
     }
 
@@ -71,23 +73,23 @@ class LeaveHolidaySettingController extends Controller
         try {
             $ics = file_get_contents('https://calendar.google.com/calendar/ical/en.lk%23holiday%40group.v.calendar.google.com/public/basic.ics');
             preg_match_all('/BEGIN:VEVENT(.*?)END:VEVENT/s', $ics, $events);
-            
+
             $count = 0;
             foreach ($events[1] as $event) {
                 preg_match('/DTSTART;VALUE=DATE:(\d{8})/', $event, $dateMatch);
                 preg_match('/SUMMARY:(.*?)\r?\n/s', $event, $summaryMatch);
-                
+
                 if ($dateMatch && $summaryMatch) {
                     $dateStr = $dateMatch[1];
-                    if (str_starts_with($dateStr, (string)$year)) {
+                    if (str_starts_with($dateStr, (string) $year)) {
                         $date = Carbon::parse($dateStr)->toDateString();
-                        $name = trim(str_replace("\n ", "", $summaryMatch[1]));
-                        
+                        $name = trim(str_replace("\n ", '', $summaryMatch[1]));
+
                         $type = 'Public';
                         if (stripos($name, 'Poya') !== false) {
                             $type = 'Poya';
                         }
-                        
+
                         HolidayDate::updateOrCreate(
                             ['holiday_date' => $date],
                             [
@@ -101,11 +103,11 @@ class LeaveHolidaySettingController extends Controller
                     }
                 }
             }
-            
+
             return back()->with('success', "Successfully imported $count Sri Lankan holidays for $year.");
-            
+
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to import holidays: ' . $e->getMessage());
+            return back()->with('error', 'Failed to import holidays: '.$e->getMessage());
         }
     }
 }

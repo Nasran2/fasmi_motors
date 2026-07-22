@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Support\SpreadsheetSafeText;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -14,7 +15,7 @@ class DailyClosingExport implements FromArray, ShouldAutoSize, WithHeadings, Wit
 
     public function array(): array
     {
-        return $this->rows;
+        return array_map(SpreadsheetSafeText::row(...), $this->rows);
     }
 
     public function headings(): array

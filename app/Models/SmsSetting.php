@@ -10,10 +10,10 @@ class SmsSetting extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'enabled'            => 'boolean',
-        'auto_sms_enabled'   => 'boolean',
+        'enabled' => 'boolean',
+        'auto_sms_enabled' => 'boolean',
         'manual_sms_enabled' => 'boolean',
-        'textit_password'    => 'encrypted',
+        'textit_password' => 'encrypted',
     ];
 
     /** Get the singleton settings row, creating default if absent. */
@@ -22,19 +22,19 @@ class SmsSetting extends Model
         return static::firstOrCreate(
             ['id' => 1],
             [
-                'provider_name'      => 'Textit.biz',
-                'enabled'            => false,
-                'api_method'         => 'GET',
-                'gateway_url'        => 'https://textit.biz/sendmsg',
+                'provider_name' => 'Textit.biz',
+                'enabled' => false,
+                'api_method' => 'GET',
+                'gateway_url' => 'https://textit.biz/sendmsg',
                 'default_country_code' => '94',
-                'id_param'           => 'id',
-                'password_param'     => 'pw',
-                'to_param'           => 'to',
-                'text_param'         => 'text',
-                'ref_param'          => 'ref',
-                'schedule_param'     => 'schd',
-                'success_keyword'    => 'OK',
-                'auto_sms_enabled'   => false,
+                'id_param' => 'id',
+                'password_param' => 'pw',
+                'to_param' => 'to',
+                'text_param' => 'text',
+                'ref_param' => 'ref',
+                'schedule_param' => 'schd',
+                'success_keyword' => 'OK',
+                'auto_sms_enabled' => false,
                 'manual_sms_enabled' => true,
             ]
         );

@@ -18,14 +18,18 @@
     <p class="page-subtitle">{{ $subtitle ?? '' }}</p>
   </div>
   <div class="flex flex-wrap gap-2">
+    @if(auth()->user()->canAccess('reports.print'))
     <button onclick="window.print()" class="btn-secondary flex items-center gap-1.5">
       <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
       Print / PDF
     </button>
+    @endif
+    @if(auth()->user()->canAccess('reports.export_excel'))
     <button onclick="exportTable()" class="btn-secondary flex items-center gap-1.5">
       <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
       Export CSV
     </button>
+    @endif
   </div>
 </div>
 
@@ -96,10 +100,10 @@ function exportTable() {
   if (!table) { alert('No table found.'); return; }
   let csv = [];
   for (const row of table.querySelectorAll('tr')) {
-    const cols = [...row.querySelectorAll('th,td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+    const cols = [...row.querySelectorAll('th,td')].map(c => window.csvCell(c.innerText));
     csv.push(cols.join(','));
   }
-  const blob = new Blob([csv.join('\n')], {type:'text/csv'});
+  const blob = new Blob(['\ufeff', csv.join('\n')], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = '{{ Str::slug($title ?? "report") }}-{{ now()->format("Y-m-d") }}.csv';

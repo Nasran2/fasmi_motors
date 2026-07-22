@@ -55,15 +55,13 @@ class AccountTransferController extends BaseAccountController
 
     private function account(string $type): Account
     {
-        return Account::where('code', match ($type) {
-            'spare_parts' => 'SPARE','bank' => 'BANK',default => 'MAIN'
-        })->firstOrFail();
+        return Account::systemAccount($type) ?? abort(404);
     }
 
     private function balance(string $type): float
     {
         $account = $this->account($type);
 
-        return (float) $account->opening_balance + (float) AccountTransaction::where('account_type', $type)->where('status', 'active')->sum('credit') - (float) AccountTransaction::where('account_type', $type)->where('status', 'active')->sum('debit');
+        return (float) $account->opening_balance + (float) AccountTransaction::where('account_type', $type)->where('account_id', $account->id)->where('status', 'active')->sum('credit') - (float) AccountTransaction::where('account_type', $type)->where('account_id', $account->id)->where('status', 'active')->sum('debit');
     }
 }

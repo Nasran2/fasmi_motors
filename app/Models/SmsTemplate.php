@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class SmsTemplate extends Model
 {
@@ -12,7 +11,7 @@ class SmsTemplate extends Model
 
     protected $casts = [
         'auto_send' => 'boolean',
-        'enabled'   => 'boolean',
+        'enabled' => 'boolean',
     ];
 
     public static array $categories = [

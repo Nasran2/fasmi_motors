@@ -11,8 +11,8 @@ use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
-use App\Services\WorkshopService;
 use App\Services\AccountService;
+use App\Services\WorkshopService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -117,7 +117,7 @@ class PurchaseController extends Controller
             if ($paid > 0) {
                 $account = Account::findOrFail($data['account_id']);
                 $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $data['supplier_id'], 'purchase_id' => $purchase->id, 'account_id' => $account->id, 'payment_date' => $data['purchase_date'], 'amount' => $paid, 'balance_after' => Supplier::findOrFail($data['supplier_id'])->balance, 'payment_method' => $data['payment_method'], 'status' => 'Completed', 'note' => 'Initial purchase payment', 'created_by' => auth()->id()]);
-                
+
                 $accountService = app(AccountService::class);
                 if (in_array($data['payment_method'], ['Cash'])) {
                     $accountService->recordTransaction('cash', 'expense', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], null, $account->id);
@@ -297,7 +297,7 @@ class PurchaseController extends Controller
     public function paymentStore(Request $request, WorkshopService $service)
     {
         $data = $request->validate(['supplier_id' => ['required', 'exists:suppliers,id'], 'purchase_id' => ['nullable', 'exists:purchases,id'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'gt:0'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card'])], 'reference' => ['nullable', 'max:150'], 'note' => ['nullable', 'max:1000']]);
-        DB::transaction(function () use ($data, $service) {
+        DB::transaction(function () use ($data) {
             $supplier = Supplier::lockForUpdate()->findOrFail($data['supplier_id']);
             $amountLeft = (float) $data['amount'];
             $targets = Purchase::where('supplier_id', $supplier->id)->where('status', 'Completed')->where('due_amount', '>', 0)->when($data['purchase_id'] ?? null, fn ($q, $id) => $q->whereKey($id))->orderBy('due_date')->lockForUpdate()->get();
@@ -319,7 +319,7 @@ class PurchaseController extends Controller
                 $supplier->update(['opening_due' => max(0, (float) $supplier->opening_due - $amountLeft)]);
             }
             $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $data['purchase_id'] ?? null, 'account_id' => $data['account_id'], 'payment_date' => $data['payment_date'], 'amount' => $data['amount'], 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-            
+
             $accountService = app(AccountService::class);
             if (in_array($data['payment_method'], ['Cash'])) {
                 $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], null, $data['account_id']);

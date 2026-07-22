@@ -2,7 +2,9 @@
 
 namespace App\Exports;
 
+use App\Models\Account;
 use App\Models\AccountTransaction;
+use App\Support\SpreadsheetSafeText;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
@@ -22,8 +24,11 @@ class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, 
 
     public function query()
     {
+        $account = Account::systemAccount($this->accountType);
+
         return AccountTransaction::query()
             ->where('account_type', $this->accountType)
+            ->where('account_id', $account?->id)
             ->where('status', 'active')
             ->when($this->fromDate, fn (Builder $q, $date) => $q->whereDate('transaction_date', '>=', $date))
             ->when($this->toDate, fn (Builder $q, $date) => $q->whereDate('transaction_date', '<=', $date))
@@ -34,7 +39,7 @@ class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, 
 
     public function headings(): array
     {
-        return [
+        return SpreadsheetSafeText::row([
             'Date',
             'Time',
             'Type',
@@ -44,7 +49,7 @@ class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, 
             'Debit (Dr)',
             'Credit (Cr)',
             'Balance',
-        ];
+        ]);
     }
 
     public function map($transaction): array

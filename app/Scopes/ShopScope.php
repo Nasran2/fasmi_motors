@@ -12,7 +12,7 @@ class ShopScope implements Scope
     {
         if (request()->hasSession()) {
             $shop = session('shop_mode', 'workshop');
-            $builder->where($model->getTable() . '.shop_type', $shop);
+            $builder->where($model->getTable().'.shop_type', $shop);
         }
     }
 }

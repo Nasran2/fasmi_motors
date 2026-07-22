@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AttendanceImportBatch;
+use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAttendance;
 use App\Models\TechnicianSalarySheet;
@@ -27,7 +28,7 @@ class AttendanceImportService
         $rows = $sheet->toArray(null, true, true, false);
         $header = array_map(fn ($value) => $this->header((string) $value), $rows[0] ?? []);
         $required = ['date', 'check in', 'check out'];
-        if (!$technicianId) {
+        if (! $technicianId) {
             $required = array_merge($required, ['person id', 'name']);
         }
         foreach ($required as $column) {
@@ -38,7 +39,7 @@ class AttendanceImportService
         $columns = array_flip($header);
         $preview = [];
         $errors = [];
-        $settings = \App\Models\SalarySetting::first();
+        $settings = SalarySetting::first();
         $closingTime = $settings && $settings->closing_time ? Carbon::parse($settings->closing_time)->format('H:i:s') : '17:00:00';
 
         foreach (array_slice($rows, 1) as $offset => $row) {
@@ -47,10 +48,10 @@ class AttendanceImportService
             $name = isset($columns['name']) ? trim((string) ($row[$columns['name']] ?? '')) : '';
             $dateValue = isset($columns['date']) ? trim((string) ($row[$columns['date']] ?? '')) : '';
 
-            if (str_starts_with(strtolower($personId), 'check-in time:') || ($personId === '' && $dateValue === '' && !$technicianId)) {
+            if (str_starts_with(strtolower($personId), 'check-in time:') || ($personId === '' && $dateValue === '' && ! $technicianId)) {
                 continue;
             }
-            if ((!$technicianId && $name === '') || $dateValue === '') {
+            if ((! $technicianId && $name === '') || $dateValue === '') {
                 $errors[] = ['row' => $rowNumber, 'message' => 'Name or date is missing.'];
 
                 continue;
@@ -80,8 +81,8 @@ class AttendanceImportService
             $checkIn = $this->time($this->cell($row, $columns, 'check in'));
             $checkOut = $this->time($this->cell($row, $columns, 'check out'));
             $autoFilledCheckout = false;
-            
-            if ($checkIn && !$checkOut) {
+
+            if ($checkIn && ! $checkOut) {
                 $checkOut = $closingTime;
                 $autoFilledCheckout = true;
             }

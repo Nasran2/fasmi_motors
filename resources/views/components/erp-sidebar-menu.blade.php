@@ -3,6 +3,18 @@
     $directLinks = config('workshop-navigation.direct');
     $currentSection = request()->route('section');
     $currentPage = request()->route('page');
+    $menuUser = auth()->user();
+
+    $groups = collect($groups)->map(function ($group) use ($directLinks, $menuUser) {
+        $group['children'] = collect($group['children'])->filter(function ($child) use ($directLinks, $group, $menuUser) {
+            $direct = $directLinks[$group['slug'].'.'.$child['slug']] ?? null;
+            $routeName = $direct['route'] ?? 'workspace.page';
+
+            return \App\Support\RoutePermission::allows($menuUser, $routeName, $group['slug'], $direct['parameters'] ?? [], $direct['query'] ?? []);
+        })->values()->all();
+
+        return $group;
+    })->filter(fn ($group) => count($group['children']) > 0)->values()->all();
 
     if (session('shop_mode', 'workshop') === 'helmet') {
         $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'accounts', 'expenses-drawings', 'reports', 'settings'];

@@ -8,7 +8,6 @@ use App\Models\Customer;
 use App\Models\DailyClosing;
 use App\Models\Drawing;
 use App\Models\Expense;
-use App\Models\FinancialCategory;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\JobCard;
@@ -23,6 +22,7 @@ use App\Models\TechnicianSalarySheet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ReportController extends Controller
 {
@@ -30,29 +30,34 @@ class ReportController extends Controller
 
     protected function dateRange(Request $r): array
     {
-        $range = $r->input('date_range', 'today');
-        $from  = $r->input('from');
-        $to    = $r->input('to');
+        $data = $r->validate([
+            'date_range' => ['nullable', Rule::in(['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'custom'])],
+            'from' => ['nullable', 'required_with:to', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'required_with:from', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+        $range = ($r->filled('from') || $r->filled('to')) ? 'custom' : ($data['date_range'] ?? 'today');
+        $from = $data['from'] ?? null;
+        $to = $data['to'] ?? null;
 
         return match ($range) {
-            'today'      => [today()->startOfDay(), today()->endOfDay()],
-            'yesterday'  => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],
-            'this_week'  => [today()->startOfWeek()->startOfDay(), today()->endOfDay()],
-            'last_week'  => [today()->subWeek()->startOfWeek()->startOfDay(), today()->subWeek()->endOfWeek()->endOfDay()],
+            'today' => [today()->startOfDay(), today()->endOfDay()],
+            'yesterday' => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],
+            'this_week' => [today()->startOfWeek()->startOfDay(), today()->endOfDay()],
+            'last_week' => [today()->subWeek()->startOfWeek()->startOfDay(), today()->subWeek()->endOfWeek()->endOfDay()],
             'this_month' => [today()->startOfMonth()->startOfDay(), today()->endOfDay()],
             'last_month' => [today()->subMonth()->startOfMonth()->startOfDay(), today()->subMonth()->endOfMonth()->endOfDay()],
-            'this_year'  => [today()->startOfYear()->startOfDay(), today()->endOfDay()],
-            'last_year'  => [today()->subYear()->startOfYear()->startOfDay(), today()->subYear()->endOfYear()->endOfDay()],
-            default      => [
+            'this_year' => [today()->startOfYear()->startOfDay(), today()->endOfDay()],
+            'last_year' => [today()->subYear()->startOfYear()->startOfDay(), today()->subYear()->endOfYear()->endOfDay()],
+            default => [
                 $from ? Carbon::parse($from)->startOfDay() : today()->startOfDay(),
-                $to   ? Carbon::parse($to)->endOfDay()     : today()->endOfDay(),
+                $to ? Carbon::parse($to)->endOfDay() : today()->endOfDay(),
             ],
         };
     }
 
     protected function activeRange(Request $r): string
     {
-        return $r->input('date_range', 'today');
+        return ($r->filled('from') || $r->filled('to')) ? 'custom' : $r->input('date_range', 'today');
     }
 
     // ─── 1. SALES REPORT ───────────────────────────────────────
@@ -63,16 +68,15 @@ class ReportController extends Controller
 
         $q = Invoice::with(['customer', 'jobCard'])
             ->whereBetween('created_at', [$from, $to])
-            ->when($r->invoice_type,    fn ($q, $v) => $q->where('invoice_type', $v))
-            ->when($r->status,          fn ($q, $v) => $q->where('status', $v))
-            ->when($r->payment_method,  fn ($q, $v) => $q->where('payment_method', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) =>
-                $x->where('number', 'like', "%{$s}%")
-                  ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+            ->when($r->invoice_type, fn ($q, $v) => $q->where('invoice_type', $v))
+            ->when($r->status, fn ($q, $v) => $q->where('status', $v))
+            ->when($r->payment_method, fn ($q, $v) => $q->where('payment_method', $v))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('number', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
             ));
 
-        $rows    = $q->latest()->paginate(25)->withQueryString();
-        $totals  = (clone $q)->reorder()->selectRaw('
+        $rows = $q->latest()->paginate(25)->withQueryString();
+        $totals = (clone $q)->reorder()->selectRaw('
             count(*) as total_count,
             sum(total) as total_sales,
             sum(paid_amount) as total_paid,
@@ -97,27 +101,26 @@ class ReportController extends Controller
 
         $rows = JobCard::with(['intake.bike.customer', 'technician', 'invoice'])
             ->whereBetween('created_at', [$from, $to])
-            ->when($r->status,      fn ($q, $v) => $q->where('status', $v))
-            ->when($r->technician,  fn ($q, $v) => $q->where('technician_id', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) =>
-                $x->where('job_number', 'like', "%{$s}%")
-                  ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
-                  ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
+            ->when($r->status, fn ($q, $v) => $q->where('status', $v))
+            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('job_number', 'like', "%{$s}%")
+                ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
             ))
             ->latest()->paginate(25)->withQueryString();
 
         $stats = [
-            'total'         => JobCard::whereBetween('created_at', [$from, $to])->count(),
-            'completed'     => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Completed')->count(),
-            'in_progress'   => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'In Progress')->count(),
-            'pending'       => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Pending')->count(),
+            'total' => JobCard::whereBetween('created_at', [$from, $to])->count(),
+            'completed' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Completed')->count(),
+            'in_progress' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'In Progress')->count(),
+            'pending' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Pending')->count(),
             'waiting_parts' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Waiting for Parts')->count(),
-            'cancelled'     => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Cancelled')->count(),
-            'total_income'  => Invoice::whereBetween('created_at', [$from, $to])->where('invoice_type', 'Job Card Bill')->sum('total'),
+            'cancelled' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Cancelled')->count(),
+            'total_income' => Invoice::whereBetween('created_at', [$from, $to])->where('invoice_type', 'Job Card Bill')->sum('total'),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
-        $statuses    = ['Pending', 'In Progress', 'Waiting for Parts', 'Completed', 'Delivered', 'Cancelled'];
+        $statuses = ['Pending', 'In Progress', 'Waiting for Parts', 'Completed', 'Delivered', 'Cancelled'];
 
         return view('reports.job-cards', compact('rows', 'stats', 'technicians', 'statuses', 'from', 'to') + ['range' => $this->activeRange($r)]);
     }
@@ -129,19 +132,17 @@ class ReportController extends Controller
         [$from, $to] = $this->dateRange($r);
 
         $rows = InvoiceItem::with(['invoice.customer', 'product'])
-            ->whereHas('invoice', fn ($q) =>
-                $q->whereBetween('created_at', [$from, $to])
-                  ->where('invoice_type', 'Parts Sale')
+            ->whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])
+                ->where('invoice_type', 'Parts Sale')
             )
-            ->when($r->search, fn ($q, $s) => $q->whereHas('product', fn ($p) =>
-                $p->where('name', 'like', "%{$s}%")->orWhere('sku', 'like', "%{$s}%")
+            ->when($r->search, fn ($q, $s) => $q->whereHas('product', fn ($p) => $p->where('name', 'like', "%{$s}%")->orWhere('sku', 'like', "%{$s}%")
             ))
             ->latest()->paginate(25)->withQueryString();
 
         $stats = [
-            'total_sales'  => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * unit_price')),
-            'items_sold'   => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum('quantity'),
-            'total_cost'   => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * cost_price')),
+            'total_sales' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * unit_price')),
+            'items_sold' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum('quantity'),
+            'total_cost' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * cost_price')),
         ];
         $stats['gross_profit'] = $stats['total_sales'] - $stats['total_cost'];
 
@@ -157,10 +158,9 @@ class ReportController extends Controller
         $serviceIncome = Invoice::whereBetween('created_at', [$from, $to])
             ->where('invoice_type', 'Job Card Bill')->sum('total');
 
-        $partsSales  = Invoice::whereBetween('created_at', [$from, $to])
+        $partsSales = Invoice::whereBetween('created_at', [$from, $to])
             ->where('invoice_type', 'Parts Sale')->sum('total');
-        $partsCost   = InvoiceItem::whereHas('invoice', fn ($q) =>
-            $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale')
+        $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale')
         )->sum(DB::raw('quantity * cost_price'));
         $partsProfit = $partsSales - $partsCost;
 
@@ -193,18 +193,18 @@ class ReportController extends Controller
         $rows = Product::with(['category'])
             ->withSum('stocks', 'quantity')
             ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('sku', 'like', "%{$s}%"))
-            ->when($r->status === 'low',  fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
-            ->when($r->status === 'out',  fn ($q) => $q->having(DB::raw('COALESCE(stocks_sum_quantity,0)'), '<=', 0))
-            ->when($r->status === 'in',   fn ($q) => $q->having('stocks_sum_quantity', '>', DB::raw('products.minimum_stock')))
+            ->when($r->status === 'low', fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
+            ->when($r->status === 'out', fn ($q) => $q->having(DB::raw('COALESCE(stocks_sum_quantity,0)'), '<=', 0))
+            ->when($r->status === 'in', fn ($q) => $q->having('stocks_sum_quantity', '>', DB::raw('products.minimum_stock')))
             ->orderBy('name')->paginate(25)->withQueryString();
 
         $all = Product::withSum('stocks', 'quantity')->get();
         $stats = [
-            'total'    => $all->count(),
+            'total' => $all->count(),
             'in_stock' => $all->filter(fn ($p) => ($p->stocks_sum_quantity ?? 0) > ($p->minimum_stock ?? 0))->count(),
-            'low'      => $all->filter(fn ($p) => ($p->stocks_sum_quantity ?? 0) > 0 && ($p->stocks_sum_quantity ?? 0) <= ($p->minimum_stock ?? 0))->count(),
-            'out'      => $all->filter(fn ($p) => ($p->stocks_sum_quantity ?? 0) <= 0)->count(),
-            'value_cost'   => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->cost_price),
+            'low' => $all->filter(fn ($p) => ($p->stocks_sum_quantity ?? 0) > 0 && ($p->stocks_sum_quantity ?? 0) <= ($p->minimum_stock ?? 0))->count(),
+            'out' => $all->filter(fn ($p) => ($p->stocks_sum_quantity ?? 0) <= 0)->count(),
+            'value_cost' => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->cost_price),
             'value_selling' => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->price),
         ];
 
@@ -225,10 +225,10 @@ class ReportController extends Controller
             ->latest('purchase_date')->paginate(25)->withQueryString();
 
         $stats = [
-            'total'    => Purchase::whereBetween('purchase_date', [$from, $to])->sum('total_amount'),
-            'paid'     => Purchase::whereBetween('purchase_date', [$from, $to])->sum('paid_amount'),
-            'due'      => Purchase::whereBetween('purchase_date', [$from, $to])->sum('due_amount'),
-            'count'    => Purchase::whereBetween('purchase_date', [$from, $to])->count(),
+            'total' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('total_amount'),
+            'paid' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('paid_amount'),
+            'due' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('due_amount'),
+            'count' => Purchase::whereBetween('purchase_date', [$from, $to])->count(),
         ];
 
         return view('reports.purchases', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -242,8 +242,8 @@ class ReportController extends Controller
 
         $rows = Expense::with(['creator'])
             ->whereBetween('expense_date', [$from, $to])
-            ->when($r->category,  fn ($q, $v) => $q->where('category', $v))
-            ->when($r->search,    fn ($q, $s) => $q->where('description', 'like', "%{$s}%")->orWhere('reference_number', 'like', "%{$s}%"))
+            ->when($r->category, fn ($q, $v) => $q->where('category', $v))
+            ->when($r->search, fn ($q, $s) => $q->where('description', 'like', "%{$s}%")->orWhere('reference_number', 'like', "%{$s}%"))
             ->latest('expense_date')->paginate(25)->withQueryString();
 
         $stats = [
@@ -293,9 +293,9 @@ class ReportController extends Controller
             ->paginate(25)->withQueryString();
 
         $stats = [
-            'total_due'    => Invoice::where('due_amount', '>', 0)->sum('due_amount'),
+            'total_due' => Invoice::where('due_amount', '>', 0)->sum('due_amount'),
             'due_invoices' => Invoice::where('due_amount', '>', 0)->count(),
-            'customers'    => Invoice::where('due_amount', '>', 0)->distinct('customer_id')->count(),
+            'customers' => Invoice::where('due_amount', '>', 0)->distinct('customer_id')->count(),
         ];
 
         return view('reports.due-bills', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -317,7 +317,7 @@ class ReportController extends Controller
             ->paginate(25)->withQueryString();
 
         $stats = [
-            'total_due'   => Invoice::where('due_amount', '>', 0)->sum('due_amount'),
+            'total_due' => Invoice::where('due_amount', '>', 0)->sum('due_amount'),
             'due_customers' => Customer::whereHas('invoices', fn ($q) => $q->where('due_amount', '>', 0))->count(),
         ];
 
@@ -342,8 +342,8 @@ class ReportController extends Controller
             ->get();
 
         $stats = [
-            'total'     => Technician::count(),
-            'active'    => Technician::where('active', 1)->count(),
+            'total' => Technician::count(),
+            'active' => Technician::where('active', 1)->count(),
             'total_jobs' => JobCard::whereBetween('created_at', [$from, $to])->count(),
             'total_commission' => $rows->sum('commissions_sum_amount') ?? 0,
         ];
@@ -367,9 +367,9 @@ class ReportController extends Controller
 
         $stats = [
             'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', $presentStatuses)->count(),
-            'absent'  => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
-            'late'    => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Late')->count(),
-            'leave'   => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
+            'absent' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
+            'late' => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Late')->count(),
+            'leave' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -389,10 +389,10 @@ class ReportController extends Controller
             ->latest('period_start')->paginate(25)->withQueryString();
 
         $stats = [
-            'gross'      => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('gross_salary'),
-            'net'        => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('net_payable'),
-            'advances'   => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('advances'),
-            'epf'        => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('epf_employee'),
+            'gross' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('gross_salary'),
+            'net' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('net_payable'),
+            'advances' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('advances'),
+            'epf' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('epf_employee'),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -414,9 +414,9 @@ class ReportController extends Controller
         $sheets = TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->get();
         $stats = [
             'employee_epf' => $sheets->sum('epf_employee'),
-            'company_epf'  => $sheets->sum('epf_company'),
-            'total_epf'    => $sheets->sum('epf_employee') + $sheets->sum('epf_company'),
-            'eligible'     => Technician::where('epf_eligible', true)->count(),
+            'company_epf' => $sheets->sum('epf_company'),
+            'total_epf' => $sheets->sum('epf_employee') + $sheets->sum('epf_company'),
+            'eligible' => Technician::where('epf_eligible', true)->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -438,7 +438,7 @@ class ReportController extends Controller
         $sheets = TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->get();
         $stats = [
             'total_etf' => $sheets->sum('etf_company'),
-            'eligible'  => Technician::where('etf_eligible', true)->count(),
+            'eligible' => Technician::where('etf_eligible', true)->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -462,9 +462,9 @@ class ReportController extends Controller
             ->orderBy('transaction_date')->paginate(25)->withQueryString();
 
         $stats = [
-            'total_in'  => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
             'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
-            'balance'   => $account?->balance ?? 0,
+            'balance' => $account?->balance ?? 0,
         ];
 
         return view('reports.main-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -486,9 +486,9 @@ class ReportController extends Controller
             ->orderBy('transaction_date')->paginate(25)->withQueryString();
 
         $stats = [
-            'total_in'  => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
             'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
-            'balance'   => $account?->balance ?? 0,
+            'balance' => $account?->balance ?? 0,
         ];
 
         return view('reports.spare-parts-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -510,9 +510,9 @@ class ReportController extends Controller
             ->orderBy('transaction_date')->paginate(25)->withQueryString();
 
         $stats = [
-            'total_in'  => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
             'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
-            'balance'   => $account?->balance ?? 0,
+            'balance' => $account?->balance ?? 0,
         ];
 
         return view('reports.bank-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -530,8 +530,8 @@ class ReportController extends Controller
             ->latest('closing_date')->paginate(25)->withQueryString();
 
         $stats = [
-            'total_days'    => DailyClosing::whereBetween('closing_date', [$from, $to])->count(),
-            'main_income'   => DailyClosing::whereBetween('closing_date', [$from, $to])->sum('main_income'),
+            'total_days' => DailyClosing::whereBetween('closing_date', [$from, $to])->count(),
+            'main_income' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum('main_income'),
             'spare_parts_income' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum('spare_parts_income'),
             'total_expenses' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum(DB::raw('main_expense + spare_parts_expense + bank_expense + cash_expense')),
         ];
@@ -547,17 +547,16 @@ class ReportController extends Controller
 
         $rows = ServiceReminder::with(['customer', 'bike'])
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) =>
-                $x->whereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
-                  ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->whereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
             ))
             ->latest()->paginate(25)->withQueryString();
 
         $stats = [
-            'upcoming'  => ServiceReminder::where('status', 'Pending')->whereDate('due_date', '>=', today())->count(),
-            'sent'      => ServiceReminder::where('status', 'Sent')->count(),
-            'overdue'   => ServiceReminder::where('status', 'Pending')->whereDate('due_date', '<', today())->count(),
-            'total'     => ServiceReminder::count(),
+            'upcoming' => ServiceReminder::where('status', 'Pending')->whereDate('due_date', '>=', today())->count(),
+            'sent' => ServiceReminder::where('status', 'Sent')->count(),
+            'overdue' => ServiceReminder::where('status', 'Pending')->whereDate('due_date', '<', today())->count(),
+            'total' => ServiceReminder::count(),
         ];
 
         return view('reports.service-reminders', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -573,18 +572,17 @@ class ReportController extends Controller
             ->whereBetween('created_at', [$from, $to])
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
             ->when($r->module, fn ($q, $v) => $q->where('module', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) =>
-                $x->where('phone', 'like', "%{$s}%")
-                  ->orWhere('phone_number', 'like', "%{$s}%")
-                  ->orWhere('recipient_name', 'like', "%{$s}%")
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('phone', 'like', "%{$s}%")
+                ->orWhere('phone_number', 'like', "%{$s}%")
+                ->orWhere('recipient_name', 'like', "%{$s}%")
             ))
             ->latest()->paginate(25)->withQueryString();
 
         $stats = [
-            'total'     => SmsLog::whereBetween('created_at', [$from, $to])->count(),
-            'sent'      => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'sent')->count(),
-            'failed'    => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'failed')->count(),
-            'pending'   => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'pending')->count(),
+            'total' => SmsLog::whereBetween('created_at', [$from, $to])->count(),
+            'sent' => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'sent')->count(),
+            'failed' => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'failed')->count(),
+            'pending' => SmsLog::whereBetween('created_at', [$from, $to])->where('status', 'pending')->count(),
         ];
 
         $modules = SmsLog::select('module')->distinct()->whereNotNull('module')->pluck('module');

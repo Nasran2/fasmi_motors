@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
+use App\Models\OtSlabRule;
+use App\Models\SalaryCycleSetting;
+use App\Models\SalarySetting;
 use App\Models\Setting;
 use App\Models\Store;
-use App\Models\ActivityLog;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
 class SettingController extends Controller
@@ -39,6 +40,7 @@ class SettingController extends Controller
                     return $val;
                 }
             }
+
             return $val;
         });
     }
@@ -61,8 +63,8 @@ class SettingController extends Controller
         $group = $r->input('group', 'general');
 
         if ($group === 'salary') {
-            $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
-            
+            $salarySetting = SalarySetting::firstOrCreate([]);
+
             $data = $r->validate([
                 'salary_cycle' => 'required|string',
                 'salary_month_start_day' => 'required|integer|min:1|max:31',
@@ -77,19 +79,19 @@ class SettingController extends Controller
                 'working_hours_per_day' => 'required|numeric|min:1|max:24',
                 'lunch_break_minutes' => 'nullable|integer|min:0',
                 'work_days' => 'nullable|array',
-                
+
                 'enable_late_deduction' => 'nullable|boolean',
                 'late_grace_minutes' => 'required|integer|min:0',
                 'late_deduction_type' => 'required|string',
                 'late_deduction_amount' => 'required|numeric|min:0',
                 'require_reason_late_edit' => 'nullable|boolean',
-                
+
                 'enable_early_leave_deduction' => 'nullable|boolean',
                 'early_leave_grace_minutes' => 'required|integer|min:0',
                 'early_leave_deduction_type' => 'required|string',
                 'early_leave_deduction_amount' => 'required|numeric|min:0',
                 'require_reason_early_leave' => 'nullable|boolean',
-                
+
                 'enable_ot' => 'nullable|boolean',
                 'ot_grace_minutes_after_closing' => 'required|integer|min:0',
                 'ot_calculation_type' => 'required|string',
@@ -98,16 +100,16 @@ class SettingController extends Controller
                 'ot_slab_minutes' => 'required|integer|min:1',
                 'require_ot_approval' => 'nullable|boolean',
                 'allow_manual_ot_override' => 'nullable|boolean',
-                
+
                 'enable_half_day' => 'nullable|boolean',
                 'morning_half_day_cutoff' => 'required|string',
                 'evening_half_day_cutoff' => 'required|string',
                 'half_day_deduction_type' => 'required|string',
                 'half_day_deduction_amount' => 'required|numeric|min:0',
-                
+
                 'paysheet_finalize_lock' => 'nullable|boolean',
                 'require_reason_reopen_paysheet' => 'nullable|boolean',
-                
+
                 'slip_show_attendance' => 'nullable|boolean',
                 'slip_paper_size' => 'required|string',
             ]);
@@ -117,10 +119,10 @@ class SettingController extends Controller
                 'allow_daily_advance', 'custom_cutoff_enabled', 'carry_missing_days', 'enable_late_deduction', 'require_reason_late_edit',
                 'enable_early_leave_deduction', 'require_reason_early_leave', 'enable_ot',
                 'require_ot_approval', 'allow_manual_ot_override', 'enable_half_day',
-                'paysheet_finalize_lock', 'require_reason_reopen_paysheet', 'slip_show_attendance'
+                'paysheet_finalize_lock', 'require_reason_reopen_paysheet', 'slip_show_attendance',
             ];
             foreach ($booleans as $b) {
-                $data[$b] = $r->has($b) ? (bool)$r->input($b) : false;
+                $data[$b] = $r->has($b) ? (bool) $r->input($b) : false;
             }
             $data['work_days'] = $r->input('work_days', []);
 
@@ -136,17 +138,17 @@ class SettingController extends Controller
             unset($data['salary_cycle_mode'], $data['custom_cutoff_enabled'], $data['cycle_start_rule'], $data['cycle_end_day'], $data['carry_missing_days']);
 
             $salarySetting->update($data);
-            \App\Models\SalaryCycleSetting::current()->update($cycleData);
+            SalaryCycleSetting::current()->update($cycleData);
             $newVal = $salarySetting->fresh()->toArray();
 
             // Handle OT Slabs
             $submittedSlabs = $r->input('slabs', []);
             $keepIds = [];
-            
-            DB::transaction(function() use ($submittedSlabs, &$keepIds) {
+
+            DB::transaction(function () use ($submittedSlabs, &$keepIds) {
                 foreach ($submittedSlabs as $id => $slabData) {
                     if (str_starts_with($id, 'new_')) {
-                        $slab = \App\Models\OtSlabRule::create([
+                        $slab = OtSlabRule::create([
                             'from_minutes' => $slabData['from_minutes'],
                             'to_minutes' => $slabData['to_minutes'],
                             'amount' => $slabData['amount'],
@@ -157,7 +159,7 @@ class SettingController extends Controller
                         ]);
                         $keepIds[] = $slab->id;
                     } else {
-                        $slab = \App\Models\OtSlabRule::find($id);
+                        $slab = OtSlabRule::find($id);
                         if ($slab) {
                             $slab->update([
                                 'from_minutes' => $slabData['from_minutes'],
@@ -172,9 +174,9 @@ class SettingController extends Controller
                         }
                     }
                 }
-                
+
                 // Delete removed slabs
-                \App\Models\OtSlabRule::whereNotIn('id', $keepIds)->delete();
+                OtSlabRule::whereNotIn('id', $keepIds)->delete();
             });
 
             $this->audit('Updated Salary Settings', 'Updated technician payroll rules and OT slabs', $oldVal, $newVal);
@@ -187,12 +189,12 @@ class SettingController extends Controller
         // Handle File uploads if present
         if ($r->hasFile('logo_file')) {
             $logoPath = $r->file('logo_file')->store('assets', 'public');
-            $inputs['logo_url'] = '/storage/' . $logoPath;
+            $inputs['logo_url'] = '/storage/'.$logoPath;
         }
 
         if ($r->hasFile('favicon_file')) {
             $faviconPath = $r->file('favicon_file')->store('assets', 'public');
-            $inputs['favicon_url'] = '/storage/' . $faviconPath;
+            $inputs['favicon_url'] = '/storage/'.$faviconPath;
         }
 
         $oldValues = [];
@@ -211,7 +213,8 @@ class SettingController extends Controller
             if ($isSensitive && $oldVal) {
                 try {
                     $oldVal = decrypt($oldVal);
-                } catch (\Exception $e) {}
+                } catch (\Exception $e) {
+                }
             }
 
             if ($oldVal != $value) {
@@ -225,10 +228,10 @@ class SettingController extends Controller
         }
 
         if (count($newValues) > 0) {
-            $this->audit('Updated Settings', "Updated settings group: " . ucfirst($group), $oldValues, $newValues);
+            $this->audit('Updated Settings', 'Updated settings group: '.ucfirst($group), $oldValues, $newValues);
         }
 
-        return back()->with('success', ucfirst($group) . ' settings saved successfully.');
+        return back()->with('success', ucfirst($group).' settings saved successfully.');
     }
 
     // ─── 1. GENERAL SETTINGS ──────────────────────────────────────
@@ -236,6 +239,7 @@ class SettingController extends Controller
     public function generalSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.general', compact('settings'));
     }
 
@@ -244,6 +248,7 @@ class SettingController extends Controller
     public function businessProfile()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.profile', compact('settings'));
     }
 
@@ -253,6 +258,7 @@ class SettingController extends Controller
     {
         $settings = $this->getSettings();
         $stores = Store::orderBy('name')->get();
+
         return view('system-settings.stores', compact('settings', 'stores'));
     }
 
@@ -277,7 +283,7 @@ class SettingController extends Controller
 
     public function updateStore(Request $r, Store $store)
     {
-        $r->validate(['name' => 'required|string|max:255|unique:stores,name,' . $store->id]);
+        $r->validate(['name' => 'required|string|max:255|unique:stores,name,'.$store->id]);
 
         $old = $store->toArray();
         $store->update([
@@ -300,6 +306,7 @@ class SettingController extends Controller
     public function invoiceSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.invoice', compact('settings'));
     }
 
@@ -308,6 +315,7 @@ class SettingController extends Controller
     public function jobCardSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.jobcard', compact('settings'));
     }
 
@@ -316,6 +324,7 @@ class SettingController extends Controller
     public function accountSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.account', compact('settings'));
     }
 
@@ -324,6 +333,7 @@ class SettingController extends Controller
     public function stockSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.stock', compact('settings'));
     }
 
@@ -332,6 +342,7 @@ class SettingController extends Controller
     public function technicianSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.technician', compact('settings'));
     }
 
@@ -340,9 +351,10 @@ class SettingController extends Controller
     public function salarySettings()
     {
         $settings = $this->getSettings();
-        $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
-        $salaryCycleSetting = \App\Models\SalaryCycleSetting::current();
-        $otSlabs = \App\Models\OtSlabRule::orderBy('sort_order')->orderBy('from_minutes')->get();
+        $salarySetting = SalarySetting::firstOrCreate([]);
+        $salaryCycleSetting = SalaryCycleSetting::current();
+        $otSlabs = OtSlabRule::orderBy('sort_order')->orderBy('from_minutes')->get();
+
         return view('system-settings.salary', compact('settings', 'salarySetting', 'salaryCycleSetting', 'otSlabs'));
     }
 
@@ -351,6 +363,7 @@ class SettingController extends Controller
     public function epfEtfSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.epfetf', compact('settings'));
     }
 
@@ -359,6 +372,7 @@ class SettingController extends Controller
     public function smsSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.sms', compact('settings'));
     }
 
@@ -369,7 +383,7 @@ class SettingController extends Controller
             'message' => 'required|string',
         ]);
 
-        $this->audit('Test SMS Sent', "Triggered settings test SMS to: " . $r->phone);
+        $this->audit('Test SMS Sent', 'Triggered settings test SMS to: '.$r->phone);
 
         return back()->with('success', 'Test SMS request dispatched successfully.');
     }
@@ -379,6 +393,7 @@ class SettingController extends Controller
     public function serviceReminderSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.reminder', compact('settings'));
     }
 
@@ -387,6 +402,7 @@ class SettingController extends Controller
     public function paymentMethodSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.payment', compact('settings'));
     }
 
@@ -395,6 +411,7 @@ class SettingController extends Controller
     public function taxDiscountSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.tax', compact('settings'));
     }
 
@@ -412,7 +429,7 @@ class SettingController extends Controller
                 'type' => 'Full Backup (DB + Files)',
                 'size' => '8.4 MB',
                 'status' => 'Success',
-                'created_by' => 'Fasmir Admin'
+                'created_by' => 'Fasmir Admin',
             ],
             [
                 'id' => 2,
@@ -420,8 +437,8 @@ class SettingController extends Controller
                 'type' => 'Database Dump Only',
                 'size' => '1.2 MB',
                 'status' => 'Success',
-                'created_by' => 'System (Auto)'
-            ]
+                'created_by' => 'System (Auto)',
+            ],
         ];
 
         return view('system-settings.backup', compact('settings', 'backups'));
@@ -430,6 +447,7 @@ class SettingController extends Controller
     public function createBackup()
     {
         $this->audit('Create Backup', 'Manually triggered backup creation.');
+
         return back()->with('success', 'Backup file created successfully.');
     }
 
@@ -440,13 +458,15 @@ class SettingController extends Controller
             'reason' => 'required|string',
         ]);
 
-        $this->audit('Restore Backup', 'Manually restored database from backup file. Reason: ' . $r->reason);
+        $this->audit('Restore Backup', 'Manually restored database from backup file. Reason: '.$r->reason);
+
         return back()->with('success', 'Backup restored successfully.');
     }
 
     public function deleteBackup()
     {
         $this->audit('Delete Backup', 'Manually deleted a backup file.');
+
         return back()->with('success', 'Backup file deleted.');
     }
 
@@ -455,6 +475,7 @@ class SettingController extends Controller
     public function systemSecurity()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.security', compact('settings'));
     }
 
@@ -463,6 +484,7 @@ class SettingController extends Controller
     public function auditLogSettings()
     {
         $settings = $this->getSettings();
+
         return view('system-settings.audit', compact('settings'));
     }
 

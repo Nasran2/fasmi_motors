@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Services\HolidayService;
 use App\Models\OtSlabRule;
 use App\Models\SalarySetting;
 use App\Models\Technician;
@@ -63,29 +62,30 @@ class AttendanceCalculationService
         if ($holiday && $holiday->is_leave_enabled) {
             $result['is_leave_day'] = true;
             $result['holiday_id'] = $holiday->id;
-            $result['leave_type'] = $holiday->holiday_type . ' Holiday';
+            $result['leave_type'] = $holiday->holiday_type.' Holiday';
         } elseif ($isWeeklyLeave) {
             $result['is_leave_day'] = true;
             $result['leave_type'] = 'Weekly Leave';
         }
 
         // Apply auto checkout logic
-        if ($in && !$out && empty($status)) {
+        if ($in && ! $out && empty($status)) {
             $out = $close;
             $result['is_auto_checkout'] = true;
-            $result['auto_checkout_reason'] = "Missing checkout time, used workshop closing time";
+            $result['auto_checkout_reason'] = 'Missing checkout time, used workshop closing time';
         }
 
         $status = $this->normalizeStatus($status, $in, $out, $result['is_leave_day'], $result['leave_type'], $result['is_auto_checkout']);
         $result['status'] = $status;
 
         if (in_array($status, ['Absent', 'No Pay Leave'], true)) {
-            if (!$result['is_leave_day']) {
+            if (! $result['is_leave_day']) {
                 $result['absent_minutes'] = (int) round((float) $settings->working_hours_per_day * 60);
                 $result['deduction_amount'] = (float) ($technician->no_pay_deduction_rate ?: $dailySalary);
             } else {
                 $result['status'] = $result['leave_type'] ?? 'Leave';
             }
+
             return $this->applyOverrides($result, $overrides);
         }
 
@@ -127,7 +127,7 @@ class AttendanceCalculationService
             }
         }
 
-        $result['is_ot_eligible'] = !$result['is_auto_checkout'] && $this->calculateOTEligibility($in, $out, $open, $close, (int) $settings->ot_grace_minutes_after_closing);
+        $result['is_ot_eligible'] = ! $result['is_auto_checkout'] && $this->calculateOTEligibility($in, $out, $open, $close, (int) $settings->ot_grace_minutes_after_closing);
         if ($settings->enable_ot && $result['is_ot_eligible']) {
             $result['ot_minutes'] = $this->calculateOTMinutes($out, $close);
             $result['ot_hours'] = round($result['ot_minutes'] / 60, 2);
@@ -135,7 +135,7 @@ class AttendanceCalculationService
         }
 
         // Only apply deductions if not a leave day
-        if (!$result['is_leave_day']) {
+        if (! $result['is_leave_day']) {
             $result['deduction_amount'] = $result['late_deduction_amount'] + $result['early_leave_deduction_amount'] + $result['half_day_deduction_amount'];
         } else {
             $result['late_deduction_amount'] = 0;
@@ -187,14 +187,14 @@ class AttendanceCalculationService
             'present_days' => $records->whereIn('status', $presentStatuses)->count(),
             'absent_days' => $records->whereIn('status', $absentStatuses)->count(),
             'half_days' => $records->whereIn('status', ['Half Day', 'Morning Half Day', 'Evening Half Day'])->count(),
-            
+
             'weekly_leave_days' => $records->where('leave_type', 'Weekly Leave')->count(),
             'public_holiday_days' => $records->where('leave_type', 'Public Holiday')->count(),
             'poya_holiday_days' => $records->where('leave_type', 'Poya Holiday')->count(),
             'custom_holiday_days' => $records->where('leave_type', 'Custom Holiday')->count(),
             'approved_leave_days' => $records->whereIn('status', ['Leave', 'Paid Leave'])->whereNull('leave_type')->count(),
             'auto_checkout_days' => $records->where('is_auto_checkout', true)->count(),
-            
+
             'worked_minutes' => (int) $records->sum('working_minutes'),
             'ot_minutes' => (int) $records->sum('ot_minutes'),
             'ot_amount' => (float) $records->sum('ot_amount'),
@@ -256,22 +256,33 @@ class AttendanceCalculationService
         }
         if (str_contains($status, 'leave') || str_contains($status, 'holiday')) {
             // Keep provided manual leave status if explicitly set
-            if (str_contains($status, 'no pay')) return 'No Pay Leave';
-            if (str_contains($status, 'paid')) return 'Paid Leave';
-            if (str_contains($status, 'holiday')) return 'Holiday Leave';
-            if (str_contains($status, 'poya')) return 'Poya Leave';
+            if (str_contains($status, 'no pay')) {
+                return 'No Pay Leave';
+            }
+            if (str_contains($status, 'paid')) {
+                return 'Paid Leave';
+            }
+            if (str_contains($status, 'holiday')) {
+                return 'Holiday Leave';
+            }
+            if (str_contains($status, 'poya')) {
+                return 'Poya Leave';
+            }
+
             return 'Leave';
         }
         if (! $in && ! $out) {
             if ($isLeaveDay) {
                 return $leaveType ?? 'Leave';
             }
+
             return 'Absent';
         }
         if (str_contains($status, 'absence') && (! $in || ! $out)) {
             if ($isLeaveDay) {
                 return $leaveType ?? 'Leave';
             }
+
             return 'Absent';
         }
         if ($isAutoCheckout) {

@@ -13,9 +13,9 @@ class TechnicianAttendance extends Model
     protected function casts(): array
     {
         return [
-            'date' => 'date', 
-            'is_ot_eligible' => 'boolean', 
-            'is_manual_entry' => 'boolean', 
+            'date' => 'date',
+            'is_ot_eligible' => 'boolean',
+            'is_manual_entry' => 'boolean',
             'is_manual_edit' => 'boolean',
             'is_auto_checkout' => 'boolean',
             'is_leave_day' => 'boolean',

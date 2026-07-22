@@ -75,9 +75,7 @@ class DailyClosingController extends BaseAccountController
     public function adjustment(Request $request, AccountService $service)
     {
         $v = $request->validate(['account_type' => 'required|in:main,spare_parts,bank,cash', 'action' => 'required|in:deduction,increase,decrease', 'amount' => 'required|numeric|gt:0', 'date' => 'required|date|before_or_equal:today', 'reason' => 'required|string|min:5|max:1000', 'proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120']);
-        $account = Account::where('code', match ($v['account_type']) {
-            'spare_parts' => 'SPARE','bank' => 'BANK',default => 'MAIN'
-        })->first();
+        $account = Account::systemAccount($v['account_type']);
         $path = $request->file('proof')?->store('account-proofs', 'public');
         $transactionType = match ($v['action']) {
             'increase' => 'adjustment_increase','decrease' => 'adjustment_decrease',default => 'expense'
@@ -109,13 +107,11 @@ class DailyClosingController extends BaseAccountController
     {
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
-        $code = match ($type) {
-            'spare_parts' => 'SPARE','bank' => 'BANK',default => 'MAIN'
-        };
-        $base = (float) (Account::where('code', $code)->value('opening_balance') ?? 0);
-        $prior = AccountTransaction::where('account_type', $type)->where('status', 'active')->where('transaction_date', '<', $start);
+        $account = Account::systemAccount($type);
+        $base = (float) ($account?->opening_balance ?? 0);
+        $prior = AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $start);
         $opening = $base + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit');
-        $period = AccountTransaction::where('account_type', $type)->where('status', 'active')->whereBetween('transaction_date', [$start, $end])->get();
+        $period = AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->whereBetween('transaction_date', [$start, $end])->get();
         $income = (float) $period->sum('credit');
         $expense = (float) $period->sum('debit');
         $drawings = (float) $period->where('transaction_type', 'drawing')->sum('debit');

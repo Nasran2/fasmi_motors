@@ -15,17 +15,16 @@ class BaseAccountController extends Controller
     protected function ledgerData(Request $request, string $accountType): array
     {
         [$from, $to, $range] = $this->range($request);
-        $account = Account::where('code', match ($accountType) {
-            'main' => 'MAIN','spare_parts' => 'SPARE','bank' => 'BANK','cash' => 'MAIN'
-        })->first();
+        $account = Account::systemAccount($accountType);
         $base = AccountTransaction::with(['creator', 'account', 'reference'])->where('account_type', $accountType)
+            ->where('account_id', $account?->id)
             ->whereBetween('transaction_date', [$from, $to])->where('status', 'active')
             ->when($request->transaction_type, fn (Builder $q, string $type) => $q->where('transaction_type', $type))
             ->when($request->payment_method, fn (Builder $q, string $method) => $q->where('payment_method', $method))
             ->when($request->created_by, fn (Builder $q, string $user) => $q->where('created_by', $user))
             ->when($request->search, fn (Builder $q, string $term) => $q->where(fn (Builder $nested) => $nested->where('transaction_no', 'like', "%{$term}%")->orWhere('description', 'like', "%{$term}%")));
         $period = (clone $base)->orderBy('transaction_date')->orderBy('id')->get();
-        $opening = (float) ($account?->opening_balance ?? 0) + (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->where('transaction_date', '<', $from)->sum('credit') - (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->where('transaction_date', '<', $from)->sum('debit');
+        $opening = (float) ($account?->opening_balance ?? 0) + (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('credit') - (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('debit');
         $credit = (float) $period->sum('credit');
         $debit = (float) $period->sum('debit');
 
@@ -34,6 +33,11 @@ class BaseAccountController extends Controller
 
     protected function range(Request $request): array
     {
+        $request->validate([
+            'date_range' => ['nullable', 'in:today,yesterday,this_week,last_week,this_month,last_month,this_year,last_year,custom'],
+            'start_date' => ['nullable', 'required_if:date_range,custom', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'required_if:date_range,custom', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+        ]);
         $range = $request->date_range ?: 'today';
         [$from,$to] = match ($range) {
             'yesterday' => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],

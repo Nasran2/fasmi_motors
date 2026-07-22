@@ -2,14 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Role;
-use App\Models\User;
 use App\Models\ActivityLog;
 use App\Models\LoginHistory;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class UserManagementController extends Controller
@@ -51,9 +49,15 @@ class UserManagementController extends Controller
         }
 
         if ($r->status) {
-            if ($r->status === 'active') $q->where('active', 1);
-            if ($r->status === 'inactive') $q->where('active', 0);
-            if ($r->status === 'locked') $q->whereNotNull('locked_until')->where('locked_until', '>', now());
+            if ($r->status === 'active') {
+                $q->where('active', 1);
+            }
+            if ($r->status === 'inactive') {
+                $q->where('active', 0);
+            }
+            if ($r->status === 'locked') {
+                $q->whereNotNull('locked_until')->where('locked_until', '>', now());
+            }
         }
 
         if ($r->quick === 'online') {
@@ -65,12 +69,12 @@ class UserManagementController extends Controller
         $rows = $q->latest()->paginate(25)->withQueryString();
 
         $stats = [
-            'total'    => User::count(),
-            'active'   => User::where('active', 1)->count(),
+            'total' => User::count(),
+            'active' => User::where('active', 1)->count(),
             'inactive' => User::where('active', 0)->count(),
-            'online'   => User::where('last_login_at', '>', now()->subMinutes(15))->count(),
-            'admins'   => User::whereHas('role', fn($rq) => $rq->where('name', 'Super Admin')->orWhere('name', 'Admin'))->count(),
-            'locked'   => User::whereNotNull('locked_until')->where('locked_until', '>', now())->count(),
+            'online' => User::where('last_login_at', '>', now()->subMinutes(15))->count(),
+            'admins' => User::whereHas('role', fn ($rq) => $rq->where('name', 'Super Admin')->orWhere('name', 'Admin'))->count(),
+            'locked' => User::whereNotNull('locked_until')->where('locked_until', '>', now())->count(),
         ];
 
         $roles = Role::orderBy('name')->get();
@@ -83,6 +87,7 @@ class UserManagementController extends Controller
     public function create()
     {
         $roles = Role::orderBy('name')->get();
+
         return view('user-management.users.create', compact('roles'));
     }
 
@@ -121,6 +126,7 @@ class UserManagementController extends Controller
     public function edit(User $user)
     {
         $roles = Role::orderBy('name')->get();
+
         return view('user-management.users.edit', compact('user', 'roles'));
     }
 
@@ -189,12 +195,12 @@ class UserManagementController extends Controller
             return back()->with('error', 'You cannot deactivate your own account.');
         }
 
-        if ($user->role?->name === 'Super Admin' && User::whereHas('role', fn($q) => $q->where('name', 'Super Admin'))->where('active', 1)->count() <= 1 && $user->active) {
+        if ($user->role?->name === 'Super Admin' && User::whereHas('role', fn ($q) => $q->where('name', 'Super Admin'))->where('active', 1)->count() <= 1 && $user->active) {
             return back()->with('error', 'The system must have at least one active Super Admin.');
         }
 
         $oldActive = $user->active;
-        $user->update(['active' => !$user->active]);
+        $user->update(['active' => ! $user->active]);
 
         $statusStr = $user->active ? 'Activated' : 'Deactivated';
         $this->log('User Management', $statusStr, "{$statusStr} user: {$user->username}", $user, ['active' => $oldActive], ['active' => $user->active]);
@@ -232,6 +238,7 @@ class UserManagementController extends Controller
             'assigned' => User::distinct('role_id')->count(),
             'custom' => Role::whereNotIn('name', ['Super Admin', 'Admin', 'Manager', 'Cashier', 'Store Keeper', 'Technician', 'Accountant'])->count(),
         ];
+
         return view('user-management.roles.index', compact('rows', 'stats'));
     }
 
@@ -486,6 +493,7 @@ class UserManagementController extends Controller
 
     public function activityLogs(Request $r)
     {
+        $r->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from']]);
         $q = ActivityLog::with('user');
 
         if ($r->search) {
@@ -533,6 +541,7 @@ class UserManagementController extends Controller
 
     public function loginHistory(Request $r)
     {
+        $r->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from']]);
         $q = LoginHistory::with('user');
 
         if ($r->search) {

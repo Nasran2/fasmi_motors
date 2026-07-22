@@ -8,6 +8,7 @@ use App\Models\Drawing;
 use App\Models\Expense;
 use App\Models\FinancialCategory;
 use App\Services\AccountService;
+use App\Support\SpreadsheetSafeText;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -65,7 +66,7 @@ class ExpenseDrawingController extends Controller
     {
         $accounts = Account::where('active', true)->get();
         $categories = FinancialCategory::where('module', $module)->where('active', true)->orderBy('name')->get();
-        $default = $accounts->firstWhere('code', $module === 'expense' ? 'MAIN' : 'SPARE')?->id;
+        $default = $accounts->firstWhere('code', Account::systemCode($module === 'expense' ? 'main' : 'spare_parts'))?->id;
 
         return view('finance-management.form', compact('module', 'accounts', 'categories', 'default'));
     }
@@ -104,7 +105,9 @@ class ExpenseDrawingController extends Controller
         $v = $r->validate($base + $specific);
         $account = Account::findOrFail($v['account_id']);
         $accountType = match ($account->code) {
-            'SPARE' => 'spare_parts','BANK' => 'bank',default => $v['payment_method'] === 'Cash' ? 'cash' : 'main'
+            Account::systemCode('spare_parts') => 'spare_parts',
+            Account::systemCode('bank') => 'bank',
+            default => $v['payment_method'] === 'Cash' ? 'cash' : 'main',
         };
         $balance = $service->getRunningBalance($accountType);
         if ($balance < (float) $v['amount']) {
@@ -156,7 +159,7 @@ class ExpenseDrawingController extends Controller
                 $f = fopen('php://output', 'w');
                 fputcsv($f, ['Date', 'Number', 'Category / Person', 'Account', 'Method', 'Amount', 'Status']);
                 foreach ($rows as $x) {
-                    fputcsv($f, [$x->$date?->format('Y-m-d'), $x->number, $module === 'expense' ? $x->category : $x->person_name, $x->account?->name, $x->payment_method, $x->amount, $x->status]);
+                    fputcsv($f, SpreadsheetSafeText::row([$x->$date?->format('Y-m-d'), $x->number, $module === 'expense' ? $x->category : $x->person_name, $x->account?->name, $x->payment_method, $x->amount, $x->status]));
                 }
                 fclose($f);
             }, "{$module}-report.csv", ['Content-Type' => 'text/csv']);
@@ -167,6 +170,11 @@ class ExpenseDrawingController extends Controller
 
     private function range(Request $r)
     {
+        $r->validate([
+            'date_range' => ['nullable', 'in:today,yesterday,this_week,last_week,this_month,last_month,this_year,last_year,custom'],
+            'from' => ['nullable', 'required_if:date_range,custom', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'required_if:date_range,custom', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
         $range = $r->date_range ?: 'today';
         [$f, $t] = match ($range) {
             'yesterday' => [today()->subDay(), today()->subDay()],

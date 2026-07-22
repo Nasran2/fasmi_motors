@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Product;
+use App\Models\ServiceReminder;
 use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\User;
@@ -55,6 +56,38 @@ test('parts sale and customer payment update stock due spare ledger and public a
     expect($invoice->fresh()->open_count)->toBe(1);
 });
 
+test('an overpaid parts sale is rejected without partial invoice stock or ledger changes', function () {
+    $user = User::factory()->create();
+    $store = Store::create(['name' => 'Rollback Store', 'active' => true]);
+    $product = Product::create(['code' => 'ROLLBACK-001', 'name' => 'Rollback Part', 'cost_price' => 50, 'selling_price' => 100, 'unit' => 'pcs', 'active' => true]);
+    StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 5]);
+    $account = Account::where('code', 'SPARE')->firstOrFail();
+
+    $this->actingAs($user)->postJson(route('sales.parts.store'), [
+        'customer_mode' => 'walkin',
+        'store_id' => $store->id,
+        'paid_amount' => 150,
+        'payment_method' => 'Cash',
+        'account_id' => $account->id,
+        'items' => [['product_id' => $product->id, 'quantity' => 1, 'unit_price' => 100, 'discount' => 0]],
+    ])->assertUnprocessable()->assertJsonValidationErrors('paid_amount');
+
+    expect(Invoice::count())->toBe(0)
+        ->and((float) StoreStock::where(['store_id' => $store->id, 'product_id' => $product->id])->value('quantity'))->toBe(5.0)
+        ->and($account->transactions()->count())->toBe(0);
+});
+
+test('helmet shop initializes its own accounts without colliding with workshop codes', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->withSession(['shop_mode' => 'helmet'])->get(route('sales.parts'))->assertOk();
+
+    expect(Account::withoutGlobalScopes()->where('code', 'MAIN')->exists())->toBeTrue()
+        ->and(Account::withoutGlobalScopes()->where('code', 'HELMET_MAIN')->where('shop_type', 'helmet')->exists())->toBeTrue()
+        ->and(Account::withoutGlobalScopes()->where('code', 'HELMET_SPARE')->where('shop_type', 'helmet')->exists())->toBeTrue()
+        ->and(Account::withoutGlobalScopes()->where('code', 'HELMET_BANK')->where('shop_type', 'helmet')->exists())->toBeTrue();
+});
+
 test('card-paid job bill splits service income and bank receipt correctly', function () {
     $user = User::factory()->create();
     $customer = Customer::create(['name' => 'Job Bill Customer', 'phone' => '0776000002', 'active' => true]);
@@ -71,5 +104,6 @@ test('card-paid job bill splits service income and bank receipt correctly', func
     expect((float) Account::where('code', 'MAIN')->firstOrFail()->transactions()->sum('credit'))->toBe(1000.0)
         ->and((float) $bank->transactions()->sum('credit'))->toBe(1000.0)
         ->and($job->fresh()->status)->toBe('Billed')
-        ->and($job->invoice?->invoice_type)->toBe('Job Card Bill');
+        ->and($job->invoice?->invoice_type)->toBe('Job Card Bill')
+        ->and(ServiceReminder::where('job_card_id', $job->id)->where('status', 'Pending')->exists())->toBeTrue();
 });

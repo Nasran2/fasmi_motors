@@ -6,8 +6,8 @@ use App\Models\Bike;
 use App\Models\ServiceReminder;
 use App\Models\Setting;
 use App\Models\SmsLog;
+use App\Services\ServiceReminderService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ServiceReminderController extends Controller
 {
@@ -49,30 +49,13 @@ class ServiceReminderController extends Controller
         return back()->with('success', 'Service reminder created.');
     }
 
-    public function send(ServiceReminder $reminder)
+    public function send(ServiceReminder $reminder, ServiceReminderService $service)
     {
-        $reminder->load('bike.customer');
-        $phone = $reminder->bike?->customer?->phone;
-        if (! $phone) {
-            return back()->withErrors(['phone' => 'This customer has no phone number.']);
-        }
-        $smsService = app(\App\Services\Sms\TextitSmsService::class);
-        $result = $smsService->send($phone, $this->message($reminder), [
-            'module' => 'Service Reminder',
-            'message_type' => 'Reminder SMS',
-            'recipient_name' => $reminder->bike?->customer?->name,
-            'recipient_type' => 'customer',
-            'reference_no' => $reminder->bike?->number,
-            'related_type' => $reminder->getMorphClass(),
-            'related_id' => $reminder->id,
-            'sent_by' => auth()->id(),
-        ]);
-        $reminder->update([
-            'sms_status' => $result['success'] ? 'sent' : 'failed',
-            'sent_at' => now()
-        ]);
+        $result = $service->send($reminder, auth()->id());
 
-        return back()->with('success', $result['success'] ? 'Reminder SMS sent and logged.' : 'Reminder SMS sending failed: ' . ($result['error'] ?? 'Check SMS settings.'));
+        return $result['success']
+            ? back()->with('success', 'Reminder SMS sent and logged.')
+            : back()->withErrors(['sms' => $result['error'] ?? 'Check SMS settings.']);
     }
 
     public function complete(ServiceReminder $reminder)
@@ -97,12 +80,5 @@ class ServiceReminderController extends Controller
         }
 
         return back()->with('success', 'Reminder settings saved.');
-    }
-
-    private function message(ServiceReminder $reminder): string
-    {
-        $template = Setting::valueFor('reminder_sms_template', 'Dear {customer_name}, your bike {bike_number} is due for service on {next_service_date}. Please visit {business_name}. Call {phone}.');
-
-        return Str::replace(['{customer_name}', '{bike_number}', '{bike_model}', '{next_service_date}', '{business_name}', '{phone}'], [$reminder->bike?->customer?->name, $reminder->bike?->number, $reminder->bike?->model, $reminder->due_date?->format('d M Y'), 'Fasmir Motors', Setting::valueFor('business_phone', '')], $template);
     }
 }

@@ -86,7 +86,7 @@ return new class extends Migration
             $table->dropColumn([
                 'phone', 'avatar', 'store_access', 'last_login_at', 'last_login_ip',
                 'force_password_change', 'failed_login_attempts', 'locked_until',
-                'created_by', 'updated_by', 'deleted_at'
+                'created_by', 'updated_by', 'deleted_at',
             ]);
         });
     }

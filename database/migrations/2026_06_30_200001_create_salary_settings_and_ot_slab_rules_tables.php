@@ -19,19 +19,19 @@ return new class extends Migration
             $table->decimal('working_hours_per_day', 4, 2)->default(8.0);
             $table->unsignedInteger('lunch_break_minutes')->default(0);
             $table->json('work_days')->nullable();
-            
+
             $table->boolean('enable_late_deduction')->default(true);
             $table->unsignedInteger('late_grace_minutes')->default(15);
             $table->string('late_deduction_type')->default('Fixed amount');
             $table->decimal('late_deduction_amount', 14, 2)->default(0);
             $table->boolean('require_reason_late_edit')->default(true);
-            
+
             $table->boolean('enable_early_leave_deduction')->default(false);
             $table->unsignedInteger('early_leave_grace_minutes')->default(15);
             $table->string('early_leave_deduction_type')->default('Fixed amount');
             $table->decimal('early_leave_deduction_amount', 14, 2)->default(0);
             $table->boolean('require_reason_early_leave')->default(true);
-            
+
             $table->boolean('enable_ot')->default(true);
             $table->unsignedInteger('ot_grace_minutes_after_closing')->default(15);
             $table->string('ot_calculation_type')->default('Fixed amount per hour');
@@ -40,16 +40,16 @@ return new class extends Migration
             $table->unsignedInteger('ot_slab_minutes')->default(30);
             $table->boolean('require_ot_approval')->default(false);
             $table->boolean('allow_manual_ot_override')->default(true);
-            
+
             $table->boolean('enable_half_day')->default(true);
             $table->string('morning_half_day_cutoff')->default('12:30 PM');
             $table->string('evening_half_day_cutoff')->default('01:30 PM');
             $table->string('half_day_deduction_type')->default('Half of daily salary');
             $table->decimal('half_day_deduction_amount', 14, 2)->default(0);
-            
+
             $table->boolean('paysheet_finalize_lock')->default(true);
             $table->boolean('require_reason_reopen_paysheet')->default(true);
-            
+
             $table->timestamps();
         });
 
@@ -74,11 +74,11 @@ return new class extends Migration
             $table->unsignedInteger('ot_minutes')->default(0)->after('ot_hours');
             $table->decimal('ot_amount', 14, 2)->default(0)->after('ot_minutes');
             $table->decimal('deduction_amount', 14, 2)->default(0)->after('ot_amount');
-            
+
             $table->decimal('late_deduction_amount', 14, 2)->default(0)->after('deduction_amount');
             $table->decimal('early_leave_deduction_amount', 14, 2)->default(0)->after('late_deduction_amount');
             $table->decimal('half_day_deduction_amount', 14, 2)->default(0)->after('early_leave_deduction_amount');
-            
+
             $table->boolean('is_manual_edit')->default(false)->after('status');
             $table->foreignId('updated_by')->nullable()->after('edited_by')->constrained('users')->nullOnDelete();
         });
@@ -99,9 +99,9 @@ return new class extends Migration
         Schema::table('technician_attendance', function (Blueprint $table) {
             $table->dropForeign(['updated_by']);
             $table->dropColumn([
-                'working_minutes', 'early_leave_minutes', 'ot_minutes', 'ot_amount', 
-                'deduction_amount', 'late_deduction_amount', 'early_leave_deduction_amount', 
-                'half_day_deduction_amount', 'is_manual_edit', 'updated_by'
+                'working_minutes', 'early_leave_minutes', 'ot_minutes', 'ot_amount',
+                'deduction_amount', 'late_deduction_amount', 'early_leave_deduction_amount',
+                'half_day_deduction_amount', 'is_manual_edit', 'updated_by',
             ]);
         });
 

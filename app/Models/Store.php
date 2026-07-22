@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
+use App\Traits\ShopScoped;
 use Illuminate\Database\Eloquent\Model;
 
 class Store extends Model
 {
-    use \App\Traits\ShopScoped;
+    use ShopScoped;
 
     protected $guarded = [];
 

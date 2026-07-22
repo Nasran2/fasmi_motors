@@ -53,20 +53,20 @@ class AccountService
             // Logical ledgers always post to their own account. Cash may use a selected
             // physical account, while MAIN/SPARE/BANK must never inherit a UI account id.
             if ($accountType !== 'cash') {
-                $accountId = Account::where('code', match ($accountType) {
-                    'main' => 'MAIN', 'spare_parts' => 'SPARE', 'bank' => 'BANK', default => null,
-                })->value('id');
+                $accountId = Account::systemAccount($accountType)?->id;
             }
+
+            $account = $accountId ? Account::lockForUpdate()->find($accountId) : null;
 
             // Lock the last entry so two simultaneous payments cannot calculate the same balance.
             $lastTransaction = AccountTransaction::where('account_type', $accountType)
-                ->when($accountId, fn ($q) => $q->where('account_id', $accountId))
+                ->where('account_id', $accountId)
                 ->latest('transaction_date')
                 ->latest('id')
                 ->lockForUpdate()
                 ->first();
 
-            $previousBalance = $lastTransaction ? (float) $lastTransaction->running_balance : (float) (Account::find($accountId)?->opening_balance ?? 0);
+            $previousBalance = $lastTransaction ? (float) $lastTransaction->running_balance : (float) ($account?->opening_balance ?? 0);
             $newBalance = $previousBalance + $credit - $debit;
 
             $transaction = AccountTransaction::create([
@@ -95,14 +95,12 @@ class AccountService
 
     public function getRunningBalance(string $accountType): float
     {
-        $code = match ($accountType) {
-            'main', 'cash' => 'MAIN', 'spare_parts' => 'SPARE', 'bank' => 'BANK', default => null,
-        };
-        $opening = (float) (Account::where('code', $code)->value('opening_balance') ?? 0);
+        $account = Account::systemAccount($accountType);
+        $opening = (float) ($account?->opening_balance ?? 0);
 
         return $opening
-            + (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->sum('credit')
-            - (float) AccountTransaction::where('account_type', $accountType)->where('status', 'active')->sum('debit');
+            + (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->sum('credit')
+            - (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->sum('debit');
     }
 
     /**
@@ -115,7 +113,7 @@ class AccountService
                 return false;
             }
 
-            $last = AccountTransaction::where('account_type', $transaction->account_type)->latest('transaction_date')->latest('id')->lockForUpdate()->first();
+            $last = AccountTransaction::where('account_type', $transaction->account_type)->where('account_id', $transaction->account_id)->latest('transaction_date')->latest('id')->lockForUpdate()->first();
             $previous = (float) ($last?->running_balance ?? 0);
             AccountTransaction::create([
                 'transaction_no' => 'REV-'.strtoupper(Str::random(8)), 'transaction_date' => now(),

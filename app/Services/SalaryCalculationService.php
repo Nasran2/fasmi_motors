@@ -60,10 +60,12 @@ class SalaryCalculationService
             if ($holiday) {
                 $type = strtolower((string) $holiday->holiday_type);
                 $calendar[str_contains($type, 'poya') ? 'poya_holiday_days' : (str_contains($type, 'public') ? 'public_holiday_days' : 'custom_holiday_days')]++;
+
                 continue;
             }
             if ($this->holidays->isWeeklyLeave($date)) {
                 $calendar['weekly_leave_days']++;
+
                 continue;
             }
             $calendar['total_working_days']++;

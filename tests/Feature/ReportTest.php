@@ -2,15 +2,15 @@
 
 use App\Models\User;
 
-test('reports page uses the current month when no date filters are supplied', function () {
+test('reports page uses today when no date filters are supplied', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
         ->get(route('reports.index'))
         ->assertOk()
         ->assertSeeText('Reports')
-        ->assertSee(now()->startOfMonth()->toDateString())
-        ->assertSee(today()->toDateString());
+        ->assertSee(today()->toDateString())
+        ->assertSee('date_range=today', escape: false);
 });
 
 test('reports page accepts a valid custom date range', function () {

@@ -16,6 +16,7 @@ use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\LeaveHolidaySettingController;
 use App\Http\Controllers\LiveBoardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PublicInvoiceController;
@@ -32,7 +33,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login')->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('search', GlobalSearchController::class)->name('search');
     Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
@@ -199,14 +200,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('backup-settings', [SettingController::class, 'backupSettings'])->name('backup-settings');
         Route::get('system-security', [SettingController::class, 'systemSecurity'])->name('system-security');
         Route::get('audit-log-settings', [SettingController::class, 'auditLogSettings'])->name('audit-log-settings');
-        
+
         // Leave & Holiday Settings
-        Route::get('leave-holiday-settings', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'index'])->name('leave-holiday-settings');
-        Route::post('leave-holiday-settings/weekly', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'storeWeeklyLeaves'])->name('leave-holiday-settings.weekly');
-        Route::post('leave-holiday-settings/import-sl', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'importSriLankaHolidays'])->name('leave-holiday-settings.import-sl');
-        Route::post('leave-holiday-settings/holidays', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'storeHoliday'])->name('leave-holiday-settings.holidays');
-        Route::delete('leave-holiday-settings/holidays/{holiday}', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'destroyHoliday'])->name('leave-holiday-settings.holidays.destroy');
-        Route::patch('leave-holiday-settings/holidays/{holiday}/toggle', [\App\Http\Controllers\LeaveHolidaySettingController::class, 'toggleHoliday'])->name('leave-holiday-settings.holidays.toggle');
+        Route::get('leave-holiday-settings', [LeaveHolidaySettingController::class, 'index'])->name('leave-holiday-settings');
+        Route::post('leave-holiday-settings/weekly', [LeaveHolidaySettingController::class, 'storeWeeklyLeaves'])->name('leave-holiday-settings.weekly');
+        Route::post('leave-holiday-settings/import-sl', [LeaveHolidaySettingController::class, 'importSriLankaHolidays'])->name('leave-holiday-settings.import-sl');
+        Route::post('leave-holiday-settings/holidays', [LeaveHolidaySettingController::class, 'storeHoliday'])->name('leave-holiday-settings.holidays');
+        Route::delete('leave-holiday-settings/holidays/{holiday}', [LeaveHolidaySettingController::class, 'destroyHoliday'])->name('leave-holiday-settings.holidays.destroy');
+        Route::patch('leave-holiday-settings/holidays/{holiday}/toggle', [LeaveHolidaySettingController::class, 'toggleHoliday'])->name('leave-holiday-settings.holidays.toggle');
 
         // Actions
         Route::post('save', [SettingController::class, 'save'])->name('save');
@@ -310,10 +311,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('search-recipients', [SmsCenterController::class, 'searchRecipients'])->name('search-recipients');
     });
 
-    Route::get('shop-switch/{mode}', function ($mode) {
+    Route::post('shop-switch/{mode}', function ($mode) {
         if (in_array($mode, ['workshop', 'helmet'])) {
             session(['shop_mode' => $mode]);
         }
+
         return redirect()->back();
     })->name('shop.switch');
 });

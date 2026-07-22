@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use App\Models\ActivityLog;
 use App\Models\LoginHistory;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class UserManagementSeeder extends Seeder
@@ -12,7 +12,9 @@ class UserManagementSeeder extends Seeder
     public function run(): void
     {
         $admin = User::where('name', 'Fasmir Admin')->first() ?? User::first();
-        if (!$admin) return;
+        if (! $admin) {
+            return;
+        }
 
         // 1. Seed Login History
         $logins = [
@@ -47,7 +49,7 @@ class UserManagementSeeder extends Seeder
                 'status' => 'Locked',
                 'failure_reason' => 'Account temporarily locked due to too many failed attempts',
                 'logged_in_at' => now()->subHours(6),
-            ]
+            ],
         ];
 
         foreach ($logins as $login) {
@@ -86,7 +88,7 @@ class UserManagementSeeder extends Seeder
                 'ip_address' => '192.168.1.100',
                 'user_agent' => 'Chrome 120 / macOS',
                 'created_at' => now()->subMinutes(30),
-            ]
+            ],
         ];
 
         foreach ($activities as $act) {

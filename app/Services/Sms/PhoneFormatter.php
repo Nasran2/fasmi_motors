@@ -20,12 +20,12 @@ class PhoneFormatter
 
         // If starts with 0 and 10 digits total (local Sri Lankan format)
         if (str_starts_with($digits, '0') && strlen($digits) === 10) {
-            return '94' . substr($digits, 1);
+            return '94'.substr($digits, 1);
         }
 
         // Already 9 digits without country code — prepend 94
         if (strlen($digits) === 9) {
-            return '94' . $digits;
+            return '94'.$digits;
         }
 
         // Return as-is (let the provider reject it if invalid)

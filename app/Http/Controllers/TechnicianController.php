@@ -26,8 +26,8 @@ use App\Services\WorkshopService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -93,6 +93,12 @@ class TechnicianController extends Controller
 
     public function attendanceIndex(Request $request)
     {
+        $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+            'month' => ['nullable', 'date_format:Y-m'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
         $date = $request->date ? Carbon::parse($request->date) : today();
         if ($request->filled('month')) {
             $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
@@ -143,12 +149,12 @@ class TechnicianController extends Controller
             'deduction_amount' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'max:1000'],
             'edit_reason' => ['nullable', 'max:500'],
-            'is_manual_edit' => ['nullable']
+            'is_manual_edit' => ['nullable'],
         ]);
 
-        if (!$bulk) {
+        if (! $bulk) {
             $request->validate([
-                'technician_id' => ['required', 'exists:technicians,id']
+                'technician_id' => ['required', 'exists:technicians,id'],
             ]);
         }
 
@@ -156,8 +162,10 @@ class TechnicianController extends Controller
         $savedCount = 0;
 
         foreach ($ids as $techId) {
-            if (!$techId) continue;
-            
+            if (! $techId) {
+                continue;
+            }
+
             $technician = Technician::findOrFail($techId);
 
             // 1. Check finalized salary sheets
@@ -167,14 +175,16 @@ class TechnicianController extends Controller
                 ->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])
                 ->exists();
             if ($isFinalized) {
-                if ($bulk) continue;
+                if ($bulk) {
+                    continue;
+                }
                 throw ValidationException::withMessages(['date' => "This attendance for {$technician->name} is included in finalized salary. Reopen paysheet before editing."]);
             }
 
             $oldRecord = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->first();
 
             // Edit reason is required if updating existing
-            if ($oldRecord && empty($request->edit_reason) && !$bulk) {
+            if ($oldRecord && empty($request->edit_reason) && ! $bulk) {
                 throw ValidationException::withMessages(['edit_reason' => 'Edit Reason is required when updating attendance record.']);
             }
 
@@ -200,10 +210,10 @@ class TechnicianController extends Controller
                 'is_manual_edit' => $isManual,
                 'is_manual_entry' => true,
                 'edited_by' => auth()->id(),
-                'updated_by' => auth()->id()
+                'updated_by' => auth()->id(),
             ]);
 
-            if (!$oldRecord) {
+            if (! $oldRecord) {
                 $payload['created_by'] = auth()->id();
             } else {
                 // Log Audit Log
@@ -307,9 +317,9 @@ class TechnicianController extends Controller
                 if ($submittedRows->has($rowId)) {
                     $rowInput = $submittedRows->get($rowId);
                     $item['date'] = $rowInput['date'] ?? $item['date'];
-                    $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'] . (strlen($rowInput['check_in']) == 5 ? ':00' : '');
-                    $item['check_out'] = empty($rowInput['check_out']) ? null : $rowInput['check_out'] . (strlen($rowInput['check_out']) == 5 ? ':00' : '');
-                    if (!empty($rowInput['technician_id'])) {
+                    $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
+                    $item['check_out'] = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
+                    if (! empty($rowInput['technician_id'])) {
                         $item['technician_id'] = (int) $rowInput['technician_id'];
                         $item['will_create_technician'] = false;
                     } else {
@@ -331,8 +341,8 @@ class TechnicianController extends Controller
 
     private function calculateAttendance($technician, $date, &$status, $inTime, $outTime, $manualOtAmount = null, $manualDeductionAmount = null, $isManualEdit = false)
     {
-        $salarySetting = \App\Models\SalarySetting::firstOrCreate([]);
-        
+        $salarySetting = SalarySetting::firstOrCreate([]);
+
         $metrics = [
             'working_minutes' => 0,
             'working_hours' => 0,
@@ -353,17 +363,18 @@ class TechnicianController extends Controller
             if ($status === 'Absent' || $status === 'No Pay Leave') {
                 $metrics['deduction_amount'] = (float) $technician->no_pay_deduction_rate;
             }
+
             return $metrics;
         }
 
         // 2. We need In/Out times for calculation
-        if (!$inTime || !$outTime) {
+        if (! $inTime || ! $outTime) {
             return $metrics;
         }
 
         $in = Carbon::parse($inTime);
         $out = Carbon::parse($outTime);
-        
+
         $working_minutes = max(0, $in->diffInMinutes($out, false));
         $metrics['working_minutes'] = $working_minutes;
         $metrics['working_hours'] = $working_minutes / 60;
@@ -400,7 +411,7 @@ class TechnicianController extends Controller
         if ($salarySetting->enable_half_day) {
             $morningCutoff = Carbon::parse($salarySetting->morning_half_day_cutoff);
             $eveningCutoff = Carbon::parse($salarySetting->evening_half_day_cutoff);
-            
+
             $isHalfDay = false;
             if ($in->gt($morningCutoff)) {
                 $status = 'Morning Half Day';
@@ -412,13 +423,13 @@ class TechnicianController extends Controller
 
             if ($isHalfDay || $status === 'Half Day') {
                 $dailyRate = $technician->salary_type === 'Daily' ? (float) $technician->daily_salary : ((float) $technician->basic_salary / 26);
-                
+
                 if ($salarySetting->half_day_deduction_type === 'Half of daily salary') {
                     $metrics['half_day_deduction_amount'] = $dailyRate / 2;
                 } elseif ($salarySetting->half_day_deduction_type === 'Fixed amount') {
                     $metrics['half_day_deduction_amount'] = (float) $salarySetting->half_day_deduction_amount;
                 }
-                
+
                 // If it is half day, we nullify late and early deductions since half day deduction covers it
                 $metrics['late_deduction_amount'] = 0;
                 $metrics['early_leave_deduction_amount'] = 0;
@@ -431,22 +442,26 @@ class TechnicianController extends Controller
             if ($diff > $salarySetting->ot_grace_minutes_after_closing) {
                 $metrics['ot_minutes'] = $diff;
                 $metrics['ot_hours'] = $diff / 60;
-                
+
                 // Slab matching logic
-                $slabRules = \App\Models\OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get();
+                $slabRules = OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get();
                 if ($slabRules->isNotEmpty()) {
                     $matchedSlab = null;
-                    
+
                     if ($salarySetting->ot_round_method === 'Ceiling slab') {
-                        $matchedSlab = $slabRules->first(fn($s) => $diff <= $s->to_minutes);
-                        if (!$matchedSlab) $matchedSlab = $slabRules->last();
+                        $matchedSlab = $slabRules->first(fn ($s) => $diff <= $s->to_minutes);
+                        if (! $matchedSlab) {
+                            $matchedSlab = $slabRules->last();
+                        }
                     } elseif ($salarySetting->ot_round_method === 'Floor slab') {
-                        $matchedSlab = $slabRules->last(fn($s) => $diff >= $s->from_minutes);
-                        if (!$matchedSlab) $matchedSlab = $slabRules->first();
+                        $matchedSlab = $slabRules->last(fn ($s) => $diff >= $s->from_minutes);
+                        if (! $matchedSlab) {
+                            $matchedSlab = $slabRules->first();
+                        }
                     } elseif ($salarySetting->ot_round_method === 'Nearest slab') {
-                        $matchedSlab = $slabRules->sortBy(fn($s) => abs(($s->from_minutes + $s->to_minutes)/2 - $diff))->first();
+                        $matchedSlab = $slabRules->sortBy(fn ($s) => abs(($s->from_minutes + $s->to_minutes) / 2 - $diff))->first();
                     } else { // Exact minutes
-                        $matchedSlab = $slabRules->first(fn($s) => $diff >= $s->from_minutes && $diff <= $s->to_minutes);
+                        $matchedSlab = $slabRules->first(fn ($s) => $diff >= $s->from_minutes && $diff <= $s->to_minutes);
                     }
 
                     if ($matchedSlab) {
@@ -460,7 +475,7 @@ class TechnicianController extends Controller
                     // Fallback to settings: "Every X minutes = Y Rs"
                     $slabMinutes = max(1, $salarySetting->ot_slab_minutes);
                     $amountPerSlab = (float) $salarySetting->ot_amount_per_slab;
-                    
+
                     if ($salarySetting->ot_round_method === 'Ceiling slab') {
                         $slabCount = ceil($diff / $slabMinutes);
                     } elseif ($salarySetting->ot_round_method === 'Floor slab') {
@@ -480,8 +495,12 @@ class TechnicianController extends Controller
 
         // Respect Manual Overrides
         if ($isManualEdit) {
-            if ($manualOtAmount !== null) $metrics['ot_amount'] = $manualOtAmount;
-            if ($manualDeductionAmount !== null) $metrics['deduction_amount'] = $manualDeductionAmount;
+            if ($manualOtAmount !== null) {
+                $metrics['ot_amount'] = $manualOtAmount;
+            }
+            if ($manualDeductionAmount !== null) {
+                $metrics['deduction_amount'] = $manualDeductionAmount;
+            }
         }
 
         return $metrics;
@@ -490,6 +509,7 @@ class TechnicianController extends Controller
     public function attendance(Request $request, Technician $technician)
     {
         $request->merge(['technician_id' => $technician->id]);
+
         return $this->attendanceStore($request);
     }
 
@@ -521,7 +541,7 @@ class TechnicianController extends Controller
             ->whereDate('period_end', $response['period_end'])
             ->first();
         $response['existing_sheet_status'] = $existing ? $existing->status : null;
-        
+
         return response()->json($response);
     }
 
@@ -535,11 +555,11 @@ class TechnicianController extends Controller
             'manual_deductions.*.name' => ['required_with:manual_deductions.*.amount', 'string', 'max:150'],
             'manual_deductions.*.amount' => ['required_with:manual_deductions.*.name', 'numeric', 'min:0'],
             'addition_name' => ['nullable', 'max:150'], 'addition_reason' => ['nullable', 'max:500'],
-            'paid_amount' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', \Illuminate\Validation\Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])],
             'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
-            'action' => ['nullable', \Illuminate\Validation\Rule::in(['preview', 'save'])],
+            'action' => ['nullable', Rule::in(['preview', 'save'])],
         ]);
-        
+
         $manualDeductionsInput = $data['manual_deductions'] ?? null;
         $manualDeductionsList = is_array($manualDeductionsInput) ? $manualDeductionsInput : [];
         $data['manual_deductions'] = is_array($manualDeductionsInput)
@@ -556,7 +576,7 @@ class TechnicianController extends Controller
             if ($existing->status === 'Draft') {
                 $existing->additions()->delete();
                 $existing->paymentDeductions()->delete();
-                \App\Models\TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
+                TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
                 $existing->delete();
             } else {
                 throw ValidationException::withMessages(['month' => 'A finalized or paid salary sheet already exists for this technician and month. Please reopen it first to edit.']);
@@ -602,7 +622,7 @@ class TechnicianController extends Controller
             }
             if (count($manualDeductionsList) > 0) {
                 foreach ($manualDeductionsList as $md) {
-                    if (!empty($md['amount']) && $md['amount'] > 0) {
+                    if (! empty($md['amount']) && $md['amount'] > 0) {
                         $sheet->paymentDeductions()->create(['technician_id' => $technician->id, 'deduction_name' => $md['name'] ?? 'Manual deduction', 'amount' => $md['amount'], 'reason' => null, 'deduction_date' => today(), 'created_by' => auth()->id()]);
                     }
                 }
@@ -619,19 +639,19 @@ class TechnicianController extends Controller
     public function salaryFinalize(Request $request, TechnicianSalarySheet $sheet, SalaryCalculationService $calculator)
     {
         abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be finalized.');
-        
+
         $data = $request->validate([
-            'amount' => ['nullable', 'numeric', 'min:0'], 
-            'account_id' => ['nullable', 'exists:accounts,id'], 
-            'payment_method' => ['nullable', 'string', 'max:50'], 
-            'payment_date' => ['nullable', 'date'], 
-            'payment_note' => ['nullable', 'max:1000']
+            'amount' => ['nullable', 'numeric', 'min:0'],
+            'account_id' => ['nullable', 'exists:accounts,id'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
+            'payment_date' => ['nullable', 'date'],
+            'payment_note' => ['nullable', 'max:1000'],
         ]);
 
         $calculator->finalizeSalaryPayment($sheet, auth()->id());
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Finalized', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Finalized'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
-        if (!empty($data['amount']) && $data['amount'] > 0) {
+        if (! empty($data['amount']) && $data['amount'] > 0) {
             $request->validate(['account_id' => 'required', 'payment_method' => 'required']);
             DB::transaction(function () use ($sheet, $data) {
                 $paid = (float) $sheet->paid_amount + (float) $data['amount'];
@@ -647,7 +667,7 @@ class TechnicianController extends Controller
                 app(AccountService::class)->recordTransaction($data['payment_method'] === 'Cash' ? 'cash' : 'bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id']);
             });
             AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
-            
+
             return back()->with('success', "{$sheet->number} finalized and payment of Rs. {$data['amount']} recorded.");
         }
 
@@ -657,7 +677,7 @@ class TechnicianController extends Controller
     public function salaryPay(Request $request, TechnicianSalarySheet $sheet)
     {
         abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
-        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', \Illuminate\Validation\Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
+        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
         DB::transaction(function () use ($sheet, $data) {
             $paid = (float) $sheet->paid_amount + (float) $data['amount'];
             $balance = round((float) $sheet->net_payable - $paid, 2);
@@ -688,9 +708,9 @@ class TechnicianController extends Controller
     public function salaryDestroy(TechnicianSalarySheet $sheet)
     {
         abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be deleted.');
-        
+
         DB::transaction(function () use ($sheet) {
-            \App\Models\TechnicianContribution::where('salary_sheet_id', $sheet->id)->delete();
+            TechnicianContribution::where('salary_sheet_id', $sheet->id)->delete();
             $sheet->additions()->delete();
             $sheet->paymentDeductions()->delete();
             $sheet->delete();
@@ -768,6 +788,11 @@ class TechnicianController extends Controller
 
     public function history(Request $request, SalaryCycleService $salaryCycle)
     {
+        $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
         $technician = null;
         $historyPeriod = null;
         if ($request->technician) {
@@ -775,11 +800,11 @@ class TechnicianController extends Controller
             $to = null;
             if ($request->month) {
                 $historyPeriod = $salaryCycle->previewSalaryPeriod($request->month.'-01');
-                $from = \Carbon\Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
-                $to = \Carbon\Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
+                $from = Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
+                $to = Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
             } elseif ($request->from || $request->to) {
-                $from = $request->from ? \Carbon\Carbon::parse($request->from)->startOfDay() : null;
-                $to = $request->to ? \Carbon\Carbon::parse($request->to)->endOfDay() : null;
+                $from = $request->from ? Carbon::parse($request->from)->startOfDay() : null;
+                $to = $request->to ? Carbon::parse($request->to)->endOfDay() : null;
                 $historyPeriod = [
                     'salary_cycle_label' => 'Custom Date Range',
                     'salary_month_label' => 'Custom Range',
@@ -792,21 +817,29 @@ class TechnicianController extends Controller
                 ];
             } else {
                 $historyPeriod = $salaryCycle->previewSalaryPeriod(now()->startOfMonth());
-                $from = \Carbon\Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
-                $to = \Carbon\Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
+                $from = Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
+                $to = Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
             }
-            
+
             $technician = Technician::with([
-                'jobs' => function($q) use ($from, $to) {
-                    if ($from) $q->where('created_at', '>=', $from);
-                    if ($to) $q->where('created_at', '<=', $to);
+                'jobs' => function ($q) use ($from, $to) {
+                    if ($from) {
+                        $q->where('created_at', '>=', $from);
+                    }
+                    if ($to) {
+                        $q->where('created_at', '<=', $to);
+                    }
                     $q->with('intake.bike.customer', 'invoice');
                 },
-                'attendance' => function($q) use ($from, $to, $request) {
-                    if ($from) $q->where('date', '>=', $from);
-                    if ($to) $q->where('date', '<=', $to);
+                'attendance' => function ($q) use ($from, $to) {
+                    if ($from) {
+                        $q->where('date', '>=', $from);
+                    }
+                    if ($to) {
+                        $q->where('date', '<=', $to);
+                    }
                 },
-                'salarySheets' => function($q) use ($from, $to) {
+                'salarySheets' => function ($q) use ($from, $to) {
                     if ($from && $to) {
                         $q->whereDate('period_start', '<=', $to)->whereDate('period_end', '>=', $from);
                     } elseif ($from) {
@@ -815,17 +848,25 @@ class TechnicianController extends Controller
                         $q->whereDate('period_start', '<=', $to);
                     }
                 },
-                'advances' => function($q) use ($from, $to) {
-                    if ($from) $q->where('payment_date', '>=', $from);
-                    if ($to) $q->where('payment_date', '<=', $to);
+                'advances' => function ($q) use ($from, $to) {
+                    if ($from) {
+                        $q->where('payment_date', '>=', $from);
+                    }
+                    if ($to) {
+                        $q->where('payment_date', '<=', $to);
+                    }
                 },
-                'commissions' => function($q) use ($from, $to) {
-                    if ($from) $q->where('earned_date', '>=', $from);
-                    if ($to) $q->where('earned_date', '<=', $to);
+                'commissions' => function ($q) use ($from, $to) {
+                    if ($from) {
+                        $q->where('earned_date', '>=', $from);
+                    }
+                    if ($to) {
+                        $q->where('earned_date', '<=', $to);
+                    }
                     $q->with('jobCard');
                 },
                 'bikeDeductions.bike',
-                'contributions'
+                'contributions',
             ])->find($request->technician);
         }
 

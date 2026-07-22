@@ -19,6 +19,17 @@ test('authenticated users can visit the dashboard', function () {
     $response->assertOk();
 });
 
+test('weekly dashboard series contains seven consecutive calendar days', function () {
+    $user = User::factory()->create();
+    $weekStart = now()->startOfWeek();
+
+    $response = $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    foreach (range(0, 6) as $offset) {
+        $response->assertSee('title="'.$weekStart->copy()->addDays($offset)->format('d M').'"', false);
+    }
+});
+
 test('dashboard totals and recent intake use persisted workshop data', function () {
     $user = User::factory()->create();
     $customer = Customer::create(['name' => 'Nimal Perera', 'phone' => '0771234567']);

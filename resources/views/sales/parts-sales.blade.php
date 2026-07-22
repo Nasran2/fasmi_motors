@@ -34,7 +34,7 @@
                             @endforeach
                         </select>
                     </label>
-                    
+
                     <div class="text-slate-500 font-bold text-sm tracking-wider flex items-center gap-2 ml-auto">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         <span x-text="currentTime"></span>
@@ -171,7 +171,7 @@
                             <!-- Qty Control -->
                             <div class="flex items-center gap-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200 w-[84px]">
                                 <button @click="updateQty(index, -1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg></button>
-                                <input type="number" x-model.number="item.qty" class="noinput !w-9 !p-0 !bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none !border-0 focus:ring-0" @change="recalculateTotals">
+                                <input type="number" x-model.number="item.qty" class="noinput !w-9 !p-0 !bg-transparent text-center text-xs font-black text-slate-900 outline-none appearance-none !border-0 focus:ring-0" @change="validateItemQty(index)" @blur="validateItemQty(index)">
                                 <button @click="updateQty(index, 1)" class="size-6 grid place-items-center rounded hover:bg-white hover:shadow-sm text-slate-600 transition"><svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg></button>
                             </div>
                             
@@ -285,8 +285,25 @@
 
         <!-- Modals -->
         
+        <!-- Print Bill Modal -->
+        <dialog id="print-bill-modal" class="backdrop:bg-slate-900/60 backdrop:backdrop-blur-sm bg-transparent w-full max-w-sm mx-auto p-0 rounded-3xl shadow-2xl overflow-hidden transition-all">
+            <div class="bg-white">
+                <div class="p-6 text-center">
+                    <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="size-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <h3 class="text-xl font-black text-slate-800 mb-2">Sale Completed!</h3>
+                    <p class="text-sm font-bold text-slate-500 mb-6">Do you want to print the bill for this transaction?</p>
+                    <div class="flex gap-3">
+                        <button @click="window.location.reload()" type="button" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition">No, Thanks</button>
+                        <button @click="window.location.href = '/invoice/' + lastInvoiceToken + '?print=1'" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition">Print Bill</button>
+                    </div>
+                </div>
+            </div>
+        </dialog>
+
         <!-- Batch Selection Modal -->
-        <dialog id="batch-selection-modal" class="m-auto rounded-3xl p-0 shadow-2xl backdrop:bg-slate-900/60 open:animate-in open:fade-in open:zoom-in-95 border-0">
+        <dialog id="batch-selection-modal" class="backdrop:bg-slate-900/50 backdrop:backdrop-blur-sm bg-transparent w-full max-w-lg mx-auto p-4 rounded-3xl shadow-2xl overflow-visible transition-all">
             <div class="w-full max-w-2xl bg-white flex flex-col max-h-[85vh]">
                 <div class="p-6 border-b border-slate-100 flex items-center justify-between">
                     <div>
@@ -375,6 +392,7 @@
                                 </select>
                             </div>
 
+                            @if(session('shop_mode', 'workshop') !== 'helmet')
                             <div x-show="paymentMethod !== 'Credit/Due'">
                                 @if($accounts->count() === 1)
                                     <input type="hidden" x-model="accountId">
@@ -391,6 +409,15 @@
                                         @endforeach
                                     </select>
                                 @endif
+                            </div>
+                            @else
+                                <!-- Hidden account selector for helmet shop to simplify UI -->
+                                <input type="hidden" x-model="accountId">
+                            @endif
+
+                            <div class="flex justify-between items-center bg-yellow-50/50 border border-yellow-100 rounded-xl p-3" x-show="cart.discount > 0">
+                                <span class="text-xs font-black uppercase tracking-wider text-yellow-600">Discount Applied</span>
+                                <span class="text-sm font-black text-yellow-700" x-text="'- Rs. ' + formatNumber(cart.discount)"></span>
                             </div>
                             
                             <div x-show="paymentMethod !== 'Credit/Due'">
@@ -489,6 +516,7 @@
 
                 activeProductForBatch: null,
                 selectedBatchId: null,
+                lastInvoiceToken: null,
 
                 paymentMethod: 'Cash',
                 accountId: '',
@@ -510,7 +538,7 @@
                     setInterval(() => {
                         this.currentTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second:'2-digit' });
                     }, 1000);
-                    
+
                     window.addEventListener('search-products', (e) => {
                         this.query = e.detail;
                     });
@@ -618,6 +646,21 @@
                     this.recalculateTotals();
                 },
 
+                validateItemQty(index) {
+                    const item = this.cart.items[index];
+                    let qty = parseFloat(item.qty);
+                    if (isNaN(qty) || qty <= 0) {
+                        qty = 1;
+                    }
+                    const maxStock = typeof item.max_qty !== 'undefined' ? parseFloat(item.max_qty) : (parseFloat(item.product.currentStock) || 99999);
+                    if (qty > maxStock) {
+                        alert(`Only ${maxStock} items available in stock.`);
+                        qty = maxStock;
+                    }
+                    item.qty = qty;
+                    this.recalculateTotals();
+                },
+
                 removeItem(index) {
                     this.cart.items.splice(index, 1);
                     this.recalculateTotals();
@@ -651,13 +694,13 @@
                     document.getElementById('payment-modal').showModal();
 
                     // Autofocus and highlight the Paid Amount input
-                    this.$nextTick(() => {
+                    setTimeout(() => {
                         const inputEl = document.getElementById('checkout-paid-amount');
                         if (inputEl) {
                             inputEl.focus();
                             inputEl.select();
                         }
-                    });
+                    }, 50);
                 },
 
                 pressKey(val) {
@@ -721,11 +764,9 @@
                                 alert(data.message);
                                 window.location.reload();
                             } else {
-                                if (confirm('Sale completed successfully. Do you want to print the bill?')) {
-                                    window.location.href = `/invoice/${data.public_token}?print=1`;
-                                } else {
-                                    window.location.reload();
-                                }
+                                this.lastInvoiceToken = data.public_token;
+                                document.getElementById('payment-modal').close();
+                                document.getElementById('print-bill-modal').showModal();
                             }
                         } else {
                             alert(data.message || 'Validation failed. Check the inputs.');

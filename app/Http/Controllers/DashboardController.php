@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\BikeIntake;
-use App\Services\AccountService;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\JobCard;
@@ -13,6 +12,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ServiceReminder;
 use App\Models\Technician;
+use App\Services\AccountService;
 use Illuminate\Contracts\View\View;
 
 class DashboardController extends Controller
@@ -42,7 +42,7 @@ class DashboardController extends Controller
         $mainBalance = $accountService->getRunningBalance('main');
         $bankBalance = $accountService->getRunningBalance('bank');
         $partsBalance = $accountService->getRunningBalance('spare_parts');
-        
+
         $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
 
         $cards = [
@@ -58,7 +58,7 @@ class DashboardController extends Controller
 
         $weekStart = now()->startOfWeek();
         $salesSeries = collect(range(0, 6))->map(function (int $offset) use ($weekStart): array {
-            $date = $weekStart->addDays($offset);
+            $date = $weekStart->copy()->addDays($offset);
 
             return ['label' => $date->format('D'), 'date' => $date->format('d M'), 'value' => (float) Invoice::whereDate('created_at', $date)->sum('total')];
         });
@@ -97,9 +97,9 @@ class DashboardController extends Controller
             ->groupBy('technicians.id', 'technicians.name')->orderByDesc('performance_total')->limit(5)->get();
         $performanceMaximum = max(1, (float) $technicianPerformance->max('performance_total'));
 
-        $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)->get()
-            ->filter(fn (Product $product): bool => (float) ($product->stocks_sum_quantity ?? 0) <= (float) $product->minimum_stock)
-            ->sortBy('stocks_sum_quantity')->take(5);
+        $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)
+            ->whereRaw('(select coalesce(sum(quantity), 0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')
+            ->orderBy('stocks_sum_quantity')->limit(5)->get();
 
         $attendance = Technician::where('active', true)->with(['attendance' => fn ($query) => $query->whereDate('date', $today)])->orderBy('name')->limit(6)->get();
         $collectionToday = (float) Payment::whereDate('paid_at', $today)->sum('amount');
@@ -122,7 +122,7 @@ class DashboardController extends Controller
             'lowStock' => $lowStock,
             'reminders' => ServiceReminder::with('bike.customer')->where('status', 'Pending')->whereNotNull('due_date')->orderBy('due_date')->limit(4)->get(),
             'attendance' => $attendance,
-            'recentTransactions' => AccountTransaction::with('account')->latest('transaction_date')->limit(5)->get(),
+            'recentTransactions' => AccountTransaction::with('account')->whereIn('account_id', Account::pluck('id'))->latest('transaction_date')->limit(5)->get(),
             'collectionToday' => $collectionToday,
             'expensesToday' => $expensesToday,
             'netToday' => $collectionToday - $expensesToday,
@@ -148,8 +148,9 @@ class DashboardController extends Controller
         $yesterdaySales = (float) Invoice::whereDate('created_at', $yesterday)->sum('total');
 
         $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
-        $lowStockCount = Product::withSum('stocks', 'quantity')->where('active', true)->get()
-            ->filter(fn (Product $p) => (float) ($p->stocks_sum_quantity ?? 0) <= (float) $p->minimum_stock)->count();
+        $lowStockCount = Product::where('active', true)
+            ->whereRaw('(select coalesce(sum(quantity), 0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')
+            ->count();
 
         $cards = [
             ['label' => 'Today Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => 'vs yesterday', 'icon' => 'money', 'tone' => 'blue'],
@@ -160,7 +161,8 @@ class DashboardController extends Controller
 
         $weekStart = now()->startOfWeek();
         $salesSeries = collect(range(0, 6))->map(function (int $offset) use ($weekStart): array {
-            $date = $weekStart->addDays($offset);
+            $date = $weekStart->copy()->addDays($offset);
+
             return ['label' => $date->format('D'), 'date' => $date->format('d M'), 'value' => (float) Invoice::whereDate('created_at', $date)->sum('total')];
         });
         $salesMaximum = max(1, (float) $salesSeries->max('value'));
@@ -168,9 +170,9 @@ class DashboardController extends Controller
         $weekSales = (float) $salesSeries->sum('value');
         $lastWeekSales = (float) Invoice::whereBetween('created_at', [$weekStart->subWeek(), $weekStart->subSecond()])->sum('total');
 
-        $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)->get()
-            ->filter(fn (Product $product): bool => (float) ($product->stocks_sum_quantity ?? 0) <= (float) $product->minimum_stock)
-            ->sortBy('stocks_sum_quantity')->take(5);
+        $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)
+            ->whereRaw('(select coalesce(sum(quantity), 0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')
+            ->orderBy('stocks_sum_quantity')->limit(5)->get();
 
         $recentSales = Invoice::with('customer')->latest()->limit(5)->get();
 

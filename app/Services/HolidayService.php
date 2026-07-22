@@ -18,8 +18,10 @@ class HolidayService
 
     private function loadWeeklyLeaves(): void
     {
-        if ($this->weeklyLeaves !== null) return;
-        
+        if ($this->weeklyLeaves !== null) {
+            return;
+        }
+
         $setting = LeaveHolidaySetting::where('key', 'weekly_leave_days')->first();
         if ($setting && $setting->value) {
             $this->weeklyLeaves = collect(json_decode($setting->value, true));

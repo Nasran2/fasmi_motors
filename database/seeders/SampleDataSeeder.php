@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\Bike;
 use App\Models\BikeIntake as Intake;
@@ -17,13 +18,10 @@ use App\Models\ProductCategory as Category;
 use App\Models\Role;
 use App\Models\StockBatch;
 use App\Models\Store;
-use App\Models\Supplier;
 use App\Models\Technician;
 use App\Models\User;
-use App\Models\Account;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
 
 class SampleDataSeeder extends Seeder
 {
@@ -81,7 +79,7 @@ class SampleDataSeeder extends Seeder
         $bike2 = Bike::firstOrCreate(['number' => 'SP XYZ-9876'], ['customer_id' => $customer2->id, 'brand' => 'Yamaha', 'model' => 'FZ']);
 
         // 5. Intakes & Job Cards (For the last 5 days)
-        $dates = collect(range(0, 4))->map(fn($days) => today()->subDays($days))->reverse()->values();
+        $dates = collect(range(0, 4))->map(fn ($days) => today()->subDays($days))->reverse()->values();
 
         foreach ($dates as $index => $date) {
             // Intake
@@ -113,14 +111,14 @@ class SampleDataSeeder extends Seeder
                 'unit_price' => 2200,
                 'total' => 2200,
                 'profit' => 700,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
 
             // Job Card Services
             JobCardService::firstOrCreate(['job_card_id' => $job->id, 'description' => 'Full Service Charge'], [
                 'type' => 'Service',
                 'amount' => 2500,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
 
             // Invoice for Job
@@ -154,24 +152,24 @@ class SampleDataSeeder extends Seeder
 
             // Account Transaction (Income)
             AccountTransaction::firstOrCreate(['reference_id' => $invoice->id, 'reference_type' => Invoice::class], [
-                'transaction_no' => 'TRN-' . time() . rand(100, 999),
+                'transaction_no' => 'TRN-'.time().rand(100, 999),
                 'account_type' => 'main',
                 'account_id' => $mainAcc->id,
                 'transaction_type' => 'income',
                 'amount' => 4500,
                 'credit' => 4500,
                 'debit' => 0,
-                'description' => 'Payment for Invoice ' . $invoice->number,
+                'description' => 'Payment for Invoice '.$invoice->number,
                 'payment_method' => 'Cash',
                 'transaction_date' => $date,
                 'created_by' => $admin->id,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
         }
 
         // 6. Direct Spare Parts Sale (Multiple dates)
         foreach ($dates as $index => $date) {
-            $saleInv = Invoice::firstOrCreate(['number' => 'INV-SP-' . $date->format('Ymd') . '-1'], [
+            $saleInv = Invoice::firstOrCreate(['number' => 'INV-SP-'.$date->format('Ymd').'-1'], [
                 'customer_id' => $customer2->id,
                 'subtotal' => 1500,
                 'total' => 1500,
@@ -184,63 +182,63 @@ class SampleDataSeeder extends Seeder
                 'public_token' => Str::random(32),
                 'store_id' => $store->id,
                 'created_by' => $admin->id,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
             InvoiceItem::firstOrCreate(['invoice_id' => $saleInv->id, 'product_id' => $pad->id], [
                 'store_id' => $store->id,
                 'quantity' => 1,
                 'unit_price' => 1500,
-                'total' => 1500
+                'total' => 1500,
             ]);
             AccountTransaction::firstOrCreate(['reference_id' => $saleInv->id, 'reference_type' => Invoice::class], [
-                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'transaction_no' => 'TRN-'.$date->timestamp.rand(100, 999),
                 'account_type' => 'spare_parts',
                 'account_id' => $partsAcc->id,
                 'transaction_type' => 'income',
                 'amount' => 1500,
                 'credit' => 1500,
                 'debit' => 0,
-                'description' => 'Payment for Spare Parts Sale ' . $saleInv->number,
+                'description' => 'Payment for Spare Parts Sale '.$saleInv->number,
                 'payment_method' => 'Card',
                 'transaction_date' => $date,
                 'created_by' => $admin->id,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
 
             // Add a bank transfer for spare parts (from parts to bank)
             AccountTransaction::firstOrCreate(['account_id' => $partsAcc->id, 'transaction_type' => 'transfer_out', 'amount' => 1000, 'transaction_date' => $date], [
-                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'transaction_no' => 'TRN-'.$date->timestamp.rand(100, 999),
                 'account_type' => 'spare_parts',
                 'debit' => 1000,
                 'credit' => 0,
                 'description' => 'Transfer to Bank',
                 'payment_method' => 'Transfer',
                 'created_by' => $admin->id,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
             AccountTransaction::firstOrCreate(['account_id' => $bankAcc->id, 'transaction_type' => 'transfer_in', 'amount' => 1000, 'transaction_date' => $date], [
-                'transaction_no' => 'TRN-' . $date->timestamp . rand(100, 999),
+                'transaction_no' => 'TRN-'.$date->timestamp.rand(100, 999),
                 'account_type' => 'bank',
                 'debit' => 0,
                 'credit' => 1000,
                 'description' => 'Transfer from Spare Parts',
                 'payment_method' => 'Transfer',
                 'created_by' => $admin->id,
-                'created_at' => $date
+                'created_at' => $date,
             ]);
         }
 
         // 7. Expenses
         $expense = Expense::firstOrCreate(['description' => 'Electricity Bill', 'amount' => 500, 'expense_date' => today()], [
-            'number' => 'EXP-' . time() . rand(10, 99),
+            'number' => 'EXP-'.time().rand(10, 99),
             'category' => 'Utility Bills',
             'payment_method' => 'Cash',
             'account_id' => $mainAcc->id,
             'status' => 'Paid',
-            'created_by' => $admin->id
+            'created_by' => $admin->id,
         ]);
         AccountTransaction::firstOrCreate(['reference_id' => $expense->id, 'reference_type' => Expense::class], [
-            'transaction_no' => 'TRN-' . time() . rand(100, 999),
+            'transaction_no' => 'TRN-'.time().rand(100, 999),
             'account_type' => 'main',
             'account_id' => $mainAcc->id,
             'transaction_type' => 'expense',
@@ -251,7 +249,7 @@ class SampleDataSeeder extends Seeder
             'payment_method' => 'Cash',
             'transaction_date' => today(),
             'created_by' => $admin->id,
-            'created_at' => today()
+            'created_at' => today(),
         ]);
 
         $this->command->info('Sample data seeded successfully!');

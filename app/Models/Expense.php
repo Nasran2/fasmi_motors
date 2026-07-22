@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
 {
-    use SoftDeletes, \App\Traits\ShopScoped;
+    use \App\Traits\ShopScoped, SoftDeletes;
 
     protected $guarded = [];
 

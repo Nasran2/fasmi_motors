@@ -49,7 +49,7 @@ class WorkshopService
                 throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the invoice total.']);
             }
             $invoice = $job->invoice()->create([
-                'number' => 'INV-'.now()->format('ymd').'-'.str_pad((string) (Invoice::max('id') + 1), 4, '0', STR_PAD_LEFT),
+                'number' => 'INV-'.now()->format('ymd').'-'.Str::upper(Str::random(10)),
                 'invoice_type' => 'Job Card Bill',
                 'customer_id' => $job->intake->bike->customer_id,
                 'bike_id' => $job->intake->bike_id,
@@ -81,6 +81,7 @@ class WorkshopService
                 }
             }
             $job->update(['status' => 'Billed']);
+            app(ServiceReminderService::class)->createForJob($job);
 
             return $invoice;
         });
@@ -99,9 +100,13 @@ class WorkshopService
                 'reference_type' => $reference?->getMorphClass(), 'reference_id' => $reference?->getKey(), 'note' => $note, 'created_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
 
             if ($stockBatchId) {
-                $batch = StockBatch::find($stockBatchId);
+                $batch = StockBatch::lockForUpdate()->find($stockBatchId);
                 if ($batch) {
-                    $batch->increment('available_qty', $quantity);
+                    $newBatchQuantity = (float) $batch->available_qty + $quantity;
+                    if ($newBatchQuantity < 0 && SettingValue::bool('negative_stock', false) === false) {
+                        throw ValidationException::withMessages(['quantity' => 'Insufficient stock in the selected batch.']);
+                    }
+                    $batch->update(['available_qty' => $newBatchQuantity]);
                 }
             }
 

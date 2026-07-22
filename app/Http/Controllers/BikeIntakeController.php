@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\Technician;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class BikeIntakeController extends Controller
 {
@@ -46,7 +47,7 @@ class BikeIntakeController extends Controller
                 $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             }
 
-            return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.str_pad((string) (BikeIntake::max('id') + 1), 4, '0', STR_PAD_LEFT), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
+            return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
         });
 
         return redirect()->route('intakes.show', $intake)->with('success', 'Bike intake recorded.');

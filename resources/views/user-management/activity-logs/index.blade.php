@@ -190,10 +190,10 @@
       if (!table) return;
       let csv = [];
       for (const row of table.querySelectorAll('tr')) {
-        const cols = [...row.querySelectorAll('th,td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+        const cols = [...row.querySelectorAll('th,td')].map(c => window.csvCell(c.innerText));
         csv.push(cols.join(','));
       }
-      const blob = new Blob([csv.join('\n')], {type:'text/csv'});
+      const blob = new Blob(['\ufeff', csv.join('\n')], {type:'text/csv;charset=utf-8'});
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'activity-logs-{{ now()->format("Y-m-d") }}.csv';
