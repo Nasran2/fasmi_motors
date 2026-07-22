@@ -428,6 +428,10 @@ input[readonly]:not([data-flux-control]) {
 .badge-delivered { @apply inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700; }
 
 @media print {
+    @page {
+        size: landscape;
+        margin: 12mm;
+    }
     body.workshop-shell {
         display: block !important;
         background: #fff !important;
@@ -448,17 +452,18 @@ input[readonly]:not([data-flux-control]) {
     table {
         width: 100% !important;
         border-collapse: collapse !important;
+        font-size: 11px !important;
     }
     th, td {
         border-bottom: 1px solid #e2e8f0 !important;
         color: #000 !important;
+        padding: 6px 8px !important;
     }
     th {
         background-color: #f8fafc !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    /* Hide scrollbars or rounded corners on tables for print */
     .overflow-x-auto {
         overflow: visible !important;
     }
