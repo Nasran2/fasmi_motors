@@ -190,12 +190,16 @@ class ReportController extends Controller
     public function stock(Request $r)
     {
         [$from, $to] = $this->dateRange($r);
+        
+        $rackOptions = Product::whereNotNull('rack_number')->where('rack_number', '!=', '')->distinct()->pluck('rack_number');
+
         $rows = Product::with(['category'])
             ->withSum('stocks', 'quantity')
-            ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('sku', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
             ->when($r->status === 'low', fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
             ->when($r->status === 'out', fn ($q) => $q->having(DB::raw('COALESCE(stocks_sum_quantity,0)'), '<=', 0))
             ->when($r->status === 'in', fn ($q) => $q->having('stocks_sum_quantity', '>', DB::raw('products.minimum_stock')))
+            ->when($r->filled('racks'), fn ($q) => $q->whereIn('rack_number', $r->racks))
             ->orderBy('name')->paginate(25)->withQueryString();
 
         $all = Product::withSum('stocks', 'quantity')->get();
@@ -208,7 +212,7 @@ class ReportController extends Controller
             'value_selling' => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->price),
         ];
 
-        return view('reports.stock', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
+        return view('reports.stock', compact('rows', 'stats', 'from', 'to', 'rackOptions') + ['range' => $this->activeRange($r)]);
     }
 
     // ─── 6. PURCHASE REPORT ───────────────────────────────────

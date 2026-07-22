@@ -6,7 +6,29 @@
     ])
     
     @slot('filters')
-      <div class="grid grid-cols-2 gap-3"><label class="label">Status</label><select name="status"><option value="">All</option><option value="in" @selected(request("status")=="in")>In Stock</option><option value="low" @selected(request("status")=="low")>Low Stock</option><option value="out" @selected(request("status")=="out")>Out of Stock</option></select><label class="label">Search</label><input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, sku..."></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+            <label class="label block mb-1">Status</label>
+            <select name="status" class="w-full">
+                <option value="">All</option>
+                <option value="in" @selected(request("status")=="in")>In Stock</option>
+                <option value="low" @selected(request("status")=="low")>Low Stock</option>
+                <option value="out" @selected(request("status")=="out")>Out of Stock</option>
+            </select>
+        </div>
+        <div>
+            <label class="label block mb-1">Rack No (Hold Ctrl to select multiple)</label>
+            <select name="racks[]" multiple class="w-full p-2 border border-slate-200 rounded">
+                @foreach($rackOptions as $rack)
+                    <option value="{{ $rack }}" @selected(in_array($rack, request('racks', [])))>{{ $rack }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="label block mb-1">Search</label>
+            <input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, code..." class="w-full">
+        </div>
+      </div>
     @endslot
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
@@ -31,7 +53,7 @@
           <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
             <tr>
               <th class="px-4 py-3 font-bold">Product</th>
-<th class="px-4 py-3 font-bold">SKU</th>
+<th class="px-4 py-3 font-bold">Rack No</th>
 <th class="px-4 py-3 font-bold">Category</th>
 <th class="px-4 py-3 font-bold">In Stock</th>
 <th class="px-4 py-3 font-bold">Min Stock</th>
@@ -43,7 +65,7 @@
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->name }}</td>
-<td class="px-4 py-3">{{ $row->code }}</td>
+<td class="px-4 py-3">{{ $row->rack_number }}</td>
 <td class="px-4 py-3">{{ $row->category?->name }}</td>
 <td class="px-4 py-3">{{ $row->stocks_sum_quantity }}</td>
 <td class="px-4 py-3">{{ $row->minimum_stock }}</td>
