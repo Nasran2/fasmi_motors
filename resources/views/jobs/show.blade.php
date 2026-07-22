@@ -128,7 +128,7 @@
         </div>
         <div>
             <label class="label">Quantity *</label>
-            <input name="quantity" type="number" step=".01" class="w-full" placeholder="Qty" required value="1">
+            <input name="quantity" type="number" step="any" class="w-full" placeholder="Qty" required value="1">
         </div>
         <div>
             <label class="label">Unit Price *</label>
