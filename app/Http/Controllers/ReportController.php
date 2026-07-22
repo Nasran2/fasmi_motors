@@ -199,7 +199,7 @@ class ReportController extends Controller
             ->sort(SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
 
-        $rows = Product::with(['category'])
+        $q = Product::with(['category'])
             ->withSum('stocks', 'quantity')
             ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
             ->when($r->status === 'low', fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
@@ -212,8 +212,27 @@ class ReportController extends Controller
                            ->orWhere('rack_number', 'like', $rack . '.%');
                     }
                 });
-            })
-            ->when($r->sort === 'rack', fn ($q) => $q->orderByRaw('LENGTH(rack_number) ASC')->orderBy('rack_number', 'ASC'), fn ($q) => $q->orderBy('name', 'ASC'))
+            });
+
+        if ($r->has('export_csv')) {
+            $products = $q->get();
+            $csv = "Name,Barcode,Group Name,Op. Amount,Op. Stock(Main),Purc. Price,Sale Price,Rack No\n";
+            foreach ($products as $p) {
+                $name = str_replace('"', '""', $p->name);
+                $barcode = str_replace('"', '""', $p->code ?? '');
+                $category = str_replace('"', '""', $p->category?->name ?? '');
+                $stock = $p->stocks_sum_quantity ?? 0;
+                $cost = $p->cost_price;
+                $price = $p->price ?? $p->selling_price;
+                $rack = str_replace('"', '""', $p->rack_number ?? '');
+                $csv .= "\"$name\",\"$barcode\",\"$category\",\"0\",\"$stock\",\"$cost\",\"$price\",\"$rack\"\n";
+            }
+            return response($csv)
+                ->header('Content-Type', 'text/csv')
+                ->header('Content-Disposition', 'attachment; filename="stock-report-export.csv"');
+        }
+
+        $rows = (clone $q)->when($r->sort === 'rack', fn ($q) => $q->orderByRaw('LENGTH(rack_number) ASC')->orderBy('rack_number', 'ASC'), fn ($q) => $q->orderBy('name', 'ASC'))
             ->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $all = Product::withSum('stocks', 'quantity')->get();

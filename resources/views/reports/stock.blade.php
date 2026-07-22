@@ -6,6 +6,7 @@
       'from' => $from ?? null,
       'to' => $to ?? null,
       'range' => $range ?? null,
+      'exportRoute' => request()->fullUrlWithQuery(array_merge(request()->query(), ['export_csv' => 1]))
     ])
     
     @slot('filters')
