@@ -426,3 +426,43 @@ input[readonly]:not([data-flux-control]) {
 .badge-failed  { @apply inline-block rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700; }
 .badge-pending { @apply inline-block rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700; }
 .badge-delivered { @apply inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700; }
+
+@media print {
+    body.workshop-shell {
+        display: block !important;
+        background: #fff !important;
+    }
+    body.workshop-shell > [data-flux-main] {
+        padding: 0 !important;
+        margin: 0 !important;
+        background: #fff !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    .panel {
+        border: none !important;
+        box-shadow: none !important;
+        padding-inline: 0 !important;
+        background: transparent !important;
+    }
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+    th, td {
+        border-bottom: 1px solid #e2e8f0 !important;
+        color: #000 !important;
+    }
+    th {
+        background-color: #f8fafc !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    /* Hide scrollbars or rounded corners on tables for print */
+    .overflow-x-auto {
+        overflow: visible !important;
+    }
+    table, .panel, .rounded-xl {
+        border-radius: 0 !important;
+    }
+}

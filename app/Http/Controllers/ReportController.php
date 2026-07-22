@@ -196,8 +196,6 @@ class ReportController extends Controller
             ->where('rack_number', '!=', '')
             ->distinct()
             ->pluck('rack_number')
-            ->map(fn($r) => explode('.', $r)[0])
-            ->unique()
             ->sort(SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
 
