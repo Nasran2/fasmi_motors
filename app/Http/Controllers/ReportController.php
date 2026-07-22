@@ -192,7 +192,14 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r, 'all_time');
         
-        $rackOptions = Product::whereNotNull('rack_number')->where('rack_number', '!=', '')->distinct()->pluck('rack_number');
+        $rackOptions = Product::whereNotNull('rack_number')
+            ->where('rack_number', '!=', '')
+            ->distinct()
+            ->pluck('rack_number')
+            ->map(fn($r) => explode('.', $r)[0])
+            ->unique()
+            ->sort()
+            ->values();
 
         $rows = Product::with(['category'])
             ->withSum('stocks', 'quantity')
@@ -200,7 +207,14 @@ class ReportController extends Controller
             ->when($r->status === 'low', fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
             ->when($r->status === 'out', fn ($q) => $q->having(DB::raw('COALESCE(stocks_sum_quantity,0)'), '<=', 0))
             ->when($r->status === 'in', fn ($q) => $q->having('stocks_sum_quantity', '>', DB::raw('products.minimum_stock')))
-            ->when($r->filled('racks'), fn ($q) => $q->whereIn('rack_number', $r->racks))
+            ->when($r->filled('racks'), function ($q) use ($r) {
+                $q->where(function($q2) use ($r) {
+                    foreach($r->racks as $rack) {
+                        $q2->orWhere('rack_number', $rack)
+                           ->orWhere('rack_number', 'like', $rack . '.%');
+                    }
+                });
+            })
             ->orderBy('name')->paginate(25)->withQueryString();
 
         $all = Product::withSum('stocks', 'quantity')->get();
