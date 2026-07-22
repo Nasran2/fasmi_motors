@@ -198,7 +198,7 @@ class ReportController extends Controller
             ->pluck('rack_number')
             ->map(fn($r) => explode('.', $r)[0])
             ->unique()
-            ->sort()
+            ->sort(SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
 
         $rows = Product::with(['category'])
@@ -215,7 +215,8 @@ class ReportController extends Controller
                     }
                 });
             })
-            ->orderBy('name')->paginate(25)->withQueryString();
+            ->when($r->sort === 'rack', fn ($q) => $q->orderByRaw('LENGTH(rack_number) ASC')->orderBy('rack_number', 'ASC'), fn ($q) => $q->orderBy('name', 'ASC'))
+            ->paginate(25)->withQueryString();
 
         $all = Product::withSum('stocks', 'quantity')->get();
         $stats = [

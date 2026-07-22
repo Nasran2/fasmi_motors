@@ -6,7 +6,7 @@
     ])
     
     @slot('filters')
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
             <label class="label block mb-1">Status</label>
             <select name="status" class="w-full">
@@ -14,6 +14,13 @@
                 <option value="in" @selected(request("status")=="in")>In Stock</option>
                 <option value="low" @selected(request("status")=="low")>Low Stock</option>
                 <option value="out" @selected(request("status")=="out")>Out of Stock</option>
+            </select>
+        </div>
+        <div>
+            <label class="label block mb-1">Sort By</label>
+            <select name="sort" class="w-full">
+                <option value="name" @selected(request("sort")!="rack")>Product Name</option>
+                <option value="rack" @selected(request("sort")=="rack")>Rack No (Alphabetical)</option>
             </select>
         </div>
         <div>
