@@ -169,7 +169,7 @@ $ledgerRoutes=[
                             <div class="relative">
                                 <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 font-medium">Rs.</span>
                                 <input required step="0.01" type="number" name="{{ $type }}_actual" value="{{ $actual }}" 
-                                    class="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm font-bold text-slate-900 focus:border-[#0b2447] focus:bg-white focus:ring-[#0b2447] transition-colors" 
+                                    class="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 !pl-10 pr-4 text-sm font-bold text-slate-900 focus:border-[#0b2447] focus:bg-white focus:ring-[#0b2447] transition-colors" 
                                     @disabled($closing?->status === 'closed')>
                             </div>
                         </div>

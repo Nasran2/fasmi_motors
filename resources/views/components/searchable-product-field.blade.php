@@ -8,7 +8,7 @@
     <span class="label">{{ $label }}</span>
     <div class="relative">
         <svg class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-        <input data-product-search list="{{ $id }}-options" value="{{ $selected ? $labelFor($selected) : '' }}" class="field pl-10" placeholder="{{ $placeholder }}" aria-label="{{ $label }}" autocomplete="off" required>
+        <input data-product-search list="{{ $id }}-options" value="{{ $selected ? $labelFor($selected) : '' }}" class="field !pl-10" placeholder="{{ $placeholder }}" aria-label="{{ $label }}" autocomplete="off" required>
         <input data-product-id type="hidden" name="{{ $name }}" value="{{ $selectedId }}">
         <datalist id="{{ $id }}-options">@foreach($products as $product)<option value="{{ $labelFor($product) }}"></option>@endforeach</datalist>
     </div>
