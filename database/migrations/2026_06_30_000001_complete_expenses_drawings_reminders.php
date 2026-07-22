@@ -11,8 +11,8 @@ return new class extends Migration
     {
         Schema::create('financial_categories', function (Blueprint $table) {
             $table->id();
-            $table->string('module')->index();
-            $table->string('name');
+            $table->string('module', 50)->index();
+            $table->string('name', 100);
             $table->foreignId('default_account_id')->nullable()->constrained('accounts')->nullOnDelete();
             $table->text('description')->nullable();
             $table->boolean('active')->default(true);
