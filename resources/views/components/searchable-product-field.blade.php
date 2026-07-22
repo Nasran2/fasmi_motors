@@ -2,7 +2,12 @@
 @php
     $selectedId = old($name);
     $selected = $products->firstWhere('id', (int) $selectedId);
-    $labelFor = fn ($product) => $product->name.' — '.$product->code.($product->barcode ? ' — '.$product->barcode : '');
+    $labelFor = function($product) {
+        $totalStock = $product->stocks ? $product->stocks->sum('quantity') : 0;
+        $minStock = (float) ($product->minimum_stock ?? 0);
+        $mark = $totalStock <= 0 ? '🔴 ' : ($totalStock <= $minStock ? '🟡 ' : '');
+        return $mark . $product->name.' — '.$product->code.($product->barcode ? ' — '.$product->barcode : '');
+    };
 @endphp
 <div {{ $attributes->class('searchable-product-field') }} id="{{ $id }}">
     <span class="label">{{ $label }}</span>

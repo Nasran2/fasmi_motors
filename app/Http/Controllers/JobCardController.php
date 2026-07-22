@@ -93,6 +93,8 @@ class JobCardController extends Controller
         $productBatchOptions = $products->map(fn (Product $product) => [
             'id' => $product->id,
             'price' => (float) $product->selling_price,
+            'stocks' => $product->stocks->mapWithKeys(fn ($stock) => [$stock->store_id => (float) $stock->quantity]),
+            'minimum_stock' => (float) $product->minimum_stock,
             'batches' => $product->stockBatches->map(fn ($batch) => [
                 'id' => $batch->id,
                 'store_id' => $batch->store_id,
@@ -196,13 +198,12 @@ class JobCardController extends Controller
         $profit = $total - ((float) $v['quantity'] * $costPrice);
 
         $part = $job->parts()->create($v + ['total' => $total, 'out_of_stock' => $out, 'stock_batch_id' => $batchId, 'cost_price' => $costPrice, 'selling_price' => $v['unit_price'], 'profit' => $profit]);
-        if (! $out) {
-            $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}", $batchId, $costPrice, $v['unit_price']);
-        }
+        $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}", $batchId, $costPrice, $v['unit_price']);
         $job->update(['parts_total' => $job->parts()->sum('total')]);
         $this->syncInvoice($job);
 
-        return back()->with('success', $out ? 'Part added with an out-of-stock warning.' : 'Part issued from stock.');
+        $newStock = $stock - $v['quantity'];
+        return back()->with('success', $out ? "Part added with an out-of-stock warning (Current stock: {$newStock})." : "Part issued from stock (Current stock: {$newStock}).");
     }
 
     public function updatePartPrice(Request $r, JobCard $job, JobCardPart $part)

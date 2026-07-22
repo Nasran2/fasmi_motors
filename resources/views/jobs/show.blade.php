@@ -340,6 +340,22 @@
         
         priceInput.value = p.price;
         
+        const currentStock = p.stocks ? (p.stocks[storeId] || 0) : 0;
+        const minStock = p.minimum_stock || 0;
+        let stockIndicator = '';
+        if (currentStock <= 0) {
+            stockIndicator = `<span class="text-red-600 block mt-1">🔴 Out of stock (Current stock: ${currentStock})</span>`;
+        } else if (currentStock <= minStock) {
+            stockIndicator = `<span class="text-amber-500 block mt-1">🟡 Low stock (Current stock: ${currentStock})</span>`;
+        } else {
+            stockIndicator = `<span class="text-emerald-600 block mt-1">🟢 In stock (Current stock: ${currentStock})</span>`;
+        }
+        
+        const setBatchMsg = (msg) => {
+            batchMsg.innerHTML = stockIndicator + (msg ? `<span class="text-indigo-600 block mt-1">${msg}</span>` : '');
+        };
+        setBatchMsg('');
+        
         if (batches.length > 1) {
             list.innerHTML = '';
             batches.forEach(b => {
@@ -354,7 +370,7 @@
                 radio.addEventListener('change', () => {
                     batchIdInput.value = b.id;
                     priceInput.value = b.selling;
-                    batchMsg.textContent = `Batch: ${b.batch_no}`;
+                    setBatchMsg(`Selected Batch: ${b.batch_no}`);
                     modal.close();
                     calculateLiveLineTotal();
                 });
@@ -364,7 +380,7 @@
         } else if (batches.length === 1) {
             batchIdInput.value = batches[0].id;
             priceInput.value = batches[0].selling;
-            batchMsg.textContent = `Batch: ${batches[0].batch_no}`;
+            setBatchMsg(`Selected Batch: ${batches[0].batch_no}`);
         }
         calculateLiveLineTotal();
     };
