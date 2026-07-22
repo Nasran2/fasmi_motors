@@ -41,7 +41,7 @@
     @endslot
     @endcomponent
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
       @foreach($stats ?? [] as $label => $value)
       <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
         <div class="absolute right-0 top-0 h-full w-1 bg-red-600 opacity-0 transition-opacity group-hover:opacity-100"></div>
