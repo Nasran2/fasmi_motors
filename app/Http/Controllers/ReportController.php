@@ -28,18 +28,19 @@ class ReportController extends Controller
 {
     // ─── SHARED HELPERS ─────────────────────────────────────────
 
-    protected function dateRange(Request $r): array
+    protected function dateRange(Request $r, string $default = 'today'): array
     {
         $data = $r->validate([
-            'date_range' => ['nullable', Rule::in(['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'custom'])],
+            'date_range' => ['nullable', Rule::in(['all_time', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'custom'])],
             'from' => ['nullable', 'required_with:to', 'date_format:Y-m-d'],
             'to' => ['nullable', 'required_with:from', 'date_format:Y-m-d', 'after_or_equal:from'],
         ]);
-        $range = ($r->filled('from') || $r->filled('to')) ? 'custom' : ($data['date_range'] ?? 'today');
+        $range = ($r->filled('from') || $r->filled('to')) ? 'custom' : ($data['date_range'] ?? $default);
         $from = $data['from'] ?? null;
         $to = $data['to'] ?? null;
 
         return match ($range) {
+            'all_time' => [Carbon::parse('2000-01-01')->startOfDay(), Carbon::now()->addYears(10)->endOfDay()],
             'today' => [today()->startOfDay(), today()->endOfDay()],
             'yesterday' => [today()->subDay()->startOfDay(), today()->subDay()->endOfDay()],
             'this_week' => [today()->startOfWeek()->startOfDay(), today()->endOfDay()],
@@ -55,9 +56,9 @@ class ReportController extends Controller
         };
     }
 
-    protected function activeRange(Request $r): string
+    protected function activeRange(Request $r, string $default = 'today'): string
     {
-        return ($r->filled('from') || $r->filled('to')) ? 'custom' : $r->input('date_range', 'today');
+        return ($r->filled('from') || $r->filled('to')) ? 'custom' : $r->input('date_range', $default);
     }
 
     // ─── 1. SALES REPORT ───────────────────────────────────────
@@ -189,7 +190,7 @@ class ReportController extends Controller
 
     public function stock(Request $r)
     {
-        [$from, $to] = $this->dateRange($r);
+        [$from, $to] = $this->dateRange($r, 'all_time');
         
         $rackOptions = Product::whereNotNull('rack_number')->where('rack_number', '!=', '')->distinct()->pluck('rack_number');
 
@@ -212,7 +213,7 @@ class ReportController extends Controller
             'value_selling' => $all->sum(fn ($p) => ($p->stocks_sum_quantity ?? 0) * $p->price),
         ];
 
-        return view('reports.stock', compact('rows', 'stats', 'from', 'to', 'rackOptions') + ['range' => $this->activeRange($r)]);
+        return view('reports.stock', compact('rows', 'stats', 'from', 'to', 'rackOptions') + ['range' => $this->activeRange($r, 'all_time')]);
     }
 
     // ─── 6. PURCHASE REPORT ───────────────────────────────────

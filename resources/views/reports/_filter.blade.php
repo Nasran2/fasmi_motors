@@ -39,6 +39,7 @@
   <div class="mb-4 flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
     @php
       $tabs = [
+        'all_time'   => 'All Time',
         'today'      => 'Today',
         'yesterday'  => 'Yesterday',
         'this_week'  => 'This Week',
