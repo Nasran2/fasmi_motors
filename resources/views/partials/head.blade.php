@@ -94,6 +94,7 @@
         const observer = new MutationObserver((mutations) => {
             let newDateInputs = [];
             let newMonthInputs = [];
+            let newTomSelects = [];
             mutations.forEach(mutation => {
                 mutation.addedNodes.forEach(node => {
                     if (node.nodeType === 1) {
@@ -103,19 +104,90 @@
                         if (node.matches && node.matches('input[type="month"]:not(.flatpickr-input)')) {
                             newMonthInputs.push(node);
                         }
+                        if (node.matches && node.matches('.tom-select')) {
+                            newTomSelects.push(node);
+                        }
                         
                         const dateChildren = node.querySelectorAll ? node.querySelectorAll('input[type="date"]:not(.flatpickr-input)') : [];
                         dateChildren.forEach(child => newDateInputs.push(child));
                         
                         const monthChildren = node.querySelectorAll ? node.querySelectorAll('input[type="month"]:not(.flatpickr-input)') : [];
                         monthChildren.forEach(child => newMonthInputs.push(child));
+                        
+                        const tomChildren = node.querySelectorAll ? node.querySelectorAll('.tom-select') : [];
+                        tomChildren.forEach(child => newTomSelects.push(child));
                     }
                 });
             });
             if (newDateInputs.length > 0) initFlatpickr(newDateInputs);
             if (newMonthInputs.length > 0) initMonthPickr(newMonthInputs);
+            if (newTomSelects.length > 0 && typeof initTomSelect === 'function') initTomSelect(newTomSelects);
         });
         
         observer.observe(document.body, { childList: true, subtree: true });
+    });
+</script>
+
+<!-- TomSelect for advanced dropdowns -->
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<style>
+    .ts-control {
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 0.75rem !important;
+        padding: 0.625rem 0.875rem !important;
+        font-size: 0.875rem !important;
+        background-color: #ffffff !important;
+        min-height: 44px !important;
+        display: flex;
+        align-items: center;
+        box-shadow: none !important;
+    }
+    .ts-control.focus {
+        border-color: #ed142b !important;
+        box-shadow: 0 0 0 3px rgba(237, 20, 43, 0.15) !important;
+    }
+    .ts-dropdown {
+        border-radius: 0.5rem !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1) !important;
+        margin-top: 4px !important;
+    }
+    .ts-dropdown .option {
+        padding: 8px 12px !important;
+        font-size: 0.875rem;
+    }
+    .ts-dropdown .option.active {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+    }
+    .ts-dropdown .option.selected {
+        background-color: #fee2e2 !important;
+        color: #dc2626 !important;
+        font-weight: 600;
+    }
+    .ts-control .item {
+        background-color: #f1f5f9 !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 6px !important;
+        color: #0f172a !important;
+        padding: 2px 6px !important;
+    }
+</style>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const initTomSelect = (elements) => {
+            if (!elements || elements.length === 0) return;
+            Array.from(elements).forEach(el => {
+                if(!el.tomselect) {
+                    new TomSelect(el, {
+                        plugins: ['remove_button'],
+                        maxOptions: null,
+                    });
+                }
+            });
+        };
+        window.initTomSelect = initTomSelect;
+        initTomSelect(document.querySelectorAll('.tom-select'));
     });
 </script>

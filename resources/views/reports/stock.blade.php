@@ -11,7 +11,7 @@
     @slot('filters')
         <div>
             <label class="label block mb-1">Status</label>
-            <select name="status" class="w-full">
+            <select name="status" class="field">
                 <option value="">All</option>
                 <option value="in" @selected(request("status")=="in")>In Stock</option>
                 <option value="low" @selected(request("status")=="low")>Low Stock</option>
@@ -20,14 +20,15 @@
         </div>
         <div>
             <label class="label block mb-1">Sort By</label>
-            <select name="sort" class="w-full">
+            <select name="sort" class="field">
                 <option value="name" @selected(request("sort")!="rack")>Product Name</option>
                 <option value="rack" @selected(request("sort")=="rack")>Rack No (Alphabetical)</option>
             </select>
         </div>
         <div>
-            <label class="label block mb-1">Rack No (Hold Ctrl)</label>
-            <select name="racks[]" multiple class="w-full p-2 border border-slate-200 rounded">
+            <label class="label block mb-1">Rack No</label>
+            <select name="racks[]" multiple class="field tom-select" placeholder="Select Racks...">
+                <option value="">Select Racks...</option>
                 @foreach($rackOptions as $rack)
                     <option value="{{ $rack }}" @selected(in_array($rack, request('racks', [])))>{{ $rack }}</option>
                 @endforeach
@@ -35,7 +36,7 @@
         </div>
         <div>
             <label class="label block mb-1">Search</label>
-            <input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, code..." class="w-full">
+            <input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, code..." class="field">
         </div>
     @endslot
     @endcomponent
