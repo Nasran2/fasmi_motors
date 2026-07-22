@@ -55,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Schema::defaultStringLength(191);
         $this->configureDefaults();
 
         foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class, AccountTransaction::class, AccountTransfer::class, DailyClosing::class, Cheque::class] as $model) {
