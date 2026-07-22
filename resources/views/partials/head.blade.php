@@ -12,7 +12,11 @@
 @fonts
 
 @vite(['resources/css/app.css', 'resources/js/app.js'])
-@fluxAppearance
+<script>
+    localStorage.removeItem('flux.appearance');
+    localStorage.removeItem('theme');
+    document.documentElement.classList.remove('dark');
+</script>
 
 <!-- Flatpickr for Date Inputs -->
 <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/airbnb.css">
