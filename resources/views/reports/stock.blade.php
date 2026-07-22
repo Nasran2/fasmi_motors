@@ -3,6 +3,9 @@
     @component('reports._filter', [
       'title' => 'Stock Report',
       'subtitle' => 'View current stock, stock value, low stock, and batch-wise inventory',
+      'from' => $from ?? null,
+      'to' => $to ?? null,
+      'range' => $range ?? null,
     ])
     
     @slot('filters')
