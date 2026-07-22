@@ -9,7 +9,6 @@
     ])
     
     @slot('filters')
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
             <label class="label block mb-1">Status</label>
             <select name="status" class="w-full">
@@ -27,7 +26,7 @@
             </select>
         </div>
         <div>
-            <label class="label block mb-1">Rack No (Hold Ctrl to select multiple)</label>
+            <label class="label block mb-1">Rack No (Hold Ctrl)</label>
             <select name="racks[]" multiple class="w-full p-2 border border-slate-200 rounded">
                 @foreach($rackOptions as $rack)
                     <option value="{{ $rack }}" @selected(in_array($rack, request('racks', [])))>{{ $rack }}</option>
@@ -38,7 +37,6 @@
             <label class="label block mb-1">Search</label>
             <input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, code..." class="w-full">
         </div>
-      </div>
     @endslot
     @endcomponent
 
