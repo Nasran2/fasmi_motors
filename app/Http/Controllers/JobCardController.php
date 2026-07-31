@@ -113,7 +113,7 @@ class JobCardController extends Controller
             ->get();
 
         return view('jobs.show', [
-            'job' => $job->load('intake.bike.customer', 'technician', 'parts.product', 'services', 'invoice.payments'),
+            'job' => $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'services', 'invoice.payments'),
             'technicians' => Technician::where('active', 1)->get(),
             'products' => $products,
             'productBatchOptions' => $productBatchOptions,
@@ -145,7 +145,15 @@ class JobCardController extends Controller
                 'other_total' => 'nullable|numeric|min:0',
                 'discount' => 'nullable|numeric|min:0',
                 'tax' => 'nullable|numeric|min:0',
+                'show_washing_on_bill' => 'nullable|boolean',
+                'show_labor_on_bill' => 'nullable|boolean',
+                'service_name' => 'nullable|string|max:50',
+                'other_income_name' => 'nullable|string|max:50',
             ]);
+            
+            // Checkboxes are only sent if checked, handle defaults
+            $v['show_washing_on_bill'] = $r->has('show_washing_on_bill');
+            $v['show_labor_on_bill'] = $r->has('show_labor_on_bill');
         }
 
         $old = $job->status;

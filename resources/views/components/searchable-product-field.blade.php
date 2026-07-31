@@ -6,7 +6,7 @@
         $totalStock = $product->stocks ? $product->stocks->sum('quantity') : 0;
         $minStock = (float) ($product->minimum_stock ?? 0);
         $mark = $totalStock <= 0 ? '🔴 ' : ($totalStock <= $minStock ? '🟡 ' : '');
-        return $mark . $product->name.' — '.$product->code.($product->barcode ? ' — '.$product->barcode : '');
+        return $mark . $product->name.' — '.$product->code.(($product->barcode && $product->barcode !== $product->code) ? ' — '.$product->barcode : '');
     };
 @endphp
 <div {{ $attributes->class('searchable-product-field') }} id="{{ $id }}">

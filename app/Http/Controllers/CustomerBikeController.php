@@ -188,10 +188,39 @@ class CustomerBikeController extends Controller
     {
         $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0', 'lte:'.$invoice->due_amount], 'method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR'])], 'account_id' => ['required', 'exists:accounts,id'], 'note' => ['nullable', 'max:500']]);
         DB::transaction(function () use ($data, $invoice, $service) {
-            $invoice->payments()->create(['amount' => $data['amount'], 'method' => $data['method'], 'reference' => $data['note'] ?? null, 'paid_at' => now(), 'created_by' => auth()->id()]);
-            $remaining = max(0, (float) $invoice->due_amount - (float) $data['amount']);
-            $invoice->update(['paid_amount' => (float) $invoice->paid_amount + (float) $data['amount'], 'due_amount' => $remaining, 'status' => $remaining <= 0 ? 'Paid' : 'Partially Paid']);
-            $service->ledger(Account::findOrFail($data['account_id']), 'income', (float) $data['amount'], "Due collection for {$invoice->number}", $invoice, 'customer_due');
+            $payment = $invoice->payments()->create(['amount' => $data['amount'], 'method' => $data['method'], 'reference' => $data['note'] ?? null, 'paid_at' => now(), 'created_by' => auth()->id()]);
+            
+            $amount = (float) $data['amount'];
+            $previousTotalPaid = (float) $invoice->paid_amount;
+            $newTotalPaid = $previousTotalPaid + $amount;
+            
+            $total = (float) $invoice->total;
+            $partsExpected = (float) $invoice->parts_amount;
+            $serviceExpected = max(0, $total - $partsExpected);
+            
+            $servicePaidBefore = min($previousTotalPaid, $serviceExpected);
+            $servicePaidAfter = min($newTotalPaid, $serviceExpected);
+            $servicePaidThis = $servicePaidAfter - $servicePaidBefore;
+            
+            $partsPaidBefore = max(0, $previousTotalPaid - $serviceExpected);
+            $partsPaidAfter = max(0, $newTotalPaid - $serviceExpected);
+            $partsPaidThis = $partsPaidAfter - $partsPaidBefore;
+            
+            $remaining = max(0, (float) $invoice->due_amount - $amount);
+            $invoice->update(['paid_amount' => $newTotalPaid, 'due_amount' => $remaining, 'status' => $remaining <= 0 ? 'Paid' : 'Partially Paid']);
+            
+            $accountService = app(\App\Services\AccountService::class);
+            $accountId = $data['account_id'];
+            
+            if ($partsPaidThis > 0) {
+                $accountService->recordTransaction('spare_parts', 'income', $partsPaidThis, "Parts income for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
+            }
+            if ($servicePaidThis > 0) {
+                $accountService->recordTransaction('main', 'income', $servicePaidThis, "Workshop income for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
+            }
+            if (! in_array($data['method'], ['Cash'])) {
+                $accountService->recordTransaction('bank', 'income', $amount, "Bank receipt for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
+            }
         });
 
         return back()->with('success', 'Payment received and account ledger updated.');

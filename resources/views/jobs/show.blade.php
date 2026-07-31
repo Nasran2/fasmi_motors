@@ -25,7 +25,34 @@
         <option @selected($job->status===$s)>{{ $s }}</option>
     @endforeach
 @endif
-</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes @if($isLocked) * @endif</span><input name="change_reason" class="field" @required($isLocked) placeholder="@if($isLocked)Enter reason for status change (required)...@endif"></label>@foreach(['service_total'=>'Service','labor_total'=>'Labor','washing_total'=>'Washing','other_total'=>'Other income','discount'=>'Discount','tax'=>'Tax'] as $name=>$label)<label><span class="label">{{ $label }} (LKR)</span><input type="number" step=".01" name="{{ $name }}" value="{{ $job->$name }}" class="field" @disabled($isLocked)></label>@endforeach<div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
+</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes @if($isLocked) * @endif</span><input name="change_reason" class="field" @required($isLocked) placeholder="@if($isLocked)Enter reason for status change (required)...@endif"></label>
+
+<div class="relative">
+    <input type="hidden" name="service_name" id="hidden_service_name" value="{{ $job->service_name ?: 'Service' }}">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_service_name">{{ $job->service_name ?: 'Service' }}</span> (LKR) <button type="button" onclick="editName('Service', 'hidden_service_name', 'lbl_service_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
+    <input type="number" step=".01" name="service_total" value="{{ $job->service_total }}" class="field" @disabled($isLocked)>
+</div>
+
+<div class="relative">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0">Labor (LKR)</span><span class="flex items-center gap-1 text-[10px] text-slate-500 font-bold"><input type="checkbox" name="show_labor_on_bill" value="1" class="size-3 accent-red-600" @checked($job->show_labor_on_bill) @disabled($isLocked)> Show on bill</span></label>
+    <input type="number" step=".01" name="labor_total" value="{{ $job->labor_total }}" class="field" @disabled($isLocked)>
+</div>
+
+<div class="relative">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0">Washing (LKR)</span><span class="flex items-center gap-1 text-[10px] text-slate-500 font-bold"><input type="checkbox" name="show_washing_on_bill" value="1" class="size-3 accent-red-600" @checked($job->show_washing_on_bill) @disabled($isLocked)> Show on bill</span></label>
+    <input type="number" step=".01" name="washing_total" value="{{ $job->washing_total }}" class="field" @disabled($isLocked)>
+</div>
+
+<div class="relative">
+    <input type="hidden" name="other_income_name" id="hidden_other_income_name" value="{{ $job->other_income_name ?: 'Other Income' }}">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_other_income_name">{{ $job->other_income_name ?: 'Other Income' }}</span> (LKR) <button type="button" onclick="editName('Other Income', 'hidden_other_income_name', 'lbl_other_income_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
+    <input type="number" step=".01" name="other_total" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
+</div>
+
+<label><span class="label">Discount (LKR)</span><input type="number" step=".01" name="discount" value="{{ $job->discount }}" class="field" @disabled($isLocked)></label>
+<label><span class="label">Tax (LKR)</span><input type="number" step=".01" name="tax" value="{{ $job->tax }}" class="field" @disabled($isLocked)></label>
+
+<div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
     <div class="panel">
         <h2 class="mb-4 font-bold">Bill summary</h2>
@@ -178,8 +205,13 @@
                     <td>{{ $part->quantity }}</td>
                     <td>Rs. {{ number_format($part->unit_price, 2) }}</td>
                     <td class="font-bold">Rs. {{ number_format($part->total, 2) }}</td>
-                    <td class="{{ $part->out_of_stock ? 'text-red-600 font-semibold' : 'text-slate-500' }}">
-                        {{ $part->out_of_stock ? 'Out of stock' : 'Issued' }}
+                    @php $currentStock = $part->product->stocks->where('store_id', $part->store_id)->first()?->quantity ?? 0; @endphp
+                    <td class="{{ $currentStock < 0 ? 'text-red-600 font-semibold' : 'text-slate-500' }}">
+                        @if($currentStock < 0)
+                            <span class="text-xs">Out of stock ({{ $currentStock }})</span>
+                        @else
+                            <span class="text-xs">Issued (Rem: {{ $currentStock }})</span>
+                        @endif
                     </td>
                 </tr>
                 @empty
@@ -404,6 +436,30 @@ function openPriceModal(partId, name, cost, price) {
     
     modal.showModal();
 }
+
+let currentEditingHiddenInputId = '';
+let currentEditingLabelId = '';
+
+function editName(defaultLabel, hiddenInputId, labelId) {
+    currentEditingHiddenInputId = hiddenInputId;
+    currentEditingLabelId = labelId;
+    
+    const hiddenInput = document.getElementById(hiddenInputId);
+    const currentName = hiddenInput.value || defaultLabel;
+    
+    document.getElementById('edit-name-title').textContent = `Enter custom name for ${defaultLabel}`;
+    document.getElementById('edit-name-input').value = currentName;
+    document.getElementById('edit-name-dialog').showModal();
+}
+
+function saveEditedName() {
+    const newName = document.getElementById('edit-name-input').value.trim();
+    if (newName !== "") {
+        document.getElementById(currentEditingHiddenInputId).value = newName;
+        document.getElementById(currentEditingLabelId).textContent = newName;
+    }
+    document.getElementById('edit-name-dialog').close();
+}
 </script>
 
 {{-- Due Payment Dialog --}}
@@ -510,5 +566,27 @@ function openUnlockModal() {
             <button class="btn-primary" style="background-color: #d97706 !important;">Unlock & Edit</button>
         </div>
     </form>
+</dialog>
+{{-- Edit Name Dialog --}}
+<dialog id="edit-name-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <div class="p-6">
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-blue-600">Edit Custom Name</p>
+                <h2 class="mt-1 text-xl font-black text-slate-900" id="edit-name-title" style="color: #0f172a !important;">Enter custom name</h2>
+            </div>
+            <button type="button" onclick="document.getElementById('edit-name-dialog').close()" class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-slate-500 hover:bg-slate-200">×</button>
+        </div>
+        <div class="mt-4 grid gap-4">
+            <label class="block">
+                <span class="label" style="color: #475569 !important;">Custom Name *</span>
+                <input type="text" id="edit-name-input" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+            </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('edit-name-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
+            <button type="button" onclick="saveEditedName()" class="btn-primary" style="background-color: #2563eb !important;">Save Name</button>
+        </div>
+    </div>
 </dialog>
 </div></x-layouts::app>

@@ -64,8 +64,11 @@ class WorkshopService
             if ($paid > 0) {
                 $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $paid, 'balance_after' => $invoice->due_amount, 'method' => $method, 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
             }
-            $partsPaid = $total > 0 ? min((float) $job->parts_total, $paid * ((float) $job->parts_total / $total)) : 0;
-            $servicePaid = max(0, $paid - $partsPaid);
+            $partsExpected = (float) $job->parts_total;
+            $serviceExpected = max(0, $total - $partsExpected);
+
+            $servicePaid = min($paid, $serviceExpected);
+            $partsPaid = max(0, $paid - $servicePaid);
 
             $accountService = app(AccountService::class);
 
