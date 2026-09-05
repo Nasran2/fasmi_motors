@@ -20,9 +20,9 @@
     </div>
     @endsection
 
-    <div class="flex w-full h-full" x-data="posApp()">
+    <div class="flex w-full h-full overflow-hidden" x-data="posApp()">
         <!-- Left Side: Products Grid -->
-        <div class="pos-left flex flex-col relative">
+        <div class="pos-left flex flex-col relative w-full h-full">
             <!-- Store Selector & Categories -->
             <div class="flex flex-col gap-4 p-4 pb-0 bg-white border-b border-slate-200 shrink-0">
                 <div class="flex items-center gap-4">
@@ -64,8 +64,8 @@
                     <template x-for="product in filteredProducts" :key="product.id">
                         <button class="relative flex flex-col text-left rounded-2xl bg-white p-4 transition-all shadow-sm border-2 overflow-hidden group outline-none focus:ring-4 focus:ring-red-500/20"
                             :class="{
-                                'border-transparent hover:border-red-300 hover:shadow-md': product.currentStock > 0,
-                                'border-red-100 bg-red-50/50 opacity-70 cursor-not-allowed': product.currentStock <= 0,
+                                'border-transparent hover:border-red-300 hover:shadow-md': product.currentStock > 0 || allowNegativeStock,
+                                'border-red-100 bg-red-50/50 opacity-70 cursor-not-allowed': product.currentStock <= 0 && !allowNegativeStock,
                             }"
                             @click="productClicked(product)">
                             
@@ -500,6 +500,7 @@
             Alpine.data('posApp', () => ({
                 productsData: @json($productOptions),
                 storeId: {{ $stores->first()->id ?? 1 }},
+                allowNegativeStock: {{ filter_var(\App\Models\Setting::valueFor('negative_stock', false), FILTER_VALIDATE_BOOL) ? 'true' : 'false' }},
                 activeCategory: null,
                 query: '',
                 
@@ -570,7 +571,7 @@
                 },
 
                 productClicked(product) {
-                    if (product.currentStock <= 0) {
+                    if (product.currentStock <= 0 && !this.allowNegativeStock) {
                         // Cannot add if out of stock
                         return;
                     }
@@ -608,13 +609,13 @@
                     
                     if (existingIndex > -1) {
                         const item = this.cart.items[existingIndex];
-                        if (item.qty + 1 > maxStock) {
+                        if (item.qty + 1 > maxStock && !this.allowNegativeStock) {
                             alert(`Cannot add more. Only ${maxStock} items available in stock.`);
                             return;
                         }
                         item.qty += 1;
                     } else {
-                        if (1 > maxStock) {
+                        if (1 > maxStock && !this.allowNegativeStock) {
                             alert('This item is out of stock.');
                             return;
                         }
@@ -636,7 +637,7 @@
                     const item = this.cart.items[index];
                     const maxStock = typeof item.max_qty !== 'undefined' ? item.max_qty : (item.product.currentStock || 99999);
                     
-                    if (item.qty + change > maxStock) {
+                    if (item.qty + change > maxStock && !this.allowNegativeStock) {
                         alert(`Only ${maxStock} items available in stock.`);
                         item.qty = maxStock;
                     } else {
@@ -653,7 +654,7 @@
                         qty = 1;
                     }
                     const maxStock = typeof item.max_qty !== 'undefined' ? parseFloat(item.max_qty) : (parseFloat(item.product.currentStock) || 99999);
-                    if (qty > maxStock) {
+                    if (qty > maxStock && !this.allowNegativeStock) {
                         alert(`Only ${maxStock} items available in stock.`);
                         qty = maxStock;
                     }
@@ -784,7 +785,7 @@
                     this.cart.items.forEach(i => {
                         // Dynamically resolve max_qty if missing
                         const maxStock = typeof i.max_qty !== 'undefined' ? i.max_qty : (i.product.currentStock || 99999);
-                        if (i.qty > maxStock) {
+                        if (i.qty > maxStock && !this.allowNegativeStock) {
                             i.qty = maxStock;
                             alert(`Only ${maxStock} items available in stock for ${i.product.name}.`);
                         }

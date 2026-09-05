@@ -9,7 +9,7 @@
                 color: #0f172a; /* slate-900 */
                 margin: 0;
                 padding: 0;
-                min-height: 100vh;
+                height: 100vh;
                 display: flex;
                 flex-direction: column;
                 overflow: hidden; /* Prevent full body scroll, let panels scroll */

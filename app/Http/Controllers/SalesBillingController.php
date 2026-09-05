@@ -160,7 +160,7 @@ class SalesBillingController extends Controller
                     if (! $batch || (int) $batch->product_id !== (int) $product->id || (int) $batch->store_id !== (int) $v['store_id']) {
                         throw ValidationException::withMessages(["items.{$index}.stock_batch_id" => 'The selected stock batch does not belong to this product and store.']);
                     }
-                    if ($invType !== 'Quotation' && (float) $batch->available_qty < (float) $item['quantity']) {
+                    if ($invType !== 'Quotation' && (float) $batch->available_qty < (float) $item['quantity'] && !filter_var(\App\Models\Setting::valueFor('negative_stock', false), FILTER_VALIDATE_BOOL)) {
                         throw ValidationException::withMessages(["items.{$index}.quantity" => 'Insufficient quantity in the selected stock batch.']);
                     }
                     $costPrice = (float) $batch->cost_price;
