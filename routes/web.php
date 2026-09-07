@@ -55,8 +55,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('service-history', [CustomerBikeController::class, 'serviceHistory'])->name('customers.service-history');
     Route::get('bike-ownership', [CustomerBikeController::class, 'ownership'])->name('customers.ownership');
     Route::post('bike-ownership', [CustomerBikeController::class, 'ownershipStore'])->name('customers.ownership.store');
-    Route::get('bike-intakes/lookup/{number}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
-    Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->only(['index', 'create', 'store', 'show'])->names('intakes');
+    Route::get('bike-intakes/lookup/{query}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
+    Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->names('intakes');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
     Route::post('job-cards/{job}/parts/{part}/update-price', [JobCardController::class, 'updatePartPrice'])->name('jobs.parts.update-price');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');

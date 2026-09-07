@@ -233,12 +233,6 @@
                         </div>
                         <input type="number" x-model.number="cart.discountValue" @input="recalculateTotals" class="w-24 text-right bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-900 outline-none focus:border-red-400">
                     </div>
-                    @if(session('shop_mode', 'workshop') !== 'helmet')
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-slate-500 font-bold">Tax</span>
-                        <input type="number" x-model.number="cart.tax" @input="recalculateTotals" class="w-24 text-right bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-900 outline-none focus:border-red-400">
-                    </div>
-                    @endif
                     <div class="flex justify-between items-center text-sm font-bold text-emerald-600 bg-emerald-50/50 px-2 py-1 rounded-lg mt-2" x-show="cart.discount > 0">
                         <span>Discounted Amount</span>
                         <span x-text="'- Rs. ' + formatNumber(cart.discount)"></span>
@@ -247,7 +241,7 @@
                 
                 <div class="flex justify-between items-end border-t border-slate-200 pt-4 mb-2">
                     <span class="text-xs font-black uppercase tracking-wider text-slate-400">Total</span>
-                    <span class="text-xl font-black text-slate-900 line-through opacity-40" x-show="cart.discount > 0" x-text="formatNumber(cart.subtotal + cart.tax)"></span>
+                    <span class="text-xl font-black text-slate-900 line-through opacity-40" x-show="cart.discount > 0" x-text="formatNumber(cart.subtotal)"></span>
                 </div>
                 <div class="flex justify-between items-end">
                     <span class="text-lg font-black uppercase tracking-wider text-red-600">Payable</span>

@@ -55,7 +55,13 @@ class CustomerBikeController extends Controller
             'name' => ['required', 'max:150'], 'phone' => ['required', 'max:30'], 'alternative_phone' => ['nullable', 'max:30'],
             'address' => ['nullable', 'max:500'], 'nic' => ['nullable', 'max:30'], 'email' => ['nullable', 'email', 'max:150'],
             'customer_type' => ['required', Rule::in(['Normal Customer', 'Regular Customer', 'Credit Customer', 'Technician Bike Owner'])],
-            'active' => ['required', 'boolean'], 'bike_number' => ['nullable', 'max:30', 'unique:bikes,number'],
+            'active' => ['required', 'boolean'], 'bike_number' => ['nullable', 'max:30', function ($attribute, $value, $fail) {
+                $bike = \App\Models\Bike::with('customer')->where('number', $value)->first();
+                if ($bike) {
+                    $name = $bike->customer->name ?: 'Walk-in Customer';
+                    $fail("This bike ({$bike->model}) is already registered to {$name} ({$bike->customer->phone}).");
+                }
+            }],
             'bike_model' => ['nullable', 'required_with:bike_number', 'max:100'], 'bike_brand' => ['nullable', 'max:100'],
             'bike_color' => ['nullable', 'max:50'], 'chassis_number' => ['nullable', 'max:100'], 'engine_number' => ['nullable', 'max:100'],
             'current_km' => ['nullable', 'integer', 'min:0'],
@@ -131,7 +137,13 @@ class CustomerBikeController extends Controller
     public function bikeStore(Request $request)
     {
         $data = $request->validate([
-            'number' => ['required', 'max:30', 'unique:bikes'], 'model' => ['required', 'max:100'], 'brand' => ['nullable', 'max:100'],
+            'number' => ['required', 'max:30', function ($attribute, $value, $fail) {
+                $bike = \App\Models\Bike::with('customer')->where('number', $value)->first();
+                if ($bike) {
+                    $name = $bike->customer->name ?: 'Walk-in Customer';
+                    $fail("This bike ({$bike->model}) is already registered to {$name} ({$bike->customer->phone}).");
+                }
+            }], 'model' => ['required', 'max:100'], 'brand' => ['nullable', 'max:100'],
             'color' => ['nullable', 'max:50'], 'chassis_number' => ['nullable', 'max:100'], 'engine_number' => ['nullable', 'max:100'],
             'last_mileage' => ['nullable', 'integer', 'min:0'], 'previous_mileage' => ['nullable', 'integer', 'min:0'],
             'fuel_type' => ['nullable', 'max:30'], 'notes' => ['nullable', 'max:1000'],

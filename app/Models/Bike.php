@@ -34,6 +34,11 @@ class Bike extends Model
         return $this->hasMany(BikeIntake::class);
     }
 
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
     public function ownershipChanges(): HasMany
     {
         return $this->hasMany(BikeOwnershipChange::class);

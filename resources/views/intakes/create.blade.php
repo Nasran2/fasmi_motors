@@ -30,6 +30,7 @@
                         <label><span class="label">Color</span><input name="color" value="{{ old('color') }}" class="field" placeholder="Bike color"></label>
                         <label><span class="label">NIC</span><input id="nic" name="nic" value="{{ old('nic') }}" class="field" placeholder="National ID"></label>
                         <label><span class="label">Current mileage</span><input type="number" name="current_mileage" value="{{ old('current_mileage') }}" class="field" placeholder="Current KM"></label>
+                        <label><span class="label">Opening balance (Old due)</span><input type="number" step=".01" name="opening_balance" value="{{ old('opening_balance') }}" class="field" placeholder="0.00"></label>
                         <label class="md:col-span-2"><span class="label">Complaint / customer issue <em class="not-italic text-red-500">*</em></span><textarea name="complaint" class="field min-h-24" rows="3" required placeholder="Describe the repair issue clearly...">{{ old('complaint') }}</textarea></label>
                     </div>
                 </section>
@@ -43,19 +44,12 @@
                         <div class="p-5">
                             <div id="lookup-empty" class="py-5 text-center">
                                 <span class="mx-auto grid size-14 place-items-center rounded-2xl bg-slate-50 text-slate-400 ring-1 ring-slate-200"><svg class="size-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m21 21-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/><path d="M8 11h6m-3-3v6"/></svg></span>
-                                <p class="mt-3 text-sm font-bold text-slate-700">Find an existing bike</p>
-                                <p class="mx-auto mt-1 max-w-56 text-xs leading-5 text-slate-400">Enter at least three characters. Customer and bike details will be filled automatically.</p>
+                                <p class="mt-3 text-sm font-bold text-slate-700">Find an existing record</p>
+                                <p id="lookup-empty-text" class="mx-auto mt-1 max-w-56 text-xs leading-5 text-slate-400">Enter at least three characters of a bike number, name, or phone.</p>
                             </div>
-                            <div id="lookup-found" class="hidden space-y-3">
-                                <div class="flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2.5"><span class="text-xs font-bold text-emerald-700">Existing bike found</span><span class="grid size-6 place-items-center rounded-full bg-emerald-500 text-white">✓</span></div>
-                                <dl class="divide-y divide-slate-100 text-xs">
-                                    <div class="flex justify-between gap-4 py-2.5"><dt class="text-slate-400">Bike number</dt><dd id="found-number" class="font-bold text-slate-800"></dd></div>
-                                    <div class="flex justify-between gap-4 py-2.5"><dt class="text-slate-400">Model</dt><dd id="found-model" class="text-right font-bold text-slate-800"></dd></div>
-                                    <div class="flex justify-between gap-4 py-2.5"><dt class="text-slate-400">Customer</dt><dd id="found-customer" class="text-right font-bold text-slate-800"></dd></div>
-                                    <div class="flex justify-between gap-4 py-2.5"><dt class="text-slate-400">Previous visits</dt><dd id="found-visits" class="font-bold text-slate-800"></dd></div>
-                                </dl>
+                            <div id="lookup-results-container" class="hidden -mx-5 -mb-5">
+                                <div id="lookup-results" class="max-h-[500px] overflow-y-auto"></div>
                             </div>
-                            <div id="history" class="mt-4 hidden rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs font-medium text-blue-700"></div>
                         </div>
                     </section>
 
@@ -97,36 +91,156 @@
 
     <script>
         let timer;
-        const bikeNumber = document.getElementById('bike_number');
-        bikeNumber.addEventListener('input', event => {
-            clearTimeout(timer);
-            timer = setTimeout(async () => {
-                const number = event.target.value.trim();
-                const empty = document.getElementById('lookup-empty');
-                const found = document.getElementById('lookup-found');
-                const history = document.getElementById('history');
-                if (number.length < 3) { empty.classList.remove('hidden'); found.classList.add('hidden'); history.classList.add('hidden'); return; }
-                const response = await fetch(@json(url('/bike-intakes/lookup')) + '/' + encodeURIComponent(number));
-                if (!response.ok) return;
-                const bike = await response.json();
-                if (bike && bike.id) {
-                    document.getElementById('bike_model').value = bike.model || '';
-                    document.getElementById('phone').value = bike.customer?.phone || '';
-                    document.getElementById('customer_name').value = bike.customer?.name || '';
-                    document.getElementById('address').value = bike.customer?.address || '';
-                    document.getElementById('nic').value = bike.customer?.nic || '';
-                    document.getElementById('found-number').textContent = bike.number || number.toUpperCase();
-                    document.getElementById('found-model').textContent = bike.model || 'Not recorded';
-                    document.getElementById('found-customer').textContent = bike.customer?.name || bike.customer?.phone || 'Walk-in';
-                    document.getElementById('found-visits').textContent = bike.intakes?.length || 0;
-                    history.textContent = `Details loaded from ${bike.intakes?.length || 0} previous intake(s). You can update them if needed.`;
-                    empty.classList.add('hidden'); found.classList.remove('hidden'); history.classList.remove('hidden');
-                } else {
-                    empty.classList.remove('hidden'); found.classList.add('hidden');
-                    history.textContent = 'New bike — no previous workshop record was found.';
-                    history.classList.remove('hidden');
-                }
-            }, 450);
+        const inputs = ['bike_number', 'customer_name', 'phone'].map(id => document.getElementById(id));
+        
+        inputs.forEach(input => {
+            if(!input) return;
+            input.addEventListener('input', event => {
+                clearTimeout(timer);
+                timer = setTimeout(async () => {
+                    const term = event.target.value.trim();
+                    const empty = document.getElementById('lookup-empty');
+                    const container = document.getElementById('lookup-results-container');
+                    const list = document.getElementById('lookup-results');
+                    const statusText = document.getElementById('lookup-status') || document.querySelector('#lookup-heading p');
+                    
+                    if (term.length < 1) { 
+                        empty.classList.remove('hidden'); 
+                        container.classList.add('hidden');
+                        document.getElementById('lookup-empty-text').textContent = 'Enter a bike number, name, or phone.';
+                        if(statusText) statusText.textContent = 'Waiting for input';
+                        return; 
+                    }
+                    
+                    if(statusText) statusText.textContent = 'Searching...';
+                    const response = await fetch(@json(url('/bike-intakes/lookup')) + '/' + encodeURIComponent(term));
+                    if (!response.ok) {
+                        if(statusText) statusText.textContent = 'Error fetching results';
+                        return;
+                    }
+                    const data = await response.json();
+                    
+                    if(statusText) statusText.textContent = 'Results found';
+                    renderLookupResults(data.bikes, data.customers);
+                }, 450);
+            });
         });
+        
+        window.populateForm = function(item, type) {
+            if (type === 'bike') {
+                document.getElementById('bike_number').value = item.number || '';
+                document.getElementById('bike_model').value = item.model || '';
+                if (item.customer) {
+                    document.getElementById('phone').value = item.customer.phone || '';
+                    document.getElementById('customer_name').value = item.customer.name || '';
+                    document.getElementById('address').value = item.customer.address || '';
+                    document.getElementById('nic').value = item.customer.nic || '';
+                }
+            } else if (type === 'customer') {
+                document.getElementById('phone').value = item.phone || '';
+                document.getElementById('customer_name').value = item.name || '';
+                document.getElementById('address').value = item.address || '';
+                document.getElementById('nic').value = item.nic || '';
+            }
+            
+            // Provide feedback
+            const container = document.getElementById('lookup-results-container');
+            container.innerHTML = `
+                <div class="p-5 text-center">
+                    <div class="mx-auto grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-600 mb-3"><svg class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>
+                    <p class="font-bold text-slate-800 text-sm">Form populated!</p>
+                    <p class="text-xs text-slate-500 mt-1">You can continue editing the details.</p>
+                </div>
+            `;
+            setTimeout(() => {
+                document.getElementById('lookup-empty').classList.remove('hidden');
+                container.classList.add('hidden');
+                document.getElementById('lookup-results-container').innerHTML = '<div id="lookup-results" class="max-h-[500px] overflow-y-auto"></div>';
+            }, 2500);
+        };
+        
+        function renderLookupResults(bikesData, customersData) {
+            try {
+                const empty = document.getElementById('lookup-empty');
+                const container = document.getElementById('lookup-results-container');
+                const list = document.getElementById('lookup-results');
+                
+                // Force into arrays in case Laravel serialized them as JSON objects
+                const bikes = Array.isArray(bikesData) ? bikesData : Object.values(bikesData || {});
+                const customers = Array.isArray(customersData) ? customersData : Object.values(customersData || {});
+                
+                if (bikes.length === 0 && customers.length === 0) {
+                    empty.classList.remove('hidden');
+                    if (container) container.classList.add('hidden');
+                    document.getElementById('lookup-empty-text').textContent = 'No matching records found.';
+                    return;
+                }
+                
+                empty.classList.add('hidden');
+                if (container) container.classList.remove('hidden');
+                
+                let html = '';
+                if (bikes.length > 0) {
+                    html += `<div class="px-5 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-y border-slate-100">Matching Bikes</div>`;
+                    bikes.forEach(bike => {
+                        const cname = (bike.customer && bike.customer.name) ? bike.customer.name : 'Walk-in';
+                        const cphone = (bike.customer && bike.customer.phone) ? bike.customer.phone : '';
+                        const bikenumber = bike.number || '';
+                        const bikemodel = bike.model || '';
+                        
+                        let dueBadge = '';
+                        if (bike.total_due && parseFloat(bike.total_due) > 0) {
+                            dueBadge = `<div class="mt-1 inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 ring-1 ring-inset ring-red-500/10"><svg class="size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Due: Rs ${parseFloat(bike.total_due).toFixed(2)}</div>`;
+                        }
+                        
+                        html += `
+                            <div class="p-4 border-b border-slate-100 hover:bg-emerald-50 cursor-pointer transition flex justify-between items-center group" onclick='populateForm(${JSON.stringify(bike).replace(/'/g, "&#39;")}, "bike")'>
+                                <div>
+                                    <div class="font-bold text-slate-800 text-sm group-hover:text-emerald-700">${bikenumber} <span class="text-xs text-slate-500 font-normal ml-1">${bikemodel}</span></div>
+                                    <div class="text-xs text-slate-500 mt-0.5">${cname} ${cphone ? '· '+cphone : ''}</div>
+                                    ${dueBadge}
+                                </div>
+                                <button type="button" class="text-xs font-bold text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition">Select</button>
+                            </div>
+                        `;
+                    });
+                }
+                if (customers.length > 0) {
+                    html += `<div class="px-5 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-y border-slate-100">Matching Customers</div>`;
+                    customers.forEach(customer => {
+                        const cname = customer.name || '';
+                        const cphone = customer.phone || 'No phone';
+                        html += `
+                            <div class="p-4 border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition flex justify-between items-center group" onclick='populateForm(${JSON.stringify(customer).replace(/'/g, "&#39;")}, "customer")'>
+                                <div>
+                                    <div class="font-bold text-slate-800 text-sm group-hover:text-blue-700">${cname}</div>
+                                    <div class="text-xs text-slate-500 mt-0.5">${cphone}</div>
+                                </div>
+                                <button type="button" class="text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition">Select</button>
+                            </div>
+                        `;
+                    });
+                }
+                
+                if (list) {
+                    list.innerHTML = html;
+                } else if (container) {
+                    container.innerHTML = `<div id="lookup-results" class="max-h-[500px] overflow-y-auto">${html}</div>`;
+                }
+                
+                // Debugging output directly into the container if it's completely empty
+                if (container && container.innerHTML.trim() === '') {
+                    container.innerHTML = `<div class="p-5 text-red-500 font-mono text-xs">Debug: html_len=${html.length}, bikes=${bikes.length}, list=${!!list}</div>`;
+                }
+                
+            } catch (e) {
+                console.error("Lookup render error", e);
+                document.getElementById('lookup-empty').classList.remove('hidden');
+                if (document.getElementById('lookup-results-container')) {
+                    document.getElementById('lookup-results-container').classList.add('hidden');
+                }
+                document.getElementById('lookup-empty-text').textContent = 'Error rendering: ' + e.message;
+            }
+        }
     </script>
 </x-layouts::app>
