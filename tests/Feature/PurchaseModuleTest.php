@@ -56,7 +56,7 @@ test('purchase payment and return workflows keep stock supplier due and ledger a
     $purchase = Purchase::firstOrFail();
     expect((float) StoreStock::where(['store_id' => $store->id, 'product_id' => $product->id])->value('quantity'))->toBe(10.0)
         ->and((float) $purchase->due_amount)->toBe(800.0)
-        ->and((float) $account->transactions()->sum('debit'))->toBe(200.0)
+        ->and((float) Account::systemAccount('spare_parts')->transactions()->sum('debit'))->toBe(200.0)
         ->and((float) $product->fresh()->cost_price)->toBe(100.0);
 
     $this->actingAs($user)->post(route('purchases.payments.store'), [

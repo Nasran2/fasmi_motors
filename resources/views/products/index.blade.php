@@ -1,6 +1,31 @@
 <x-layouts::app title="Products & Stock">
 <div class="space-y-5">
-    <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Inventory</p><h1 class="page-title">Spare Parts & Stock</h1><p class="page-subtitle">Manage real product quantities, pricing and store availability.</p></div><div class="flex gap-2"><a href="{{ route('products.transfers') }}" class="btn-secondary">⇄ Stock Transfer</a><a href="{{ route('products.create') }}" class="btn-primary">＋ Add Product</a></div></div>
+    <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Inventory</p><h1 class="page-title">Spare Parts & Stock</h1><p class="page-subtitle">Manage real product quantities, pricing and store availability.</p></div><div class="flex gap-2"><a href="{{ route('products.transfers') }}" class="btn-secondary">⇄ Stock Transfer</a><div class="flex items-center gap-2">
+    <a href="{{ route('products.excel.export') }}" class="btn-secondary">Export</a>
+    <button onclick="document.getElementById('import-dialog').showModal()" class="btn-secondary">Import</button>
+    <a href="{{ route('products.create') }}" class="btn-primary">＋ Add Product</a>
+</div></div>
+<dialog id="import-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <div class="p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="text-base font-black text-slate-900" style="color: #0f172a !important;">Import Products</h2>
+            <button type="button" class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('import-dialog').close()">✕</button>
+        </div>
+        <form method="POST" action="{{ route('products.excel.import') }}" enctype="multipart/form-data">
+            @csrf<x-submission-token/>
+            <div class="space-y-4">
+                <div>
+                    <label class="label" style="color: #475569 !important;">Upload Excel/CSV File</label>
+                    <input type="file" name="file" required accept=".csv,.xlsx,.xls" class="w-full text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="btn-secondary text-xs" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('import-dialog').close()">Cancel</button>
+                    <button type="submit" class="btn-primary text-xs">Upload & Import</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog></div>
     <x-flash/>
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         @foreach([['Total Products',$stats['products'],'#2563eb','▣'],['Products In Stock',$stats['in_stock'],'#16a34a','✓'],['Low / Out of Stock',$stats['low'],'#f97316','!'],['Stock Value','Rs. '.number_format($stats['value'],2),'#7c3aed','Rs']] as $stat)

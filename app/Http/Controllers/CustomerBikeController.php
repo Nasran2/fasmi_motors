@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\CustomerExport;
+use App\Imports\CustomerImport;
 use App\Models\Account;
 use App\Models\Bike;
 use App\Models\BikeIntake;
@@ -11,11 +13,14 @@ use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Technician;
+use App\Services\AccountService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Maatwebsite\Excel\Facades\Excel;
 
 class CustomerBikeController extends Controller
 {
@@ -56,7 +61,7 @@ class CustomerBikeController extends Controller
             'address' => ['nullable', 'max:500'], 'nic' => ['nullable', 'max:30'], 'email' => ['nullable', 'email', 'max:150'],
             'customer_type' => ['required', Rule::in(['Normal Customer', 'Regular Customer', 'Credit Customer', 'Technician Bike Owner'])],
             'active' => ['required', 'boolean'], 'bike_number' => ['nullable', 'max:30', function ($attribute, $value, $fail) {
-                $bike = \App\Models\Bike::with('customer')->where('number', $value)->first();
+                $bike = Bike::with('customer')->where('number', $value)->first();
                 if ($bike) {
                     $name = $bike->customer->name ?: 'Walk-in Customer';
                     $fail("This bike ({$bike->model}) is already registered to {$name} ({$bike->customer->phone}).");
@@ -113,7 +118,7 @@ class CustomerBikeController extends Controller
 
     public function bikes(Request $request)
     {
-        $query = Bike::query()->with(['customer', 'technician'])
+        $query = Bike::query()->select('bikes.*')->with(['customer', 'technician'])
             ->selectSub($this->bikeDueSubquery(), 'due_amount')
             ->selectSub(BikeIntake::selectRaw('max(created_at)')->whereColumn('bike_id', 'bikes.id'), 'last_job_date')
             ->selectSub(BikeIntake::select('next_service_date')->whereColumn('bike_id', 'bikes.id')->whereNotNull('next_service_date')->latest('created_at')->limit(1), 'next_service_date')
@@ -138,7 +143,7 @@ class CustomerBikeController extends Controller
     {
         $data = $request->validate([
             'number' => ['required', 'max:30', function ($attribute, $value, $fail) {
-                $bike = \App\Models\Bike::with('customer')->where('number', $value)->first();
+                $bike = Bike::with('customer')->where('number', $value)->first();
                 if ($bike) {
                     $name = $bike->customer->name ?: 'Walk-in Customer';
                     $fail("This bike ({$bike->model}) is already registered to {$name} ({$bike->customer->phone}).");
@@ -182,7 +187,7 @@ class CustomerBikeController extends Controller
     public function dues(Request $request)
     {
         $query = Invoice::query()->with(['customer', 'jobCard.intake.bike.customer', 'payments'])
-            ->where('due_amount', '>', 0)
+            ->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)
             ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))->orWhereHas('jobCard.intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"))))
             ->when($request->from, fn ($q, $date) => $q->whereDate('due_date', '>=', $date))
             ->when($request->to, fn ($q, $date) => $q->whereDate('due_date', '<=', $date))
@@ -199,40 +204,16 @@ class CustomerBikeController extends Controller
     public function receivePayment(Request $request, Invoice $invoice, WorkshopService $service)
     {
         $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0', 'lte:'.$invoice->due_amount], 'method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR'])], 'account_id' => ['required', 'exists:accounts,id'], 'note' => ['nullable', 'max:500']]);
-        DB::transaction(function () use ($data, $invoice, $service) {
-            $payment = $invoice->payments()->create(['amount' => $data['amount'], 'method' => $data['method'], 'reference' => $data['note'] ?? null, 'paid_at' => now(), 'created_by' => auth()->id()]);
-            
-            $amount = (float) $data['amount'];
-            $previousTotalPaid = (float) $invoice->paid_amount;
-            $newTotalPaid = $previousTotalPaid + $amount;
-            
-            $total = (float) $invoice->total;
-            $partsExpected = (float) $invoice->parts_amount;
-            $serviceExpected = max(0, $total - $partsExpected);
-            
-            $servicePaidBefore = min($previousTotalPaid, $serviceExpected);
-            $servicePaidAfter = min($newTotalPaid, $serviceExpected);
-            $servicePaidThis = $servicePaidAfter - $servicePaidBefore;
-            
-            $partsPaidBefore = max(0, $previousTotalPaid - $serviceExpected);
-            $partsPaidAfter = max(0, $newTotalPaid - $serviceExpected);
-            $partsPaidThis = $partsPaidAfter - $partsPaidBefore;
-            
-            $remaining = max(0, (float) $invoice->due_amount - $amount);
-            $invoice->update(['paid_amount' => $newTotalPaid, 'due_amount' => $remaining, 'status' => $remaining <= 0 ? 'Paid' : 'Partially Paid']);
-            
-            $accountService = app(\App\Services\AccountService::class);
-            $accountId = $data['account_id'];
-            
-            if ($partsPaidThis > 0) {
-                $accountService->recordTransaction('spare_parts', 'income', $partsPaidThis, "Parts income for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
+        DB::transaction(function () use ($data, $invoice) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
+            $amount = round((float) $data['amount'], 2);
+            if ($invoice->status === 'Cancelled' || $amount > (float) $invoice->due_amount) {
+                throw ValidationException::withMessages(['amount' => 'Payment exceeds the current invoice due.']);
             }
-            if ($servicePaidThis > 0) {
-                $accountService->recordTransaction('main', 'income', $servicePaidThis, "Workshop income for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
-            }
-            if (! in_array($data['method'], ['Cash'])) {
-                $accountService->recordTransaction('bank', 'income', $amount, "Bank receipt for due collection {$invoice->number}", $payment, $data['method'], null, $accountId);
-            }
+            $remaining = round((float) $invoice->due_amount - $amount, 2);
+            $invoice->update(['paid_amount' => round((float) $invoice->paid_amount + $amount, 2), 'due_amount' => $remaining, 'status' => $remaining <= 0 ? 'Paid' : 'Partially Paid']);
+            $payment = $invoice->payments()->create(['number' => 'RCPT-'.Str::upper(Str::random(12)), 'account_id' => $data['account_id'], 'amount' => $amount, 'balance_after' => $remaining, 'status' => 'Completed', 'method' => $data['method'], 'note' => $data['note'] ?? null, 'paid_at' => now(), 'created_by' => auth()->id()]);
+            app(AccountService::class)->receiveInvoicePayment($invoice, $payment);
         });
 
         return back()->with('success', 'Payment received and account ledger updated.');
@@ -330,5 +311,21 @@ class CustomerBikeController extends Controller
     private function bikeDueExistsSubquery()
     {
         return DB::table('invoices')->selectRaw('1')->join('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->whereColumn('bike_intakes.bike_id', 'bikes.id')->where('invoices.due_amount', '>', 0);
+    }
+
+    public function export()
+    {
+        return Excel::download(new CustomerExport, 'customers.xlsx');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,csv,xls',
+        ]);
+
+        Excel::import(new CustomerImport, $request->file('file'));
+
+        return back()->with('success', 'Customers imported successfully!');
     }
 }

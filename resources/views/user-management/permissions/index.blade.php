@@ -41,7 +41,7 @@
       <div class="lg:col-span-3 space-y-6">
         
         <form method="POST" action="{{ route('user-management.permissions.update') }}" class="space-y-6">
-          @csrf
+          @csrf<x-submission-token/>
           <input type="hidden" name="role_id" value="{{ $selectedRole->id }}">
 
           <div class="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">

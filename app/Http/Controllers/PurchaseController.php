@@ -119,11 +119,7 @@ class PurchaseController extends Controller
                 $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $data['supplier_id'], 'purchase_id' => $purchase->id, 'account_id' => $account->id, 'payment_date' => $data['purchase_date'], 'amount' => $paid, 'balance_after' => Supplier::findOrFail($data['supplier_id'])->balance, 'payment_method' => $data['payment_method'], 'status' => 'Completed', 'note' => 'Initial purchase payment', 'created_by' => auth()->id()]);
 
                 $accountService = app(AccountService::class);
-                if (in_array($data['payment_method'], ['Cash'])) {
-                    $accountService->recordTransaction('cash', 'expense', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], null, $account->id);
-                } else {
-                    $accountService->recordTransaction('bank', 'expense', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], null, $account->id);
-                }
+                $accountService->outgoing('spare_parts', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], $data['purchase_date'], 'purchase');
             }
 
             return $purchase;
@@ -151,6 +147,10 @@ class PurchaseController extends Controller
             return back()->with('error', 'This purchase is already cancelled.');
         }
         DB::transaction(function () use ($purchase, $data, $service) {
+            $purchase = Purchase::lockForUpdate()->findOrFail($purchase->id);
+            if ($purchase->status !== 'Completed') {
+                return;
+            }
             $purchase->load(['items', 'payments.account', 'returns']);
             foreach ($purchase->items as $item) {
                 $remaining = (float) $item->quantity - (float) $item->returned_quantity;
@@ -163,9 +163,8 @@ class PurchaseController extends Controller
             foreach ($purchase->payments->where('status', 'Completed') as $payment) {
                 $reversal = min((float) $payment->amount, max(0, (float) $payment->amount - $cashRefunds));
                 if ($reversal > 0) {
-                    if (in_array($payment->payment_method, ['Cash'])) {
-                        $accountService->recordTransaction('cash', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
-                    } else {
+                    $accountService->recordTransaction('spare_parts', 'income', $reversal, "Reversal of {$purchase->number}", $payment, $payment->payment_method);
+                    if ($payment->payment_method !== 'Cash') {
                         $accountService->recordTransaction('bank', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
                     }
                 }
@@ -225,6 +224,10 @@ class PurchaseController extends Controller
             return back()->with('error', 'This return is already processed.');
         }
         DB::transaction(function () use ($return, $service) {
+            $return = PurchaseReturn::lockForUpdate()->findOrFail($return->id);
+            if ($return->status !== 'Pending') {
+                return;
+            }
             $return->load(['item', 'purchase']);
             $item = PurchaseItem::lockForUpdate()->findOrFail($return->purchase_item_id);
             if ((float) $return->quantity > (float) $item->quantity - (float) $item->returned_quantity) {
@@ -233,7 +236,17 @@ class PurchaseController extends Controller
             $service->adjustStock($return->store_id, $item->product_id, -(float) $return->quantity, 'purchase_return', $return, $return->reason, $item->stock_batch_id, $item->cost_price, $item->selling_price);
             $item->increment('returned_quantity', (float) $return->quantity);
             $purchase = Purchase::lockForUpdate()->findOrFail($return->purchase_id);
+            if ($purchase->status !== 'Completed') {
+                throw ValidationException::withMessages(['purchase_id' => 'Cancelled purchases cannot be returned.']);
+            }
             if ($return->refund_type !== 'Replacement') {
+                if ($return->refund_type === 'Cash refund') {
+                    if ((float) $return->return_value > (float) $purchase->paid_amount) {
+                        throw ValidationException::withMessages(['refund_type' => 'A cash refund cannot exceed the purchase payments retained by the supplier. Use supplier credit for unpaid goods.']);
+                    }
+                    $purchase->paid_amount = round((float) $purchase->paid_amount - (float) $return->return_value, 2);
+                    $purchase->save();
+                }
                 $purchase->increment('returned_amount', (float) $return->return_value);
                 $purchase->due_amount = max(0, (float) $purchase->total_amount - (float) $purchase->returned_amount - (float) $purchase->paid_amount);
                 $purchase->payment_status = $purchase->due_amount <= 0 ? 'Paid' : ((float) $purchase->paid_amount > 0 ? 'Partial' : 'Due');
@@ -243,7 +256,7 @@ class PurchaseController extends Controller
                 $accountService = app(AccountService::class);
                 // Currently refund to Cash or Bank depending on method, default to Cash since we don't have payment method for return directly. We'll assume Cash or let the user see it in cash book.
                 // Assuming it's cash based on "Cash refund"
-                $accountService->recordTransaction('cash', 'income', (float) $return->return_value, "Supplier refund {$return->number}", $return, 'Cash', null, $return->account_id);
+                $accountService->recordTransaction('spare_parts', 'income', (float) $return->return_value, "Supplier refund {$return->number}", $return, 'Cash');
             }
             $return->update(['status' => 'Approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         });
@@ -301,6 +314,9 @@ class PurchaseController extends Controller
             $supplier = Supplier::lockForUpdate()->findOrFail($data['supplier_id']);
             $amountLeft = (float) $data['amount'];
             $targets = Purchase::where('supplier_id', $supplier->id)->where('status', 'Completed')->where('due_amount', '>', 0)->when($data['purchase_id'] ?? null, fn ($q, $id) => $q->whereKey($id))->orderBy('due_date')->lockForUpdate()->get();
+            if (! empty($data['purchase_id']) && $targets->isEmpty()) {
+                throw ValidationException::withMessages(['purchase_id' => 'Select an unpaid active purchase belonging to this supplier.']);
+            }
             if ($amountLeft > (float) $targets->sum('due_amount') + max(0, (float) $supplier->opening_due - (float) $supplier->opening_advance)) {
                 throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the current supplier due.']);
             }
@@ -310,6 +326,7 @@ class PurchaseController extends Controller
                 $purchase->decrement('due_amount', $applied);
                 $purchase->refresh();
                 $purchase->update(['payment_status' => (float) $purchase->due_amount <= 0 ? 'Paid' : 'Partial']);
+                $this->recordSupplierPayment($data, $supplier, $applied, $purchase->id);
                 $amountLeft -= $applied;
                 if ($amountLeft <= 0) {
                     break;
@@ -317,18 +334,17 @@ class PurchaseController extends Controller
             }
             if ($amountLeft > 0) {
                 $supplier->update(['opening_due' => max(0, (float) $supplier->opening_due - $amountLeft)]);
-            }
-            $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $data['purchase_id'] ?? null, 'account_id' => $data['account_id'], 'payment_date' => $data['payment_date'], 'amount' => $data['amount'], 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-
-            $accountService = app(AccountService::class);
-            if (in_array($data['payment_method'], ['Cash'])) {
-                $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], null, $data['account_id']);
-            } else {
-                $accountService->recordTransaction('bank', 'expense', (float) $data['amount'], "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], null, $data['account_id']);
+                $this->recordSupplierPayment($data, $supplier, $amountLeft, null);
             }
         });
 
         return back()->with('success', 'Supplier payment saved; due and account ledger updated.');
+    }
+
+    private function recordSupplierPayment(array $data, Supplier $supplier, float $amount, ?int $purchaseId): void
+    {
+        $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $purchaseId, 'account_id' => $data['account_id'], 'payment_date' => $data['payment_date'], 'amount' => $amount, 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
+        app(AccountService::class)->outgoing('spare_parts', $amount, "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], $data['payment_date'], 'purchase');
     }
 
     public function dues(Request $request)

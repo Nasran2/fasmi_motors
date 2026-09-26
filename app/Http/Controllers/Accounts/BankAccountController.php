@@ -24,6 +24,7 @@ class BankAccountController extends BaseAccountController
     {
         $r->validate(['reason' => 'required|min:5|max:500']);
         abort_unless($transaction->account_type === 'bank', 403);
+        abort_if($transaction->reference_type !== null, 422, 'Cancel the source record to reverse its ledger and related balances together.');
         $s->reverseTransaction($transaction, $r->reason);
 
         return back()->with('success', 'Transaction reversed with a compensating entry.');

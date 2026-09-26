@@ -26,7 +26,7 @@
       {{-- Left Columns: Settings Forms --}}
       <div class="lg:col-span-2 space-y-6">
         <form method="POST" action="{{ route('system-settings.save') }}" class="space-y-6">
-          @csrf
+          @csrf<x-submission-token/>
           <input type="hidden" name="group" value="sms">
 
           {{-- Section 1: Gateway Credentials --}}
@@ -138,7 +138,7 @@
           <h3 class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Test SMS Gateway</h3>
           
           <form method="POST" action="{{ route('system-settings.test-sms') }}" class="space-y-4">
-            @csrf
+            @csrf<x-submission-token/>
             <div>
               <label class="label">Recipient Phone Number</label>
               <input type="text" name="phone" required placeholder="e.g. 0771234567" class="w-full">
@@ -154,5 +154,60 @@
       </div>
 
     </div>
+
+    {{-- SMS Logs Section --}}
+    <div class="panel mt-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-black text-slate-800">📋 SMS Delivery Logs</h2>
+        <span class="text-xs text-slate-500">Showing most recent messages</span>
+      </div>
+      
+      <div class="overflow-hidden rounded-xl border border-slate-200">
+        <div class="overflow-x-auto">
+          <table class="data-table w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Phone Number</th>
+                <th>Message Snippet</th>
+                <th>Status</th>
+                <th>Response / Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse($smsLogs as $log)
+                <tr>
+                  <td class="whitespace-nowrap font-medium">{{ $log->created_at->format('d M Y, h:i A') }}</td>
+                  <td class="whitespace-nowrap text-slate-600">{{ $log->phone }}</td>
+                  <td class="max-w-[300px] truncate" title="{{ $log->message }}">{{ $log->message }}</td>
+                  <td class="whitespace-nowrap">
+                    @if(strtolower($log->status) === 'success' || strtolower($log->status) === 'sent')
+                      <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Success</span>
+                    @elseif(strtolower($log->status) === 'failed')
+                      <span class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">Failed</span>
+                    @else
+                      <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">{{ $log->status }}</span>
+                    @endif
+                  </td>
+                  <td class="max-w-[200px] truncate text-xs text-slate-500" title="{{ $log->api_response }}">
+                    {{ $log->api_response ?: 'No response data' }}
+                  </td>
+                </tr>
+              @empty
+                <tr>
+                  <td colspan="5" class="py-8 text-center text-slate-500">No SMS logs recorded yet.</td>
+                </tr>
+              @endforelse
+            </tbody>
+          </table>
+        </div>
+        @if($smsLogs->hasPages())
+          <div class="border-t border-slate-100 p-4">
+            {{ $smsLogs->links() }}
+          </div>
+        @endif
+      </div>
+    </div>
+
   </div>
 </x-layouts::app>

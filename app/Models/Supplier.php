@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\ShopScoped;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Supplier extends Model
 {
@@ -40,6 +41,6 @@ class Supplier extends Model
     public function getBalanceAttribute(): float
     {
         return (float) $this->opening_due - (float) $this->opening_advance
-            + (float) $this->purchases()->where('status', 'Completed')->sum('due_amount');
+            + (float) $this->purchases()->where('status', 'Completed')->sum(DB::raw('total_amount - returned_amount - paid_amount'));
     }
 }

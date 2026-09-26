@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ExpenseDrawingController extends Controller
 {
@@ -103,18 +104,14 @@ class ExpenseDrawingController extends Controller
         $base = ['account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|gt:0', 'payment_method' => 'required|in:Cash,Bank Transfer,Card,Cheque,QR', 'reference_number' => 'nullable|max:100', 'cheque_number' => 'nullable|required_if:payment_method,Cheque|max:100', 'note' => 'nullable|max:1000'];
         $specific = $module === 'expense' ? ['expense_date' => 'required|date', 'category' => 'required|max:100', 'description' => 'required|max:1000', 'vendor' => 'nullable|max:150', 'attachment' => 'nullable|file|max:4096'] : ['drawing_date' => 'required|date', 'person_name' => 'required|max:150', 'drawing_type' => 'required|max:100'];
         $v = $r->validate($base + $specific);
-        $account = Account::findOrFail($v['account_id']);
-        $accountType = match ($account->code) {
-            Account::systemCode('spare_parts') => 'spare_parts',
-            Account::systemCode('bank') => 'bank',
-            default => $v['payment_method'] === 'Cash' ? 'cash' : 'main',
-        };
-        $balance = $service->getRunningBalance($accountType);
-        if ($balance < (float) $v['amount']) {
-            return back()->withInput()->withErrors(['amount' => 'Amount is higher than the selected account balance.']);
-        }
-
+        $accountType = $module === 'expense' ? 'main' : 'spare_parts';
         DB::transaction(function () use ($v, $module, $service, $accountType, $r) {
+            $account = Account::systemAccount($accountType);
+            Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $v['account_id'] = $account->id;
+            if ($service->getRunningBalance($accountType) < (float) $v['amount']) {
+                throw ValidationException::withMessages(['amount' => 'Amount is higher than the operational account balance.']);
+            }
             if ($module === 'expense') {
                 if ($r->hasFile('attachment')) {
                     $v['attachment'] = $r->file('attachment')->store('expense-receipts', 'public');
@@ -126,6 +123,9 @@ class ExpenseDrawingController extends Controller
             }
 
             $service->recordTransaction($accountType, $module, (float) $v['amount'], ($module === 'expense' ? $v['description'] : "Drawing by {$v['person_name']}"), $record, $v['payment_method'], $v['note'] ?? null, $v['account_id'], $v[$module.'_date'], $module === 'expense' ? $v['category'] : $v['drawing_type']);
+            if ($v['payment_method'] !== 'Cash') {
+                $service->recordTransaction('bank', $module, (float) $v['amount'], ucfirst($module)." {$record->number}", $record, $v['payment_method'], null, null, $v[$module.'_date']);
+            }
 
             return $record;
         });
@@ -141,6 +141,8 @@ class ExpenseDrawingController extends Controller
         $record = ($module === 'expense' ? Expense::findOrFail($id) : Drawing::findOrFail($id));
         abort_if($record->status === 'Cancelled', 422);
         DB::transaction(function () use ($record, $r, $service) {
+            $record = $record->newQuery()->lockForUpdate()->findOrFail($record->id);
+            abort_if($record->status === 'Cancelled', 422);
             AccountTransaction::where('reference_type', $record->getMorphClass())->where('reference_id', $record->id)->where('status', 'active')->get()->each(fn ($t) => $service->reverseTransaction($t, $r->reason));
             $record->update(['status' => 'Cancelled', 'cancel_reason' => $r->reason, 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
         });

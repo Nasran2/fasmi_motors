@@ -108,7 +108,7 @@ $ledgerRoutes=[
         
         <!-- Left: Account Balances -->
         <form method="POST" action="{{ route('accounts.daily-closing.store') }}" class="w-full xl:flex-1 space-y-6">
-            @csrf
+            @csrf<x-submission-token/>
             <input type="hidden" name="closing_date" value="{{ $date }}">
             
             <div class="grid gap-6 md:grid-cols-2">
@@ -284,7 +284,7 @@ $ledgerRoutes=[
     <!-- Reopen Form -->
     @if($closing?->status === 'closed')
     <form method="POST" action="{{ route('accounts.daily-closing.reopen', $closing) }}" class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm max-w-2xl">
-        @csrf
+        @csrf<x-submission-token/>
         <div class="flex items-start gap-4">
             <div class="p-2 bg-amber-100 rounded-xl text-amber-600">
                 <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
@@ -407,7 +407,7 @@ $ledgerRoutes=[
 @foreach($accountLabels as $type => $label)
 <dialog id="deduction-{{$type}}" class="w-[min(480px,94vw)] rounded-2xl p-0 shadow-2xl backdrop:bg-slate-900/40 bg-white m-auto">
     <form method="POST" enctype="multipart/form-data" action="{{ route('accounts.daily-closing.adjustment') }}" class="flex flex-col bg-white rounded-2xl">
-        @csrf
+        @csrf<x-submission-token/>
         <input type="hidden" name="account_type" value="{{ $type }}">
         <input type="hidden" name="action" value="deduction">
         
@@ -451,7 +451,7 @@ $ledgerRoutes=[
 
 <dialog id="adjustment-{{$type}}" class="w-[min(480px,94vw)] rounded-2xl p-0 shadow-2xl backdrop:bg-slate-900/40 bg-white m-auto">
     <form method="POST" enctype="multipart/form-data" action="{{ route('accounts.daily-closing.adjustment') }}" class="flex flex-col bg-white rounded-2xl">
-        @csrf
+        @csrf<x-submission-token/>
         <input type="hidden" name="account_type" value="{{ $type }}">
         
         <div class="flex items-start justify-between p-5 border-b border-slate-100">

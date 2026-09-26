@@ -26,7 +26,7 @@
       <div class="lg:col-span-2 space-y-6">
         
         <form method="POST" action="{{ route('system-settings.save') }}" class="space-y-6">
-          @csrf
+          @csrf<x-submission-token/>
           <input type="hidden" name="group" value="backup">
 
           {{-- Section 1: Backup rules --}}
@@ -46,8 +46,6 @@
                 <label class="label">Backup Storage Target</label>
                 <select name="backup_storage" class="w-full">
                   <option value="Local Only" @selected(($settings['backup_storage'] ?? 'Local Only') === 'Local Only')>Local Server Storage</option>
-                  <option value="Google Drive" @selected(($settings['backup_storage'] ?? '') === 'Google Drive')>Google Drive Cloud</option>
-                  <option value="AWS S3" @selected(($settings['backup_storage'] ?? '') === 'AWS S3')>Amazon S3 Bucket</option>
                 </select>
               </div>
               <div>
@@ -57,7 +55,7 @@
               <div class="space-y-2 pt-6">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
                   <input type="hidden" name="backup_auto" value="0">
-                  <input type="checkbox" name="backup_auto" value="1" @checked(($settings['backup_auto'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+                  <input type="checkbox" name="backup_auto" value="1" @checked(($settings['backup_auto'] ?? 0) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                   <span class="text-xs font-bold text-slate-700">Enable automatic background backups</span>
                 </label>
               </div>
@@ -77,7 +75,7 @@
           <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h3 class="text-sm font-black text-slate-800">Saved Backup Points</h3>
             <form method="POST" action="{{ route('system-settings.create-backup') }}">
-              @csrf
+              @csrf<x-submission-token/>
               <button type="submit" class="btn-secondary !min-h-8 !py-1 !px-2.5 text-xs text-red-600 font-black">Create Backup Now</button>
             </form>
           </div>
@@ -102,9 +100,10 @@
                   <td class="px-4 py-3"><span class="badge-sent">{{ $row['status'] }}</span></td>
                   <td class="px-4 py-3 text-right">
                     <div class="inline-flex gap-1">
-                      <button onclick="openRestoreModal('{{ $row['id'] }}')" class="btn-secondary !py-0.5 !px-2 text-xs text-blue-600">Restore</button>
-                      <form method="POST" action="{{ route('system-settings.delete-backup') }}" class="inline">
-                        @csrf
+                      <span class="text-xs text-slate-500">Offline restore</span>
+                      <form method="POST" action="{{ route('system-settings.delete-backup') }}" class="inline" data-confirm="Permanently delete this database backup?">
+                        @csrf<x-submission-token/>
+                        <input type="hidden" name="backup_id" value="{{ $row['id'] }}">
                         <button type="submit" class="btn-secondary !py-0.5 !px-2 text-xs text-red-600">Delete</button>
                       </form>
                     </div>
@@ -134,7 +133,7 @@
       <p class="text-xs text-slate-500 mb-4">You are about to restore the database. This action is irreversible.</p>
       
       <form method="POST" action="{{ route('system-settings.restore-backup') }}" class="space-y-4">
-        @csrf
+        @csrf<x-submission-token/>
         <div>
           <label class="label">Admin Password <span class="required-star">*</span></label>
           <input type="password" name="password" required class="w-full">

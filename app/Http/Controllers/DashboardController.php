@@ -13,61 +13,91 @@ use App\Models\Product;
 use App\Models\ServiceReminder;
 use App\Models\Technician;
 use App\Services\AccountService;
+use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): View
+    public function __invoke(Request $request): View
     {
         if (session('shop_mode', 'workshop') === 'helmet') {
-            return $this->helmetDashboard();
+            return $this->helmetDashboard($request);
         }
 
+        [$startDate, $endDate, $previousStartDate, $previousEndDate, $filterLabel, $periodName] = $this->getFilterDates($request);
         $today = today();
-        $yesterday = $today->copy()->subDay();
         $finalStatuses = ['Completed', 'Billed', 'Delivered', 'Cancelled'];
         $completedStatuses = ['Completed', 'Billed', 'Delivered'];
 
-        $todayIntakes = BikeIntake::whereDate('created_at', $today)->count();
-        $yesterdayIntakes = BikeIntake::whereDate('created_at', $yesterday)->count();
+        $todayIntakes = BikeIntake::whereBetween('created_at', [$startDate, $endDate])->count();
+        $yesterdayIntakes = BikeIntake::whereBetween('created_at', [$previousStartDate, $previousEndDate])->count();
         $activeJobs = JobCard::whereNotIn('status', $finalStatuses)->count();
-        $completedToday = JobCard::whereIn('status', $completedStatuses)->whereDate('updated_at', $today)->count();
-        $completedYesterday = JobCard::whereIn('status', $completedStatuses)->whereDate('updated_at', $yesterday)->count();
-        $todaySales = (float) Invoice::whereDate('created_at', $today)->sum('total');
-        $yesterdaySales = (float) Invoice::whereDate('created_at', $yesterday)->sum('total');
-        $partsSales = (float) JobCard::query()->join('invoices', 'invoices.job_card_id', '=', 'job_cards.id')->whereDate('invoices.created_at', $today)->sum('job_cards.parts_total');
-        $yesterdayPartsSales = (float) JobCard::query()->join('invoices', 'invoices.job_card_id', '=', 'job_cards.id')->whereDate('invoices.created_at', $yesterday)->sum('job_cards.parts_total');
+        $completedToday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$startDate, $endDate])->count();
+        $completedYesterday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$previousStartDate, $previousEndDate])->count();
+        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('total');
+        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('total');
+        $partsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('parts_amount');
+        $yesterdayPartsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('parts_amount');
 
         $accountService = app(AccountService::class);
         $mainBalance = $accountService->getRunningBalance('main');
         $bankBalance = $accountService->getRunningBalance('bank');
         $partsBalance = $accountService->getRunningBalance('spare_parts');
 
-        $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
+        $pendingDue = (float) Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->sum('due_amount');
 
         $cards = [
-            ['label' => 'Today Bike Intake', 'value' => $todayIntakes, 'format' => 'number', 'trend' => $this->trend($todayIntakes, $yesterdayIntakes), 'note' => 'vs yesterday', 'icon' => 'bike', 'tone' => 'red'],
+            ['label' => 'Bike Intake', 'value' => $todayIntakes, 'format' => 'number', 'trend' => $this->trend($todayIntakes, $yesterdayIntakes), 'note' => $filterLabel, 'icon' => 'bike', 'tone' => 'red'],
             ['label' => 'Active Job Cards', 'value' => $activeJobs, 'format' => 'number', 'trend' => null, 'note' => 'currently in workshop', 'icon' => 'clipboard', 'tone' => 'orange'],
-            ['label' => 'Completed Repairs', 'value' => $completedToday, 'format' => 'number', 'trend' => $this->trend($completedToday, $completedYesterday), 'note' => 'vs yesterday', 'icon' => 'check', 'tone' => 'green'],
-            ['label' => 'Today Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => 'vs yesterday', 'icon' => 'money', 'tone' => 'blue'],
-            ['label' => 'Spare Parts Sales', 'value' => $partsSales, 'format' => 'money', 'trend' => $this->trend($partsSales, $yesterdayPartsSales), 'note' => 'vs yesterday', 'icon' => 'parts', 'tone' => 'violet'],
+            ['label' => 'Completed Repairs', 'value' => $completedToday, 'format' => 'number', 'trend' => $this->trend($completedToday, $completedYesterday), 'note' => $filterLabel, 'icon' => 'check', 'tone' => 'green'],
+            ['label' => 'Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => $filterLabel, 'icon' => 'money', 'tone' => 'blue'],
+            ['label' => 'Spare Parts Sales', 'value' => $partsSales, 'format' => 'money', 'trend' => $this->trend($partsSales, $yesterdayPartsSales), 'note' => $filterLabel, 'icon' => 'parts', 'tone' => 'violet'],
             ['label' => 'Main Account Balance', 'value' => $mainBalance, 'format' => 'money', 'trend' => null, 'note' => 'live ledger balance', 'icon' => 'wallet', 'tone' => 'teal'],
+            ['label' => 'Spare Parts / Owner Balance', 'value' => $partsBalance, 'format' => 'money', 'trend' => null, 'note' => 'live ledger balance', 'icon' => 'wallet', 'tone' => 'green'],
             ['label' => 'Bank Balance', 'value' => $bankBalance, 'format' => 'money', 'trend' => null, 'note' => 'live ledger balance', 'icon' => 'bank', 'tone' => 'navy'],
-            ['label' => 'Pending Due Amount', 'value' => $pendingDue, 'format' => 'money', 'trend' => null, 'note' => Invoice::where('due_amount', '>', 0)->count().' unpaid invoices', 'icon' => 'warning', 'tone' => 'rose'],
+            ['label' => 'Pending Due Amount', 'value' => $pendingDue, 'format' => 'money', 'trend' => null, 'note' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->count().' unpaid invoices', 'icon' => 'warning', 'tone' => 'rose'],
         ];
 
-        $weekStart = now()->startOfWeek();
-        $salesSeries = collect(range(0, 6))->map(function (int $offset) use ($weekStart): array {
-            $date = $weekStart->copy()->addDays($offset);
+        $daysDiff = $startDate->diffInDays($endDate);
+        if ($daysDiff <= 1) {
+            $salesSeries = collect(range(0, 23))->map(function (int $hour) use ($startDate): array {
+                $startHour = $startDate->copy()->startOfDay()->addHours($hour);
+                $endHour = $startHour->copy()->endOfHour();
 
-            return ['label' => $date->format('D'), 'date' => $date->format('d M'), 'value' => (float) Invoice::whereDate('created_at', $date)->sum('total')];
-        });
+                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startHour, $endHour])->sum('total')];
+            });
+        } elseif ($daysDiff <= 31) {
+            $salesSeries = collect(range(0, (int) $daysDiff))->map(function (int $offset) use ($startDate): array {
+                $date = $startDate->copy()->addDays($offset);
+
+                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereDate('created_at', $date)->sum('total')];
+            });
+        } else {
+            $monthsDiff = $startDate->diffInMonths($endDate);
+            $salesSeries = collect(range(0, (int) $monthsDiff))->map(function (int $offset) use ($startDate, $endDate): array {
+                $monthStart = $startDate->copy()->addMonths($offset)->startOfMonth();
+                $monthEnd = $monthStart->copy()->endOfMonth();
+                if ($monthEnd->gt($endDate)) {
+                    $monthEnd = $endDate->copy();
+                }
+
+                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$monthStart, $monthEnd])->sum('total')];
+            });
+        }
+
         $salesMaximum = max(1, (float) $salesSeries->max('value'));
-        $salesPoints = $salesSeries->values()->map(fn (array $item, int $index): string => ($index * 100).','.round(155 - (($item['value'] / $salesMaximum) * 125), 2))->implode(' ');
-        $weekSales = (float) $salesSeries->sum('value');
-        $lastWeekSales = (float) Invoice::whereBetween('created_at', [$weekStart->subWeek(), $weekStart->subSecond()])->sum('total');
+        $salesPoints = $salesSeries->values()->map(function (array $item, int $index) use ($salesMaximum, $salesSeries): string {
+            $x = $salesSeries->count() > 1 ? ($index / ($salesSeries->count() - 1)) * 600 : 300;
 
-        $statusCounts = JobCard::selectRaw('status, COUNT(*) total')->groupBy('status')->pluck('total', 'status');
+            return $x.','.round(155 - (($item['value'] / $salesMaximum) * 125), 2);
+        })->implode(' ');
+
+        $periodSales = $todaySales;
+        $previousPeriodSales = $yesterdaySales;
+        $averageDailySales = $daysDiff > 0 ? $periodSales / ($startDate->copy()->startOfDay()->diffInDays($endDate->copy()->startOfDay()) + 1) : $periodSales;
+
+        $statusCounts = JobCard::whereBetween('created_at', [$startDate, $endDate])->selectRaw('status, COUNT(*) total')->groupBy('status')->pluck('total', 'status');
         $jobSegments = collect([
             ['label' => 'Pending', 'count' => (int) collect(['Received', 'Assigned', 'On Hold'])->sum(fn (string $status) => $statusCounts->get($status, 0)), 'color' => '#ef172d'],
             ['label' => 'In Progress', 'count' => (int) $statusCounts->get('In Progress', 0), 'color' => '#f7902f'],
@@ -89,8 +119,8 @@ class DashboardController extends Controller
         $technicianPerformance = Technician::query()
             ->select('technicians.id', 'technicians.name')
             ->selectRaw('COALESCE(SUM(invoices.total), 0) performance_total')
-            ->leftJoin('job_cards', function ($join) use ($weekStart): void {
-                $join->on('job_cards.main_technician_id', '=', 'technicians.id')->where('job_cards.created_at', '>=', $weekStart->startOfMonth());
+            ->leftJoin('job_cards', function ($join) use ($startDate, $endDate): void {
+                $join->on('job_cards.main_technician_id', '=', 'technicians.id')->whereBetween('job_cards.created_at', [$startDate, $endDate]);
             })
             ->leftJoin('invoices', 'invoices.job_card_id', '=', 'job_cards.id')
             ->where('technicians.active', true)->whereNull('technicians.deleted_at')
@@ -102,31 +132,32 @@ class DashboardController extends Controller
             ->orderBy('stocks_sum_quantity')->limit(5)->get();
 
         $attendance = Technician::where('active', true)->with(['attendance' => fn ($query) => $query->whereDate('date', $today)])->orderBy('name')->limit(6)->get();
-        $collectionToday = (float) Payment::whereDate('paid_at', $today)->sum('amount');
-        $expensesToday = (float) Expense::whereDate('expense_date', $today)->sum('amount');
+        $collectionToday = (float) Payment::whereBetween('paid_at', [$startDate, $endDate])->sum('amount');
+        $expensesToday = (float) Expense::whereBetween('expense_date', [$startDate, $endDate])->sum('amount');
 
         return view('dashboard', [
             'cards' => $cards,
             'salesSeries' => $salesSeries,
             'salesPoints' => $salesPoints,
             'salesMaximum' => $salesMaximum,
-            'weekSales' => $weekSales,
-            'averageDailySales' => $weekSales / max(1, min(7, now()->dayOfWeekIso)),
-            'weekTrend' => $this->trend($weekSales, $lastWeekSales),
+            'weekSales' => $periodSales,
+            'averageDailySales' => $averageDailySales,
+            'weekTrend' => $this->trend($periodSales, $previousPeriodSales),
             'jobSegments' => $jobSegments,
             'jobTotal' => (int) $jobSegments->sum('count'),
             'jobGradient' => $jobGradient,
             'technicianPerformance' => $technicianPerformance,
             'performanceMaximum' => $performanceMaximum,
-            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->latest()->limit(5)->get(),
+            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->latest()->limit(7)->get(),
             'lowStock' => $lowStock,
             'reminders' => ServiceReminder::with('bike.customer')->where('status', 'Pending')->whereNotNull('due_date')->orderBy('due_date')->limit(4)->get(),
             'attendance' => $attendance,
-            'recentTransactions' => AccountTransaction::with('account')->whereIn('account_id', Account::pluck('id'))->latest('transaction_date')->limit(5)->get(),
+            'recentTransactions' => AccountTransaction::with('account')->whereIn('account_id', Account::pluck('id'))->whereBetween('transaction_date', [$startDate, $endDate])->latest('transaction_date')->limit(5)->get(),
             'collectionToday' => $collectionToday,
             'expensesToday' => $expensesToday,
             'netToday' => $collectionToday - $expensesToday,
             'partsBalance' => $partsBalance,
+            'periodName' => $periodName,
         ]);
     }
 
@@ -139,53 +170,161 @@ class DashboardController extends Controller
         return round((((float) $current - (float) $previous) / abs((float) $previous)) * 100, 1);
     }
 
-    private function helmetDashboard(): View
+    private function helmetDashboard(Request $request): View
     {
-        $today = today();
-        $yesterday = $today->copy()->subDay();
+        [$startDate, $endDate, $previousStartDate, $previousEndDate, $filterLabel, $periodName] = $this->getFilterDates($request);
 
-        $todaySales = (float) Invoice::whereDate('created_at', $today)->sum('total');
-        $yesterdaySales = (float) Invoice::whereDate('created_at', $yesterday)->sum('total');
+        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('total');
+        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('total');
 
-        $pendingDue = (float) Invoice::where('due_amount', '>', 0)->sum('due_amount');
+        $pendingDue = (float) Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->sum('due_amount');
         $lowStockCount = Product::where('active', true)
             ->whereRaw('(select coalesce(sum(quantity), 0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')
             ->count();
 
         $cards = [
-            ['label' => 'Today Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => 'vs yesterday', 'icon' => 'money', 'tone' => 'blue'],
-            ['label' => 'Pending Due Amount', 'value' => $pendingDue, 'format' => 'money', 'trend' => null, 'note' => Invoice::where('due_amount', '>', 0)->count().' unpaid invoices', 'icon' => 'warning', 'tone' => 'rose'],
+            ['label' => 'Sales', 'value' => $todaySales, 'format' => 'money', 'trend' => $this->trend($todaySales, $yesterdaySales), 'note' => $filterLabel, 'icon' => 'money', 'tone' => 'blue'],
+            ['label' => 'Pending Due Amount', 'value' => $pendingDue, 'format' => 'money', 'trend' => null, 'note' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->count().' unpaid invoices', 'icon' => 'warning', 'tone' => 'rose'],
             ['label' => 'Helmet Products', 'value' => Product::count(), 'format' => 'number', 'trend' => null, 'note' => 'active products in catalog', 'icon' => 'parts', 'tone' => 'violet'],
             ['label' => 'Low Stock Items', 'value' => $lowStockCount, 'format' => 'number', 'trend' => null, 'note' => 'require attention', 'icon' => 'warning', 'tone' => 'orange'],
         ];
 
-        $weekStart = now()->startOfWeek();
-        $salesSeries = collect(range(0, 6))->map(function (int $offset) use ($weekStart): array {
-            $date = $weekStart->copy()->addDays($offset);
+        $daysDiff = $startDate->diffInDays($endDate);
+        if ($daysDiff <= 1) {
+            $salesSeries = collect(range(0, 23))->map(function (int $hour) use ($startDate): array {
+                $startHour = $startDate->copy()->startOfDay()->addHours($hour);
+                $endHour = $startHour->copy()->endOfHour();
 
-            return ['label' => $date->format('D'), 'date' => $date->format('d M'), 'value' => (float) Invoice::whereDate('created_at', $date)->sum('total')];
-        });
+                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startHour, $endHour])->sum('total')];
+            });
+        } elseif ($daysDiff <= 31) {
+            $salesSeries = collect(range(0, (int) $daysDiff))->map(function (int $offset) use ($startDate): array {
+                $date = $startDate->copy()->addDays($offset);
+
+                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereDate('created_at', $date)->sum('total')];
+            });
+        } else {
+            $monthsDiff = $startDate->diffInMonths($endDate);
+            $salesSeries = collect(range(0, (int) $monthsDiff))->map(function (int $offset) use ($startDate, $endDate): array {
+                $monthStart = $startDate->copy()->addMonths($offset)->startOfMonth();
+                $monthEnd = $monthStart->copy()->endOfMonth();
+                if ($monthEnd->gt($endDate)) {
+                    $monthEnd = $endDate->copy();
+                }
+
+                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$monthStart, $monthEnd])->sum('total')];
+            });
+        }
+
         $salesMaximum = max(1, (float) $salesSeries->max('value'));
-        $salesPoints = $salesSeries->values()->map(fn (array $item, int $index): string => ($index * 100).','.round(155 - (($item['value'] / $salesMaximum) * 125), 2))->implode(' ');
-        $weekSales = (float) $salesSeries->sum('value');
-        $lastWeekSales = (float) Invoice::whereBetween('created_at', [$weekStart->subWeek(), $weekStart->subSecond()])->sum('total');
+        $salesPoints = $salesSeries->values()->map(function (array $item, int $index) use ($salesMaximum, $salesSeries): string {
+            $x = $salesSeries->count() > 1 ? ($index / ($salesSeries->count() - 1)) * 600 : 300;
+
+            return $x.','.round(155 - (($item['value'] / $salesMaximum) * 125), 2);
+        })->implode(' ');
+
+        $periodSales = $todaySales;
+        $previousPeriodSales = $yesterdaySales;
+        $averageDailySales = $daysDiff > 0 ? $periodSales / ($startDate->copy()->startOfDay()->diffInDays($endDate->copy()->startOfDay()) + 1) : $periodSales;
 
         $lowStock = Product::withSum('stocks', 'quantity')->where('active', true)
             ->whereRaw('(select coalesce(sum(quantity), 0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock')
             ->orderBy('stocks_sum_quantity')->limit(5)->get();
 
-        $recentSales = Invoice::with('customer')->latest()->limit(5)->get();
+        $recentSales = Invoice::where('status', '!=', 'Cancelled')->with('customer')->latest()->limit(7)->get();
 
         return view('dashboard-helmet', [
             'cards' => $cards,
             'salesSeries' => $salesSeries,
             'salesPoints' => $salesPoints,
             'salesMaximum' => $salesMaximum,
-            'weekSales' => $weekSales,
-            'averageDailySales' => $weekSales / max(1, min(7, now()->dayOfWeekIso)),
-            'weekTrend' => $this->trend($weekSales, $lastWeekSales),
+            'weekSales' => $periodSales,
+            'averageDailySales' => $averageDailySales,
+            'weekTrend' => $this->trend($periodSales, $previousPeriodSales),
             'lowStock' => $lowStock,
             'recentSales' => $recentSales,
+            'periodName' => $periodName,
         ]);
+    }
+
+    private function getFilterDates(Request $request): array
+    {
+        $request->validate(['filter' => 'nullable|in:today,yesterday,this_week,last_week,this_month,last_month,this_year,last_year,custom', 'start_date' => 'nullable|required_if:filter,custom|date_format:Y-m-d', 'end_date' => 'nullable|required_if:filter,custom|date_format:Y-m-d|after_or_equal:start_date']);
+        $filter = $request->input('filter', 'today');
+        $now = today();
+        $periodName = 'Today';
+
+        switch ($filter) {
+            case 'this_week':
+            case 'last_week':
+                $startDate = $now->copy()->startOfWeek()->subWeeks($filter === 'last_week' ? 1 : 0);
+                $endDate = $startDate->copy()->endOfWeek();
+                $previousStartDate = $startDate->copy()->subWeek();
+                $previousEndDate = $endDate->copy()->subWeek();
+                $filterLabel = 'vs previous week';
+                $periodName = $filter === 'last_week' ? 'Last Week' : 'This Week';
+                break;
+            case 'yesterday':
+                $startDate = $now->copy()->subDay()->startOfDay();
+                $endDate = $now->copy()->subDay()->endOfDay();
+                $previousStartDate = $now->copy()->subDays(2)->startOfDay();
+                $previousEndDate = $now->copy()->subDays(2)->endOfDay();
+                $filterLabel = 'vs day before yesterday';
+                $periodName = 'Yesterday';
+                break;
+            case 'this_month':
+                $startDate = $now->copy()->startOfMonth();
+                $endDate = $now->copy()->endOfMonth();
+                $previousStartDate = $now->copy()->subMonth()->startOfMonth();
+                $previousEndDate = $now->copy()->subMonth()->endOfMonth();
+                $filterLabel = 'vs last month';
+                $periodName = 'This Month';
+                break;
+            case 'last_month':
+                $startDate = $now->copy()->subMonth()->startOfMonth();
+                $endDate = $now->copy()->subMonth()->endOfMonth();
+                $previousStartDate = $now->copy()->subMonths(2)->startOfMonth();
+                $previousEndDate = $now->copy()->subMonths(2)->endOfMonth();
+                $filterLabel = 'vs previous month';
+                $periodName = 'Last Month';
+                break;
+            case 'this_year':
+                $startDate = $now->copy()->startOfYear();
+                $endDate = $now->copy()->endOfYear();
+                $previousStartDate = $now->copy()->subYear()->startOfYear();
+                $previousEndDate = $now->copy()->subYear()->endOfYear();
+                $filterLabel = 'vs last year';
+                $periodName = 'This Year';
+                break;
+            case 'last_year':
+                $startDate = $now->copy()->subYear()->startOfYear();
+                $endDate = $now->copy()->subYear()->endOfYear();
+                $previousStartDate = $now->copy()->subYears(2)->startOfYear();
+                $previousEndDate = $now->copy()->subYears(2)->endOfYear();
+                $filterLabel = 'vs previous year';
+                $periodName = 'Last Year';
+                break;
+            case 'custom':
+                $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : $now->copy()->startOfDay();
+                $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : $now->copy()->endOfDay();
+                $days = $startDate->diffInDays($endDate);
+                $previousStartDate = $startDate->copy()->subDays($days + 1)->startOfDay();
+                $previousEndDate = $startDate->copy()->subDay()->endOfDay();
+                $filterLabel = 'vs previous period';
+                $periodName = $startDate->format('M d').' - '.$endDate->format('M d');
+                break;
+            case 'today':
+            default:
+                $filter = 'today';
+                $startDate = $now->copy()->startOfDay();
+                $endDate = $now->copy()->endOfDay();
+                $previousStartDate = $now->copy()->subDay()->startOfDay();
+                $previousEndDate = $now->copy()->subDay()->endOfDay();
+                $filterLabel = 'vs yesterday';
+                $periodName = 'Today';
+                break;
+        }
+
+        return [$startDate, $endDate, $previousStartDate, $previousEndDate, $filterLabel, $periodName];
     }
 }

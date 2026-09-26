@@ -15,3 +15,4 @@ Artisan::command('reminders:send-due', function () {
 })->purpose('Send due service reminders without duplicating successful messages');
 
 Schedule::command('reminders:send-due')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('database:backup --scheduled')->dailyAt('02:00')->withoutOverlapping();

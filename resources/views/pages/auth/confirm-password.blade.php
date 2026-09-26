@@ -16,7 +16,7 @@
         />
 
         <form method="POST" action="{{ route('password.confirm.store') }}" class="flex flex-col gap-6">
-            @csrf
+            @csrf<x-submission-token/>
 
             <flux:input
                 name="password"

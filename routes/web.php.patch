@@ -1,0 +1,4 @@
+--- routes/web.php
++++ routes/web.php
+@@ -102,4 +102,5 @@
++    Route::get('data-management', [\App\Http\Controllers\DataManagementController::class, 'index'])->name('data-management.index');

@@ -64,8 +64,8 @@
                   
                   <button onclick="openRoleModal('{{ $row->id }}', '{{ $row->name }}', '{{ $row->description }}')" class="btn-secondary !py-1 !px-2.5 text-xs" @disabled($row->name === 'Super Admin')>Edit</button>
 
-                  <form method="POST" action="{{ route('user-management.roles.destroy', $row->id) }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this role?')">
-                    @csrf @method('DELETE')
+                  <form method="POST" action="{{ route('user-management.roles.destroy', $row->id) }}" class="inline" data-confirm="Are you sure you want to delete this role?">
+                    @csrf<x-submission-token/> @method('DELETE')
                     <button type="submit" class="btn-secondary !py-1 !px-2.5 text-xs text-red-600 hover:bg-red-50" @disabled($row->users_count > 0 || in_array($row->name, ['Super Admin', 'Admin', 'Manager', 'Cashier', 'Store Keeper', 'Technician', 'Accountant']))>
                       Delete
                     </button>
@@ -84,7 +84,7 @@
       <h3 id="modalTitle" class="text-lg font-black text-slate-800 mb-4">🛡️ Add System Role</h3>
       
       <form id="roleForm" method="POST" action="{{ route('user-management.roles.store') }}" class="space-y-4">
-        @csrf
+        @csrf<x-submission-token/>
         <input type="hidden" name="_method" id="formMethod" value="POST">
         <div>
           <label class="label">Role Name <span class="required-star">*</span></label>

@@ -16,6 +16,7 @@ use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class JobCardController extends Controller
 {
@@ -126,12 +127,14 @@ class JobCardController extends Controller
 
     public function update(Request $r, JobCard $job)
     {
+        return DB::transaction(function () use ($r, $job) {
+        $job = JobCard::lockForUpdate()->findOrFail($job->id);
         $isCurrentLocked = in_array($job->status, ['Billed', 'Completed', 'Delivered']);
 
         if ($isCurrentLocked) {
             $v = $r->validate([
-                'status' => 'required|in:Billed,Completed,Delivered',
-                'change_reason' => 'required|string|max:500',
+                'status' => 'required|in:'.implode(',', self::statuses()),
+                'change_reason' => 'nullable|string|max:500',
             ]);
         } else {
             $v = $r->validate([
@@ -176,72 +179,170 @@ class JobCardController extends Controller
         $this->syncInvoice($job);
 
         return back()->with('success', 'Job card updated.');
+        });
     }
 
     public function addPart(Request $r, JobCard $job, WorkshopService $service)
-    {
-        $v = $r->validate(['product_id' => 'required|exists:products,id', 'store_id' => 'required|exists:stores,id', 'quantity' => 'required|numeric|min:0.01', 'unit_price' => 'required|numeric|min:0', 'discount' => 'nullable|numeric|min:0', 'stock_batch_id' => 'nullable|exists:stock_batches,id']);
-        $stock = StoreStock::where(['product_id' => $v['product_id'], 'store_id' => $v['store_id']])->value('quantity') ?? 0;
+{
+    return DB::transaction(function () use ($r, $job, $service) {
+    $job = JobCard::lockForUpdate()->findOrFail($job->id);
+    $v = $r->validate(['product_id' => 'required|exists:products,id', 'store_id' => 'required|exists:stores,id', 'quantity' => 'required|numeric|min:0.01', 'unit_price' => 'required|numeric|min:0', 'discount' => 'nullable|numeric|min:0', 'stock_batch_id' => 'nullable|exists:stock_batches,id']);
+    $stock = StoreStock::where(['product_id' => $v['product_id'], 'store_id' => $v['store_id']])->value('quantity') ?? 0;
+    $out = $stock < $v['quantity'];
+    $total = $v['quantity'] * $v['unit_price'] - ($v['discount'] ?? 0);
+
+    $batchId = $v['stock_batch_id'] ?? null;
+    $batch = null;
+    $costPrice = 0;
+    if (! $batchId) {
+        $batch = StockBatch::where('product_id', $v['product_id'])->where('store_id', $v['store_id'])->where('status', 'active')->where('available_qty', '>', 0)->orderBy('purchase_date', 'asc')->first();
+        if ($batch) {
+            $batchId = $batch->id;
+        }
+    } else {
+        $batch = StockBatch::find($batchId);
+    }
+
+    if ($batch) {
+        $costPrice = (float) $batch->cost_price;
+    } else {
+        $product = Product::find($v['product_id']);
+        $costPrice = (float) $product->cost_price;
+    }
+
+    $profit = $total - ((float) $v['quantity'] * $costPrice);
+
+    $v['stock_batch_id'] = $batchId;
+    $part = $job->parts()->create($v + ['total' => $total, 'out_of_stock' => $out, 'cost_price' => $costPrice, 'selling_price' => $v['unit_price'], 'profit' => $profit]);
+    $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}", $batchId, $costPrice, $v['unit_price']);
+    $job->update(['parts_total' => $job->parts()->sum('total')]);
+    $this->syncInvoice($job);
+
+    return back()->with('success', 'Part added successfully.');
+    });
+}
+
+public function addMultipleParts(\Illuminate\Http\Request $r, \App\Models\JobCard $job, \App\Services\WorkshopService $service)
+{
+    return DB::transaction(function () use ($r, $job, $service) {
+    $job = JobCard::lockForUpdate()->findOrFail($job->id);
+    $r->validate([
+        'parts' => 'required|array|min:1',
+        'parts.*.product_id' => 'required|exists:products,id',
+        'parts.*.store_id' => 'required|exists:stores,id',
+        'parts.*.quantity' => 'required|numeric|min:0.01',
+        'parts.*.unit_price' => 'required|numeric|min:0',
+        'parts.*.discount' => 'nullable|numeric|min:0',
+        'parts.*.stock_batch_id' => 'nullable|exists:stock_batches,id'
+    ]);
+
+    foreach ($r->parts as $v) {
+        $stock = \App\Models\StoreStock::where(['product_id' => $v['product_id'], 'store_id' => $v['store_id']])->value('quantity') ?? 0;
         $out = $stock < $v['quantity'];
         $total = $v['quantity'] * $v['unit_price'] - ($v['discount'] ?? 0);
 
         $batchId = $v['stock_batch_id'] ?? null;
         $costPrice = 0;
+        $batch = null;
+
         if (! $batchId) {
-            $batch = StockBatch::where('product_id', $v['product_id'])->where('store_id', $v['store_id'])->where('status', 'active')->where('available_qty', '>', 0)->orderBy('purchase_date', 'asc')->first();
+            $batch = \App\Models\StockBatch::where('product_id', $v['product_id'])->where('store_id', $v['store_id'])->where('status', 'active')->where('available_qty', '>', 0)->orderBy('purchase_date', 'asc')->first();
             if ($batch) {
                 $batchId = $batch->id;
             }
         } else {
-            $batch = StockBatch::find($batchId);
+            $batch = \App\Models\StockBatch::find($batchId);
         }
 
         if ($batch) {
             $costPrice = (float) $batch->cost_price;
         } else {
-            $product = Product::find($v['product_id']);
+            $product = \App\Models\Product::find($v['product_id']);
             $costPrice = (float) $product->cost_price;
         }
 
         $profit = $total - ((float) $v['quantity'] * $costPrice);
 
-        $part = $job->parts()->create($v + ['total' => $total, 'out_of_stock' => $out, 'stock_batch_id' => $batchId, 'cost_price' => $costPrice, 'selling_price' => $v['unit_price'], 'profit' => $profit]);
+        $part = $job->parts()->create([
+            'product_id' => $v['product_id'],
+            'store_id' => $v['store_id'],
+            'quantity' => $v['quantity'],
+            'unit_price' => $v['unit_price'],
+            'discount' => $v['discount'] ?? 0,
+            'total' => $total,
+            'out_of_stock' => $out,
+            'stock_batch_id' => $batchId,
+            'cost_price' => $costPrice,
+            'selling_price' => $v['unit_price'],
+            'profit' => $profit
+        ]);
+
         $service->adjustStock($v['store_id'], $v['product_id'], -$v['quantity'], 'job_issue', $part, "Issued to {$job->number}", $batchId, $costPrice, $v['unit_price']);
+    }
+
+    $job->update(['parts_total' => $job->parts()->sum('total')]);
+    $this->syncInvoice($job);
+
+    return back()->with('success', 'Parts added successfully.');
+    });
+}
+    public function updatePart(\Illuminate\Http\Request $r, \App\Models\JobCard $job, $partId, \App\Services\WorkshopService $service)
+    {
+        return DB::transaction(function () use ($r, $job, $partId, $service) {
+        $job = JobCard::lockForUpdate()->findOrFail($job->id);
+        $v = $r->validate([
+            'unit_price' => 'required|numeric|min:0',
+            'quantity' => 'required|numeric|min:0.01'
+        ]);
+
+        $part = $job->parts()->findOrFail($partId);
+        
+        $oldQty = $part->quantity;
+        $newQty = $v['quantity'];
+        $qtyDiff = $newQty - $oldQty;
+
+        // If quantity increased, check stock
+        if ($qtyDiff > 0) {
+            $stock = \App\Models\StoreStock::where(['product_id' => $part->product_id, 'store_id' => $part->store_id])->value('quantity') ?? 0;
+            $out = $stock < $qtyDiff;
+        } else {
+            $out = false; // Because we are returning stock
+        }
+
+        $total = $newQty * $v['unit_price'] - $part->discount;
+        $profit = $total - ($newQty * $part->cost_price);
+
+        $part->update([
+            'quantity' => $newQty,
+            'unit_price' => $v['unit_price'],
+            'total' => $total,
+            'profit' => $profit,
+            'out_of_stock' => $out || $part->out_of_stock
+        ]);
+
+        if ($qtyDiff != 0) {
+            $service->adjustStock($part->store_id, $part->product_id, -$qtyDiff, 'job_issue', $part, "Qty adjusted for {$job->number}", $part->stock_batch_id, $part->cost_price, $v['unit_price']);
+        }
+
         $job->update(['parts_total' => $job->parts()->sum('total')]);
         $this->syncInvoice($job);
 
-        $newStock = $stock - $v['quantity'];
-        return back()->with('success', $out ? "Part added with an out-of-stock warning (Current stock: {$newStock})." : "Part issued from stock (Current stock: {$newStock}).");
+        return back()->with('success', 'Part updated successfully.');
+        });
     }
 
-    public function updatePartPrice(Request $r, JobCard $job, JobCardPart $part)
+    public function deletePart(\App\Models\JobCard $job, $partId, \App\Services\WorkshopService $service)
     {
-        $v = $r->validate([
-            'unit_price' => 'required|numeric|min:0',
-        ]);
-
-        $price = (float) $v['unit_price'];
-        $qty = (float) $part->quantity;
-        $discount = (float) $part->discount;
-
-        $total = $qty * $price - $discount;
-        $profit = $total - ($qty * (float) $part->cost_price);
-
-        $part->update([
-            'unit_price' => $price,
-            'selling_price' => $price,
-            'total' => $total,
-            'profit' => $profit,
-        ]);
-
-        $job->update([
-            'parts_total' => $job->parts()->sum('total'),
-        ]);
+        return DB::transaction(function () use ($job, $partId, $service) {
+        $job = JobCard::lockForUpdate()->findOrFail($job->id);
+        $part = $job->parts()->findOrFail($partId);
+        $service->adjustStock($part->store_id, $part->product_id, $part->quantity, 'job_issue', $part, "Part deleted from {$job->number}", $part->stock_batch_id, $part->cost_price, $part->unit_price);
+        $part->delete();
+        $job->update(['parts_total' => $job->parts()->sum('total')]);
         $this->syncInvoice($job);
-
-        return back()->with('success', 'Part selling price updated successfully.');
+        return back()->with('success', 'Part deleted successfully.');
+        });
     }
-
     public function invoice(Request $r, JobCard $job, WorkshopService $service)
     {
         $v = $r->validate(['paid_amount' => 'required|numeric|min:0', 'payment_method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR,Credit/Due']);
@@ -250,7 +351,7 @@ class JobCardController extends Controller
         // Send Billing SMS to customer
         $invoice->loadMissing('customer');
         if ($invoice->customer && $invoice->customer->phone) {
-            $smsService = app(TextitSmsService::class);
+            $smsService = app(\App\Services\Sms\TextitSmsService::class);
             $smsService->send($invoice->customer->phone, "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), [
                 'module' => 'Billing',
                 'message_type' => 'Bill SMS',
@@ -276,7 +377,7 @@ class JobCardController extends Controller
         $old = $job->status;
         $job->update(['status' => $v['status']]);
 
-        DB::table('job_card_status_logs')->insert([
+        \Illuminate\Support\Facades\DB::table('job_card_status_logs')->insert([
             'job_card_id' => $job->id,
             'old_status' => $old,
             'new_status' => $v['status'],
@@ -290,15 +391,20 @@ class JobCardController extends Controller
 
         return back()->with('success', 'Job card unlocked and status set to '.$v['status']);
     }
-
-    private function syncInvoice(JobCard $job)
+private function syncInvoice(JobCard $job)
     {
         $job->loadMissing('invoice');
         if ($job->invoice) {
-            $invoice = $job->invoice;
+            $invoice = \App\Models\Invoice::lockForUpdate()->findOrFail($job->invoice->id);
+            if ($invoice->status === 'Cancelled') {
+                return;
+            }
             $total = $job->total;
             $subtotal = (float) $job->parts_total + (float) $job->service_total + (float) $job->labor_total + (float) $job->washing_total + (float) $job->other_total;
             $paid = (float) $invoice->paid_amount;
+            if ($total < $paid) {
+                throw ValidationException::withMessages(['total' => 'Cancel or refund payments before reducing the invoice below its settled amount.']);
+            }
             $due = max(0, $total - $paid);
 
             $invoice->update([
@@ -314,6 +420,7 @@ class JobCardController extends Controller
                 'due_amount' => $due,
                 'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'),
             ]);
+            app(\App\Services\AccountService::class)->reallocateInvoiceReceipts($invoice);
         }
     }
 

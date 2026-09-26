@@ -10,7 +10,7 @@
         <x-flash/>
 
         <form method="POST" action="{{ route('jobs.store') }}" class="panel space-y-5">
-            @csrf
+            @csrf<x-submission-token/>
             <div>
                 <label id="intake-search-label" class="label">Bike intake <span class="text-red-500">*</span></label>
                 <div id="intake-picker" class="relative" data-intake-picker>
@@ -64,7 +64,7 @@
                                         <svg class="option-check size-5 shrink-0 {{ (string) old('bike_intake_id', $selected) === (string) $i->id ? 'text-emerald-500' : 'hidden' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
                                     </button>
                                 @endforeach
-                                <div id="intake-no-results" class="hidden px-4 py-10 text-center"><span class="mx-auto grid size-11 place-items-center rounded-xl bg-slate-50 text-slate-400"><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8.5 11h5"/></svg></span><p class="mt-3 text-sm font-bold text-slate-700">No matching intake</p><p class="mt-1 text-xs text-slate-400">Try another bike number, customer or phone.</p></div>
+                                <div id="intake-no-results" class="hidden px-4 py-10 text-center"><span class="mx-auto grid size-11 place-items-center rounded-xl bg-slate-50 text-slate-400"><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8.5 11h5"/></svg></span><p class="mt-3 text-sm font-bold text-slate-700">No active intake found</p><p class="mt-1 text-xs text-slate-500 max-w-sm mx-auto">Job cards can only be created for active intakes. If this is a returning bike, you must record a new visit first.</p><a href="{{ route('intakes.create') }}" class="btn-primary mt-4 inline-flex"><svg class="size-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg> Create New Bike Intake</a></div>
                             </div>
                             <div class="border-t border-slate-100 bg-slate-50 px-4 py-2.5 text-[10px] text-slate-500"><strong>{{ $intakes->count() }}</strong> unassigned intake(s) available</div>
                         </div>

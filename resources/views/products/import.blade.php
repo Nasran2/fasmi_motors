@@ -9,7 +9,7 @@
         <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Rows needing attention:</strong><ul class="mt-2 list-disc space-y-1 pl-5">@foreach(session('import_errors') as $message)<li>{{ $message }}</li>@endforeach</ul></div>
     @endif
     <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
-        <form method="POST" action="{{ route('products.import.store') }}" enctype="multipart/form-data" class="panel space-y-5">@csrf
+        <form method="POST" action="{{ route('products.import.store') }}" enctype="multipart/form-data" class="panel space-y-5">@csrf<x-submission-token/>
             <div><h2 class="text-lg font-extrabold">Choose Product Spreadsheet</h2><p class="mt-1 text-sm text-slate-500">Excel (.xlsx, .xls) or CSV, up to 20 MB.</p></div>
             <label class="grid min-h-60 cursor-pointer place-items-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center transition hover:border-red-300 hover:bg-red-50/30">
                 <div><span class="mx-auto grid size-14 place-items-center rounded-2xl bg-white text-2xl shadow-sm">⇧</span><p class="mt-3 font-bold">Select product file</p><p id="import-file-name" class="mt-1 text-xs text-slate-500">No file selected</p></div>

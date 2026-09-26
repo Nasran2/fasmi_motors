@@ -18,7 +18,7 @@
 {{-- Due Payment Dialog --}}
 <dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <form method="POST" id="due-payment-form" class="p-6">
-        @csrf
+        @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
             <div>
                 <p class="text-xs font-bold uppercase tracking-wider text-red-600">Payment Collection</p>

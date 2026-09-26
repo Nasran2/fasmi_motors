@@ -31,7 +31,7 @@
           <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing.</p>
         </div>
         <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" class="flex-shrink-0">
-          @csrf
+          @csrf<x-submission-token/>
           <button class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm & Import {{ $previewBatch->total_rows }} Rows</button>
       </div>
 
@@ -115,7 +115,7 @@
 
     {{-- Mark/Edit Attendance Form --}}
     <form id="attendance-form" method="POST" action="{{ route('technicians.attendance.store') }}" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
-      @csrf
+      @csrf<x-submission-token/>
       <h2 id="formHeader" class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Mark or Edit Attendance</h2>
       
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -327,7 +327,7 @@
                 <div class="inline-flex gap-1.5">
                   <button type="button" onclick="editAttendance('{{ $row->technician_id }}', '{{ $row->date->toDateString() }}', '{{ $row->status }}', '{{ $row->in_time ? substr($row->in_time, 0, 5) : '' }}', '{{ $row->out_time ? substr($row->out_time, 0, 5) : '' }}', '{{ $row->ot_amount }}', '{{ $row->deduction_amount }}', '{{ $row->is_manual_edit }}', '{{ $row->note }}')" class="btn-secondary !py-0.5 !px-2 text-xs">Edit</button>
                   <form method="POST" action="{{ route('technicians.attendance.store') }}" class="inline">
-                    @csrf
+                    @csrf<x-submission-token/>
                     <input type="hidden" name="technician_id" value="{{ $row->technician_id }}">
                     <input type="hidden" name="date" value="{{ $row->date->toDateString() }}">
                     <input type="hidden" name="status" value="{{ $row->status }}">
@@ -362,7 +362,7 @@
         <button type="button" onclick="closeImportModal()" class="text-slate-400 hover:text-slate-600 transition">✕</button>
       </div>
       <form method="POST" action="{{ route('technicians.attendance.import.preview') }}" enctype="multipart/form-data" class="space-y-4">
-        @csrf
+        @csrf<x-submission-token/>
         <div>
           <label class="label">Upload File <span class="required-star">*</span></label>
           <input type="file" name="file" accept=".csv,.xlsx,.xls,.txt" required class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 cursor-pointer">
@@ -390,7 +390,7 @@
       <p class="text-xs text-slate-500 mb-4">Quickly log attendance punches for multiple technicians simultaneously.</p>
       
       <form method="POST" action="{{ route('technicians.attendance.store') }}" class="space-y-4">
-        @csrf
+        @csrf<x-submission-token/>
         
         <div>
           <label class="label">Select Technicians <span class="required-star">*</span></label>

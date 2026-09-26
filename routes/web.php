@@ -38,9 +38,12 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('search', GlobalSearchController::class)->name('search');
     Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
     Route::get('workshop/live-board', [LiveBoardController::class, 'fullscreen'])->name('live-board.fullscreen');
+    Route::get('workshop/live-board/customer', [LiveBoardController::class, 'customer'])->name('live-board.customer');
     Route::get('workshop/live-board/data', [LiveBoardController::class, 'data'])->name('live-board.data');
     Route::patch('workshop/live-board/jobs/{job}/status', [LiveBoardController::class, 'updateStatus'])->name('live-board.status');
     Route::get('customers', [CustomerBikeController::class, 'customers'])->name('customers.index');
+    Route::get('customers/export', [CustomerBikeController::class, 'export'])->name('customers.excel.export');
+    Route::post('customers/import', [CustomerBikeController::class, 'import'])->name('customers.excel.import');
     Route::get('customers/create', [CustomerBikeController::class, 'customerCreate'])->name('customers.create');
     Route::post('customers', [CustomerBikeController::class, 'customerStore'])->name('customers.store');
     Route::get('customers/{customer}', [CustomerBikeController::class, 'customerShow'])->name('customers.show');
@@ -58,7 +61,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('bike-intakes/lookup/{query}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
     Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->names('intakes');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
-    Route::post('job-cards/{job}/parts/{part}/update-price', [JobCardController::class, 'updatePartPrice'])->name('jobs.parts.update-price');
+    Route::post('job-cards/{job}/parts/multiple', [JobCardController::class, 'addMultipleParts'])->name('jobs.parts.store_multiple');
+    Route::post('job-cards/{job}/parts/{part}/update', [JobCardController::class, 'updatePart'])->name('jobs.parts.update');
+    Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');
     Route::resource('job-cards', JobCardController::class)->parameters(['job-cards' => 'job'])->only(['index', 'create', 'store', 'show', 'update'])->names('jobs');
@@ -79,6 +84,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('products/import', [ProductController::class, 'importForm'])->name('products.import');
     Route::post('products/import', [ProductController::class, 'importStore'])->name('products.import.store');
     Route::post('products/{product}/stock', [ProductController::class, 'stock'])->name('products.stock');
+    Route::get('products-export', [ProductController::class, 'export'])->name('products.excel.export');
+    Route::post('products-import', [ProductController::class, 'import'])->name('products.excel.import');
     Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'show']);
     Route::get('purchases/returns', [PurchaseController::class, 'returns'])->name('purchases.returns');
     Route::post('purchases/returns', [PurchaseController::class, 'returnStore'])->name('purchases.returns.store');
@@ -318,6 +325,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
 
         return redirect()->back();
     })->name('shop.switch');
+
+    Route::get('data-management', [\App\Http\Controllers\DataManagementController::class, 'index'])->name('data-management.index');
 });
 
 Route::get('invoice/{token}', PublicInvoiceController::class)->name('invoices.public');

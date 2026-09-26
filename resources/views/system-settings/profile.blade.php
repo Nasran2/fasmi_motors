@@ -21,7 +21,7 @@
     <x-flash />
 
     <form method="POST" action="{{ route('system-settings.save') }}" enctype="multipart/form-data" class="grid gap-6 lg:grid-cols-3">
-      @csrf
+      @csrf<x-submission-token/>
       <input type="hidden" name="group" value="business">
 
       {{-- Left Columns: Forms --}}

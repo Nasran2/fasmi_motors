@@ -13,7 +13,7 @@
 
         <form method="POST" action="{{ route('intakes.update', $intake) }}" class="space-y-5">
             @method('PUT')
-            @csrf
+            @csrf<x-submission-token/>
             <div class="grid min-w-0 gap-5 xl:grid-cols-12">
                 <section class="panel min-w-0 xl:col-span-8">
                     <div class="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4">
@@ -64,7 +64,7 @@
                 </aside>
             </div>
 
-            <section class="panel">
+            <section class="panel relative z-10">
                 <div class="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4"><span class="grid size-10 place-items-center rounded-xl bg-[#0b2447]/5 text-[#0b2447]"><x-dashboard-icon name="bike" class="size-5"/></span><div><h2 class="font-extrabold">Bike Condition & Intake Notes</h2><p class="mt-0.5 text-[11px] text-slate-400">Operational details, expected delivery and payment information.</p></div></div>
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <label><span class="label">Fuel level</span><select name="fuel_level" class="field"><option value="">Select level</option>@foreach(['Empty','Quarter','Half','Three quarters','Full'] as $fuel)<option @selected(old('fuel_level', $intake->fuel_level)===$fuel)>{{ $fuel }}</option>@endforeach</select></label>

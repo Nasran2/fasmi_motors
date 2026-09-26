@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Accounts\AccountTransferController;
 use App\Models\Account;
 use App\Models\Drawing;
 use App\Models\Expense;
@@ -34,11 +35,7 @@ class FinanceController extends Controller
             $e = Expense::create($v + ['vendor' => $r->vendor, 'note' => $r->note, 'created_by' => auth()->id()]);
 
             $accountService = app(AccountService::class);
-            if (in_array($v['payment_method'], ['Cash'])) {
-                $accountService->recordTransaction('cash', 'expense', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], null, $v['account_id']);
-            } else {
-                $accountService->recordTransaction('bank', 'expense', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], null, $v['account_id']);
-            }
+            $accountService->outgoing('main', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], $v['expense_date'], $v['category']);
         });
 
         return back()->with('success', 'Expense recorded in the ledger.');
@@ -52,7 +49,7 @@ class FinanceController extends Controller
 
             $accountService = app(AccountService::class);
             // Defaulting to cash for drawing if no method is specified in form, or bank if it's a bank account. We assume Cash here unless it's known to be bank.
-            $accountService->recordTransaction('cash', 'expense', (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'Cash', null, $v['account_id']);
+            $accountService->outgoing('spare_parts', (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'Cash', $v['drawing_date'], 'drawing');
         });
 
         return back()->with('success', 'Drawing recorded in the ledger.');
@@ -61,16 +58,10 @@ class FinanceController extends Controller
     public function transfer(Request $r, WorkshopService $service)
     {
         $v = $r->validate(['from_account_id' => ['required', 'exists:accounts,id', Rule::notIn([$r->to_account_id])], 'to_account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|min:0.01', 'transfer_date' => 'required|date']);
-        DB::transaction(function () use ($v, $r) {
-            $id = DB::table('account_transfers')->insertGetId($v + ['reference_number' => $r->reference_number, 'note' => $r->note, 'created_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+        $types = collect(['main', 'spare_parts', 'bank', 'cash'])->mapWithKeys(fn ($type) => [Account::systemAccount($type)?->id => $type]);
+        abort_unless($types->has($v['from_account_id']) && $types->has($v['to_account_id']), 422, 'Use the configured system accounts.');
+        $r->merge(['from_account' => $types[$v['from_account_id']], 'to_account' => $types[$v['to_account_id']], 'reference' => $r->reference_number]);
 
-            // This transfer method uses the old system but we should probably use the new transfer logic in AccountTransferController instead.
-            // For now, doing a basic fallback just in case it's called.
-            $accountService = app(AccountService::class);
-            $accountService->recordTransaction('main', 'expense', (float) $v['amount'], "Transfer #{$id} out", null, 'Transfer', null, $v['from_account_id']);
-            $accountService->recordTransaction('main', 'income', (float) $v['amount'], "Transfer #{$id} in", null, 'Transfer', null, $v['to_account_id']);
-        });
-
-        return back()->with('success', 'Account transfer completed.');
+        return app(AccountTransferController::class)->store($r, app(AccountService::class));
     }
 }

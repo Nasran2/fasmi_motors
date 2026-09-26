@@ -11,7 +11,7 @@
 
 <div class="space-y-5">
 <form method="POST" action="{{ route('sms.settings.update') }}">
-@csrf
+@csrf<x-submission-token/>
 
   {{-- Provider Details --}}
   <div class="panel">
@@ -112,7 +112,7 @@
 <div class="panel">
   <h2 class="mb-5 text-base font-extrabold">🧪 Send Test SMS</h2>
   <form method="POST" action="{{ route('sms.settings.test') }}" class="space-y-4">
-  @csrf
+  @csrf<x-submission-token/>
     <div>
       <label class="label" for="test_phone">Test Phone Number <span class="required-star">*</span></label>
       <input type="text" name="test_phone" id="test_phone" placeholder="0771234567" required>

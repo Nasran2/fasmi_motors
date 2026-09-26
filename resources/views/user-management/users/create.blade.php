@@ -20,7 +20,7 @@
       {{-- Form Column --}}
       <div class="lg:col-span-2 space-y-6">
         <form method="POST" action="{{ route('user-management.users.store') }}" class="space-y-6">
-          @csrf
+          @csrf<x-submission-token/>
 
           {{-- 1. Basic Information --}}
           <div class="panel bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">

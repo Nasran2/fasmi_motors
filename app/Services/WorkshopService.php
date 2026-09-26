@@ -41,11 +41,12 @@ class WorkshopService
     public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null): Invoice
     {
         return DB::transaction(function () use ($job, $paid, $method, $accountId) {
+            $job = JobCard::lockForUpdate()->findOrFail($job->id);
             if ($job->invoice) {
                 throw ValidationException::withMessages(['invoice' => 'This job card is already billed.']);
             }
             $total = $job->total;
-            if ($paid > $total) {
+            if ($paid < 0 || $paid > $total) {
                 throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the invoice total.']);
             }
             $invoice = $job->invoice()->create([
@@ -64,24 +65,8 @@ class WorkshopService
             if ($paid > 0) {
                 $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $paid, 'balance_after' => $invoice->due_amount, 'method' => $method, 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
             }
-            $partsExpected = (float) $job->parts_total;
-            $serviceExpected = max(0, $total - $partsExpected);
-
-            $servicePaid = min($paid, $serviceExpected);
-            $partsPaid = max(0, $paid - $servicePaid);
-
-            $accountService = app(AccountService::class);
-
-            if ($partsPaid > 0) {
-                $accountService->recordTransaction('spare_parts', 'income', $partsPaid, "Parts income for {$invoice->number}", $payment, $method, null, $accountId);
-            }
-            if ($servicePaid > 0) {
-                $accountService->recordTransaction('main', 'income', $servicePaid, "Workshop income for {$invoice->number}", $payment, $method, null, $accountId);
-            }
-            if ($paid > 0) {
-                if (! in_array($method, ['Cash'])) {
-                    $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for {$invoice->number}", $payment, $method, null, $accountId);
-                }
+            if ($payment) {
+                app(AccountService::class)->receiveInvoicePayment($invoice, $payment);
             }
             $job->update(['status' => 'Billed']);
             app(ServiceReminderService::class)->createForJob($job);
@@ -105,6 +90,9 @@ class WorkshopService
             if ($stockBatchId) {
                 $batch = StockBatch::lockForUpdate()->find($stockBatchId);
                 if ($batch) {
+                    if ($batch->product_id !== $productId || $batch->store_id !== $storeId || $batch->status !== 'active') {
+                        throw ValidationException::withMessages(['stock_batch_id' => 'The selected batch does not belong to this product and store.']);
+                    }
                     $newBatchQuantity = (float) $batch->available_qty + $quantity;
                     if ($newBatchQuantity < 0 && SettingValue::bool('negative_stock', false) === false) {
                         throw ValidationException::withMessages(['quantity' => 'Insufficient stock in the selected batch.']);

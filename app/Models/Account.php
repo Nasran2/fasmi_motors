@@ -55,7 +55,7 @@ class Account extends Model
     public function getBalanceAttribute(): float
     {
         return (float) $this->opening_balance
-            + (float) $this->transactions()->where('status', 'active')->sum('credit')
-            - (float) $this->transactions()->where('status', 'active')->sum('debit');
+            + (float) $this->transactions()->posted()->sum('credit')
+            - (float) $this->transactions()->posted()->sum('debit');
     }
 }

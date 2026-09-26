@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\User;
+use App\Services\AccountService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -16,15 +17,14 @@ class BaseAccountController extends Controller
     {
         [$from, $to, $range] = $this->range($request);
         $account = Account::systemAccount($accountType);
-        $base = AccountTransaction::with(['creator', 'account', 'reference'])->where('account_type', $accountType)
-            ->where('account_id', $account?->id)
-            ->whereBetween('transaction_date', [$from, $to])->where('status', 'active')
+        $base = AccountTransaction::with(['creator', 'account', 'reference'])->ledger($accountType)
+            ->whereBetween('transaction_date', [$from, $to])->posted()
             ->when($request->transaction_type, fn (Builder $q, string $type) => $q->where('transaction_type', $type))
             ->when($request->payment_method, fn (Builder $q, string $method) => $q->where('payment_method', $method))
             ->when($request->created_by, fn (Builder $q, string $user) => $q->where('created_by', $user))
             ->when($request->search, fn (Builder $q, string $term) => $q->where(fn (Builder $nested) => $nested->where('transaction_no', 'like', "%{$term}%")->orWhere('description', 'like', "%{$term}%")));
         $period = (clone $base)->orderBy('transaction_date')->orderBy('id')->get();
-        $opening = (float) ($account?->opening_balance ?? 0) + (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('credit') - (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('debit');
+        $opening = app(AccountService::class)->ledgerOpeningBalance($accountType, $from);
         $credit = (float) $period->sum('credit');
         $debit = (float) $period->sum('debit');
 

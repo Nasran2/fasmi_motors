@@ -20,7 +20,7 @@
                 </div>
 
                 <form method="POST" action="{{ route('system-settings.leave-holiday-settings.weekly') }}" class="mt-4">
-                    @csrf
+                    @csrf<x-submission-token/>
                     <div class="flex flex-wrap gap-4">
                         @foreach(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as $day)
                             <label class="relative flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 hover:bg-slate-100 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/50 has-[:checked]:ring-1 has-[:checked]:ring-blue-500">
@@ -50,9 +50,9 @@
                         </div>
                         <div class="flex gap-2">
                             <form method="POST" action="{{ route('system-settings.leave-holiday-settings.import-sl') }}">
-                                @csrf
+                                @csrf<x-submission-token/>
                                 <input type="hidden" name="year" value="{{ date('Y') }}">
-                                <button type="submit" class="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-50 px-5 font-bold text-blue-700 shadow-sm hover:bg-blue-100" onclick="return confirm('This will import Google Calendar public holidays for Sri Lanka for the current year. Proceed?');">
+                                <button type="submit" class="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-50 px-5 font-bold text-blue-700 shadow-sm hover:bg-blue-100" data-confirm="This will import Google Calendar public holidays for Sri Lanka for the current year. Proceed?">
                                     <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Import SL Holidays
                                 </button>
                             </form>
@@ -89,7 +89,7 @@
                                     </td>
                                     <td class="whitespace-nowrap px-6 py-4">
                                         <form method="POST" action="{{ route('system-settings.leave-holiday-settings.holidays.toggle', $holiday) }}">
-                                            @csrf @method('PATCH')
+                                            @csrf<x-submission-token/> @method('PATCH')
                                             <button type="submit" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none ring-slate-200 transition-colors focus:ring-4 {{ $holiday->is_leave_enabled ? 'bg-green-500' : 'bg-slate-300' }}">
                                                 <span class="sr-only">Toggle Leave</span>
                                                 <span class="absolute left-1 grid size-4 origin-left place-items-center rounded-full bg-white transition-all {{ $holiday->is_leave_enabled ? 'translate-x-5' : 'translate-x-0' }}"></span>
@@ -97,8 +97,8 @@
                                         </form>
                                     </td>
                                     <td class="whitespace-nowrap px-6 py-4 text-right">
-                                        <form method="POST" action="{{ route('system-settings.leave-holiday-settings.holidays.destroy', $holiday) }}" onsubmit="return confirm('Are you sure you want to delete this holiday?');">
-                                            @csrf @method('DELETE')
+                                        <form method="POST" action="{{ route('system-settings.leave-holiday-settings.holidays.destroy', $holiday) }}" data-confirm="Are you sure you want to delete this holiday?">
+                                            @csrf<x-submission-token/> @method('DELETE')
                                             <button type="submit" class="inline-flex size-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700" title="Delete">
                                                 <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
                                             </button>
@@ -125,7 +125,7 @@
 
     <dialog id="add-holiday-modal" class="w-full max-w-md rounded-3xl p-0 shadow-2xl backdrop:bg-slate-900/50 backdrop:backdrop-blur-sm">
         <form method="POST" action="{{ route('system-settings.leave-holiday-settings.holidays') }}">
-            @csrf
+            @csrf<x-submission-token/>
             <div class="border-b border-slate-100 p-6">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-bold text-slate-900">Add New Holiday</h3>

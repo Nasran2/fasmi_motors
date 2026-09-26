@@ -11,6 +11,7 @@ use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\JobCard;
+use App\Models\JobCardPart;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\ServiceReminder;
@@ -67,7 +68,7 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $q = Invoice::with(['customer', 'jobCard'])
+        $q = Invoice::where('status', '!=', 'Cancelled')->with(['customer', 'jobCard'])
             ->whereBetween('created_at', [$from, $to])
             ->when($r->invoice_type, fn ($q, $v) => $q->where('invoice_type', $v))
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
@@ -85,7 +86,7 @@ class ReportController extends Controller
             sum(discount) as total_discount
         ')->first();
 
-        $byType = Invoice::whereBetween('created_at', [$from, $to])
+        $byType = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])
             ->selectRaw('invoice_type, sum(total) as amount')
             ->groupBy('invoice_type')->pluck('amount', 'invoice_type');
 
@@ -103,10 +104,10 @@ class ReportController extends Controller
         $rows = JobCard::with(['intake.bike.customer', 'technician', 'invoice'])
             ->whereBetween('created_at', [$from, $to])
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
-            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('job_number', 'like', "%{$s}%")
-                ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
-                ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
+            ->when($r->technician, fn ($q, $v) => $q->where('main_technician_id', $v))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('number', 'like', "%{$s}%")
+                ->orWhereHas('intake.bike.customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$s}%"))
             ))
             ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
@@ -117,7 +118,7 @@ class ReportController extends Controller
             'pending' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Pending')->count(),
             'waiting_parts' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Waiting for Parts')->count(),
             'cancelled' => JobCard::whereBetween('created_at', [$from, $to])->where('status', 'Cancelled')->count(),
-            'total_income' => Invoice::whereBetween('created_at', [$from, $to])->where('invoice_type', 'Job Card Bill')->sum('total'),
+            'total_income' => Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Job Card Bill')->sum('total'),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -134,16 +135,16 @@ class ReportController extends Controller
 
         $rows = InvoiceItem::with(['invoice.customer', 'product'])
             ->whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])
-                ->where('invoice_type', 'Parts Sale')
+                ->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale')
             )
-            ->when($r->search, fn ($q, $s) => $q->whereHas('product', fn ($p) => $p->where('name', 'like', "%{$s}%")->orWhere('sku', 'like', "%{$s}%")
+            ->when($r->search, fn ($q, $s) => $q->whereHas('product', fn ($p) => $p->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%")
             ))
             ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total_sales' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * unit_price')),
-            'items_sold' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum('quantity'),
-            'total_cost' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * cost_price')),
+            'total_sales' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * unit_price')),
+            'items_sold' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum('quantity'),
+            'total_cost' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * cost_price')),
         ];
         $stats['gross_profit'] = $stats['total_sales'] - $stats['total_cost'];
 
@@ -156,28 +157,33 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $serviceIncome = Invoice::whereBetween('created_at', [$from, $to])
-            ->where('invoice_type', 'Job Card Bill')->sum('total');
+        $serviceIncome = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])
+            ->where('invoice_type', 'Job Card Bill')->sum(DB::raw('greatest(0, total - parts_amount)'));
 
-        $partsSales = Invoice::whereBetween('created_at', [$from, $to])
-            ->where('invoice_type', 'Parts Sale')->sum('total');
-        $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('invoice_type', 'Parts Sale')
+        $partsSales = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])
+            ->whereIn('invoice_type', ['Job Card Bill', 'Parts Sale'])->sum(DB::raw("case when invoice_type = 'Parts Sale' then total else least(total, parts_amount) end"));
+        $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale')
         )->sum(DB::raw('quantity * cost_price'));
+        $partsCost += JobCardPart::whereHas('jobCard.invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled'))->sum(DB::raw('quantity * cost_price'));
         $partsProfit = $partsSales - $partsCost;
 
-        $otherIncome = Invoice::whereBetween('created_at', [$from, $to])
-            ->whereNotIn('invoice_type', ['Job Card Bill', 'Parts Sale'])->sum('total');
+        $otherIncome = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])
+            ->whereNotIn('invoice_type', ['Job Card Bill', 'Parts Sale', 'Opening Due'])->sum('total');
 
         $totalIncome = $serviceIncome + $partsProfit + $otherIncome;
 
-        $totalExpenses = Expense::whereBetween('expense_date', [$from, $to])->sum('amount');
-        $totalDrawings = Drawing::whereBetween('drawing_date', [$from, $to])->sum('amount');
+        $salaryExpense = TechnicianSalarySheet::where('status', '!=', 'Draft')->whereBetween('period_end', [$from, $to])->sum(DB::raw('gross_salary + epf_company + etf_company'));
+        $totalExpenses = Expense::where('status', '!=', 'Cancelled')->whereBetween('expense_date', [$from, $to])->sum('amount') + $salaryExpense;
+        $totalDrawings = Drawing::where('status', '!=', 'Cancelled')->whereBetween('drawing_date', [$from, $to])->sum('amount');
 
-        $netProfit = $totalIncome - $totalExpenses - $totalDrawings;
+        $netProfit = $totalIncome - $totalExpenses;
 
-        $expenseByCategory = Expense::whereBetween('expense_date', [$from, $to])
+        $expenseByCategory = Expense::where('status', '!=', 'Cancelled')->whereBetween('expense_date', [$from, $to])
             ->selectRaw('category, sum(amount) as total')
             ->groupBy('category')->get();
+        if ($salaryExpense > 0) {
+            $expenseByCategory->push((object) ['category' => 'Salary and employer contributions', 'total' => $salaryExpense]);
+        }
 
         return view('reports.profit-loss', compact(
             'serviceIncome', 'partsSales', 'partsCost', 'partsProfit',
@@ -191,7 +197,7 @@ class ReportController extends Controller
     public function stock(Request $r)
     {
         [$from, $to] = $this->dateRange($r, 'all_time');
-        
+
         $rackOptions = Product::whereNotNull('rack_number')
             ->where('rack_number', '!=', '')
             ->distinct()
@@ -201,15 +207,15 @@ class ReportController extends Controller
 
         $q = Product::with(['category'])
             ->withSum('stocks', 'quantity')
-            ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($search) => $search->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%")))
             ->when($r->status === 'low', fn ($q) => $q->having('stocks_sum_quantity', '>', 0)->having('stocks_sum_quantity', '<=', DB::raw('products.minimum_stock')))
             ->when($r->status === 'out', fn ($q) => $q->having(DB::raw('COALESCE(stocks_sum_quantity,0)'), '<=', 0))
             ->when($r->status === 'in', fn ($q) => $q->having('stocks_sum_quantity', '>', DB::raw('products.minimum_stock')))
             ->when($r->filled('racks'), function ($q) use ($r) {
-                $q->where(function($q2) use ($r) {
-                    foreach($r->racks as $rack) {
+                $q->where(function ($q2) use ($r) {
+                    foreach ($r->racks as $rack) {
                         $q2->orWhere('rack_number', $rack)
-                           ->orWhere('rack_number', 'like', $rack . '.%');
+                            ->orWhere('rack_number', 'like', $rack.'.%');
                     }
                 });
             });
@@ -227,6 +233,7 @@ class ReportController extends Controller
                 $rack = str_replace('"', '""', $p->rack_number ?? '');
                 $csv .= "\"$name\",\"$barcode\",\"$category\",\"0\",\"$stock\",\"$cost\",\"$price\",\"$rack\"\n";
             }
+
             return response($csv)
                 ->header('Content-Type', 'text/csv')
                 ->header('Content-Disposition', 'attachment; filename="stock-report-export.csv"');
@@ -262,10 +269,10 @@ class ReportController extends Controller
             ->latest('purchase_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('total_amount'),
-            'paid' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('paid_amount'),
-            'due' => Purchase::whereBetween('purchase_date', [$from, $to])->sum('due_amount'),
-            'count' => Purchase::whereBetween('purchase_date', [$from, $to])->count(),
+            'total' => Purchase::where('status', 'Completed')->whereBetween('purchase_date', [$from, $to])->sum('total_amount'),
+            'paid' => Purchase::where('status', 'Completed')->whereBetween('purchase_date', [$from, $to])->sum('paid_amount'),
+            'due' => Purchase::where('status', 'Completed')->whereBetween('purchase_date', [$from, $to])->sum('due_amount'),
+            'count' => Purchase::where('status', 'Completed')->whereBetween('purchase_date', [$from, $to])->count(),
         ];
 
         return view('reports.purchases', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -280,15 +287,15 @@ class ReportController extends Controller
         $rows = Expense::with(['creator'])
             ->whereBetween('expense_date', [$from, $to])
             ->when($r->category, fn ($q, $v) => $q->where('category', $v))
-            ->when($r->search, fn ($q, $s) => $q->where('description', 'like', "%{$s}%")->orWhere('reference_number', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($search) => $search->where('description', 'like', "%{$s}%")->orWhere('reference_number', 'like', "%{$s}%")))
             ->latest('expense_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total' => Expense::whereBetween('expense_date', [$from, $to])->sum('amount'),
-            'count' => Expense::whereBetween('expense_date', [$from, $to])->count(),
+            'total' => Expense::where('status', '!=', 'Cancelled')->whereBetween('expense_date', [$from, $to])->sum('amount'),
+            'count' => Expense::where('status', '!=', 'Cancelled')->whereBetween('expense_date', [$from, $to])->count(),
         ];
 
-        $byCategory = Expense::whereBetween('expense_date', [$from, $to])
+        $byCategory = Expense::where('status', '!=', 'Cancelled')->whereBetween('expense_date', [$from, $to])
             ->selectRaw('category, sum(amount) as total')
             ->groupBy('category')->get();
 
@@ -305,12 +312,12 @@ class ReportController extends Controller
 
         $rows = Drawing::with(['creator'])
             ->whereBetween('drawing_date', [$from, $to])
-            ->when($r->search, fn ($q, $s) => $q->where('description', 'like', "%{$s}%")->orWhere('person_name', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($search) => $search->where('note', 'like', "%{$s}%")->orWhere('person_name', 'like', "%{$s}%")))
             ->latest('drawing_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total' => Drawing::whereBetween('drawing_date', [$from, $to])->sum('amount'),
-            'count' => Drawing::whereBetween('drawing_date', [$from, $to])->count(),
+            'total' => Drawing::where('status', '!=', 'Cancelled')->whereBetween('drawing_date', [$from, $to])->sum('amount'),
+            'count' => Drawing::where('status', '!=', 'Cancelled')->whereBetween('drawing_date', [$from, $to])->count(),
         ];
 
         return view('reports.drawings', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -322,7 +329,7 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = Invoice::with(['customer', 'bike'])
+        $rows = Invoice::where('status', '!=', 'Cancelled')->with(['customer', 'bike'])
             ->where('due_amount', '>', 0)
             ->when($r->search, fn ($q, $s) => $q->where('number', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%")->orWhere('phone', 'like', "%{$s}%")))
@@ -349,7 +356,7 @@ class ReportController extends Controller
             ->withSum('invoices', 'paid_amount')
             ->withCount('invoices')
             ->having('invoices_sum_due_amount', '>', 0)
-            ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%")->orWhere('phone', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($search) => $search->where('name', 'like', "%{$s}%")->orWhere('phone', 'like', "%{$s}%")))
             ->orderByDesc('invoices_sum_due_amount')
             ->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
@@ -489,19 +496,24 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $account = Account::where('type', 'main')->first();
+        $account = Account::systemAccount('main');
 
-        $rows = AccountTransaction::with(['creator'])
+        $rows = AccountTransaction::posted()->with(['creator'])
             ->when($account, fn ($q) => $q->where('account_id', $account?->id))
             ->whereBetween('transaction_date', [$from, $to])
             ->when($r->type, fn ($q, $v) => $q->where('transaction_type', $v))
-            ->when($r->search, fn ($q, $s) => $q->where('description', 'like', "%{$s}%")->orWhere('transaction_no', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($search) => $search->where('description', 'like', "%{$s}%")->orWhere('transaction_no', 'like', "%{$s}%")))
             ->orderBy('transaction_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
-            'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
+            'total_in' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_out' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
             'balance' => $account?->balance ?? 0,
+            'total_due' => Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])->where('due_amount', '>', 0)
+                ->get()
+                ->sum(function ($inv) {
+                    return (float) $inv->total > 0 ? round((float) $inv->due_amount * (1 - min(1, (float) $inv->parts_amount / (float) $inv->total)), 2) : 0;
+                }),
         ];
 
         return view('reports.main-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -513,9 +525,9 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $account = Account::where('type', 'spare_parts')->first();
+        $account = Account::systemAccount('spare_parts');
 
-        $rows = AccountTransaction::with(['creator'])
+        $rows = AccountTransaction::posted()->with(['creator'])
             ->when($account, fn ($q) => $q->where('account_id', $account?->id))
             ->whereBetween('transaction_date', [$from, $to])
             ->when($r->type, fn ($q, $v) => $q->where('transaction_type', $v))
@@ -523,9 +535,14 @@ class ReportController extends Controller
             ->orderBy('transaction_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
-            'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
+            'total_in' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_out' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
             'balance' => $account?->balance ?? 0,
+            'total_due' => Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])->where('due_amount', '>', 0)
+                ->get()
+                ->sum(function ($inv) {
+                    return (float) $inv->total > 0 ? round((float) $inv->due_amount * min(1, (float) $inv->parts_amount / (float) $inv->total), 2) : 0;
+                }),
         ];
 
         return view('reports.spare-parts-account', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -537,9 +554,9 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $account = Account::whereIn('type', ['bank', 'Bank'])->first();
+        $account = Account::systemAccount('bank');
 
-        $rows = AccountTransaction::with(['creator'])
+        $rows = AccountTransaction::posted()->with(['creator'])
             ->when($account, fn ($q) => $q->where('account_id', $account?->id))
             ->whereBetween('transaction_date', [$from, $to])
             ->when($r->type, fn ($q, $v) => $q->where('transaction_type', $v))
@@ -547,8 +564,8 @@ class ReportController extends Controller
             ->orderBy('transaction_date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total_in' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
-            'total_out' => AccountTransaction::when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
+            'total_in' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('credit'),
+            'total_out' => AccountTransaction::posted()->when($account, fn ($q) => $q->where('account_id', $account?->id))->whereBetween('transaction_date', [$from, $to])->sum('debit'),
             'balance' => $account?->balance ?? 0,
         ];
 
@@ -570,7 +587,7 @@ class ReportController extends Controller
             'total_days' => DailyClosing::whereBetween('closing_date', [$from, $to])->count(),
             'main_income' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum('main_income'),
             'spare_parts_income' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum('spare_parts_income'),
-            'total_expenses' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum(DB::raw('main_expense + spare_parts_expense + bank_expense + cash_expense')),
+            'total_expenses' => DailyClosing::whereBetween('closing_date', [$from, $to])->sum(DB::raw('main_expense + spare_parts_expense')),
         ];
 
         return view('reports.daily-closing', compact('rows', 'stats', 'from', 'to') + ['range' => $this->activeRange($r)]);
@@ -582,10 +599,10 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = ServiceReminder::with(['customer', 'bike'])
+        $rows = ServiceReminder::with('bike.customer')->whereBetween('due_date', [$from, $to])
             ->when($r->status, fn ($q, $v) => $q->where('status', $v))
-            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->whereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
-                ->orWhereHas('bike', fn ($b) => $b->where('plate_number', 'like', "%{$s}%"))
+            ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->whereHas('bike.customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('bike', fn ($b) => $b->where('number', 'like', "%{$s}%"))
             ))
             ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 

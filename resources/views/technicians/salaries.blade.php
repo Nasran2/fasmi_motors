@@ -31,7 +31,7 @@
 
     {{-- Generate Salary Form --}}
     <form id="salary-form" method="POST" action="{{ route('technicians.salaries.store') }}" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
-      @csrf
+      @csrf<x-submission-token/>
       <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Generate Salary Sheet</h2>
       <p class="text-xs text-slate-400">Attendance, OT slabs, commission, advances, own-bike repair installments and EPF/ETF are computed automatically.</p>
       
@@ -78,6 +78,7 @@
       </div>
 
       <div id="salary-cycle-preview" class="hidden rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+        <div id="bike-installment-inputs" class="mb-4 grid gap-3 sm:grid-cols-2"></div>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p class="text-[10px] font-black uppercase tracking-[.18em] text-blue-700">Salary Cycle</p>
@@ -176,8 +177,8 @@
                   <a href="{{ route('technicians.salaries.slip', $sheet) }}" class="btn-secondary !px-2.5 !py-1 text-xs">Slip</a>
                   @if($sheet->status === 'Draft')
                   <button type="button" onclick="populateForm({{ json_encode($sheet) }})" class="btn-secondary !px-2.5 !py-1 text-xs">Edit</button>
-                  <form method="POST" action="{{ route('technicians.salaries.destroy', $sheet) }}" onsubmit="return confirm('Delete this draft paysheet?')">
-                    @csrf @method('DELETE')
+                  <form method="POST" action="{{ route('technicians.salaries.destroy', $sheet) }}" data-confirm="Delete this draft paysheet?">
+                    @csrf<x-submission-token/> @method('DELETE')
                     <button type="submit" class="btn-secondary !px-2.5 !py-1 text-xs text-red-600">Delete</button>
                   </form>
                   <button type="button" onclick="openPaymentModal('finalize', '{{ route('technicians.salaries.finalize', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}')" class="btn-primary !px-2.5 !py-1 text-xs">Finalize</button>
@@ -404,6 +405,9 @@
         if (!technician_id || !month) return;
         
         const params = new URLSearchParams({ technician_id, month });
+        document.querySelectorAll('#bike-installment-inputs input').forEach(input => {
+            if (input.dataset.technician === technician_id && input.dataset.month === month) params.set(input.name, input.value);
+        });
         
         let manualDeductionTotal = 0;
         document.querySelectorAll('input[name^="manual_deductions"][name$="[amount]"]').forEach(input => {
@@ -412,10 +416,28 @@
         params.set('manual_deduction', manualDeductionTotal.toFixed(2));
         
         fetch(`{{ route('technicians.salaries.preview') }}?${params.toString()}`)
-        .then(res => res.json())
+        .then(async res => {
+            const data = await res.json();
+            if (!res.ok) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Salary preview could not be loaded.');
+            return data;
+        })
         .then(data => {
             document.getElementById('save-draft-btn').disabled = false;
             renderSalaryPreview(data);
+            const holder = document.getElementById('bike-installment-inputs');
+            holder.replaceChildren();
+            (data.pending_deductions?.items || []).filter(item => item.kind === 'bike_installment').forEach(item => {
+                const label = document.createElement('label');
+                label.className = 'label';
+                label.textContent = `${item.reference_no} - Remaining Rs. ${Number(item.remaining_balance).toFixed(2)}`;
+                const input = document.createElement('input');
+                Object.assign(input, { type: 'number', min: '0', max: item.remaining_balance, step: '0.01', name: `bike_installments[${item.id}]`, value: item.amount, className: 'field' });
+                input.dataset.technician = technician_id;
+                input.dataset.month = month;
+                input.addEventListener('change', loadSalaryPreview);
+                label.append(input);
+                holder.append(label);
+            });
             const notice = document.getElementById('existing-sheet-notice');
             if (data.existing_sheet_status) {
                 notice.classList.remove('hidden');
@@ -432,7 +454,10 @@
             } else {
                 notice.classList.add('hidden');
             }
-        }).catch(err => console.error(err));
+        }).catch(err => {
+            document.getElementById('save-draft-btn').disabled = true;
+            workshopNotify(err.message);
+        });
     }
 
     function renderSalaryPreview(data) {
@@ -502,7 +527,7 @@
 
   <flux:modal name="payment-modal" class="w-full max-w-[400px]" style="overflow: visible !important; background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important;">
       <form method="POST" action="" id="payment-form" class="space-y-4">
-          @csrf
+          @csrf<x-submission-token/>
           
           <h2 class="text-base font-black text-slate-800" id="payment-modal-title">Process Payment</h2>
           <p class="text-xs text-slate-500 pb-2" id="payment-modal-desc">Enter payment details.</p>

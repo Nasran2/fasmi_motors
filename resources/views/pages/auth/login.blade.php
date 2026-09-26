@@ -15,7 +15,7 @@
         @endif
 
         <form method="POST" action="{{ route('login.store') }}" class="mt-7 space-y-5">
-            @csrf
+            @csrf<x-submission-token/>
             <label class="group block">
                 <span class="sr-only">Username or email</span>
                 <span class="relative block">

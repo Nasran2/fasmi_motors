@@ -27,7 +27,7 @@
         
         {{-- Store Mode Settings --}}
         <form method="POST" action="{{ route('system-settings.save') }}" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-          @csrf
+          @csrf<x-submission-token/>
           <input type="hidden" name="group" value="stock">
           <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">⚙️ Store Options</h2>
           
@@ -113,7 +113,7 @@
           <h3 id="formTitle" class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Add Store Branch</h3>
           
           <form id="storeForm" method="POST" action="{{ route('system-settings.stores.store') }}" class="space-y-4">
-            @csrf
+            @csrf<x-submission-token/>
             <input type="hidden" name="_method" id="formMethod" value="POST">
             
             <div>

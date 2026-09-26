@@ -11,6 +11,29 @@
 <div class="space-y-4">
     <div class="flex flex-wrap items-end justify-between gap-3">
         <div><h1 class="text-2xl font-extrabold tracking-tight text-slate-950">Dashboard</h1><p class="mt-1 text-sm text-slate-500">Welcome back, manage today’s workshop operations with live business data.</p></div>
+        
+        <form method="GET" action="{{ route('dashboard') }}" x-data="{ filter: '{{ request('filter', 'today') }}' }" class="flex items-center gap-2">
+            <select name="filter" x-model="filter" @change="if(filter !== 'custom') $el.form.submit()" class="rounded-lg border-slate-200 text-sm focus:border-red-500 focus:ring-red-500">
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="this_week">This Week</option>
+                <option value="last_week">Last Week</option>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_year">This Year</option>
+                <option value="last_year">Last Year</option>
+                <option value="custom">Custom Range</option>
+            </select>
+            
+            <template x-if="filter === 'custom'">
+                <div class="flex items-center gap-2">
+                    <input type="date" name="start_date" value="{{ request('start_date') }}" class="rounded-lg border-slate-200 text-sm focus:border-red-500 focus:ring-red-500" required>
+                    <span class="text-slate-500">to</span>
+                    <input type="date" name="end_date" value="{{ request('end_date') }}" class="rounded-lg border-slate-200 text-sm focus:border-red-500 focus:ring-red-500" required>
+                    <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">Apply</button>
+                </div>
+            </template>
+        </form>
     </div>
     <x-flash/>
 
@@ -32,7 +55,7 @@
 
     <section class="grid gap-4 xl:grid-cols-12">
         <article class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_10px_35px_rgba(15,35,65,.055)] xl:col-span-5">
-            <div class="flex items-center justify-between"><h2 class="font-bold text-slate-900">Sales Overview <span class="font-normal text-slate-500">(This Week)</span></h2><span class="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500">Live invoices</span></div>
+            <div class="flex items-center justify-between"><h2 class="font-bold text-slate-900">Sales Overview <span class="font-normal text-slate-500">({{ $periodName }})</span></h2><span class="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500">Live invoices</span></div>
             <div class="mt-4 overflow-hidden">
                 <svg viewBox="0 0 600 180" class="h-44 w-full" preserveAspectRatio="none" aria-label="Weekly sales chart">
                     @foreach([30,72,114,155] as $y)<line x1="0" y1="{{ $y }}" x2="600" y2="{{ $y }}" stroke="#e8edf4" stroke-width="1"/>@endforeach
@@ -41,12 +64,12 @@
                     <polyline points="{{ $salesPoints }}" fill="none" stroke="#ef172d" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
                     @foreach($salesSeries as $index=>$sale)
                         @php($cy = round(155 - (($sale['value'] / $salesMaximum) * 125), 2))
-                        <circle cx="{{ $index*100 }}" cy="{{ $cy }}" r="5" fill="#ef172d" stroke="white" stroke-width="3"><title>{{ $sale['date'] }}: Rs. {{ number_format($sale['value'],2) }}</title></circle>
+                        <circle cx="{{ $salesSeries->count() > 1 ? $index * 600 / ($salesSeries->count() - 1) : 300 }}" cy="{{ $cy }}" r="5" fill="#ef172d" stroke="white" stroke-width="3"><title>{{ $sale['date'] }}: Rs. {{ number_format($sale['value'],2) }}</title></circle>
                     @endforeach
                 </svg>
-                <div class="grid grid-cols-7 text-center text-[10px] font-medium text-slate-500">@foreach($salesSeries as $sale)<span title="{{ $sale['date'] }}">{{ $sale['label'] }}</span>@endforeach</div>
+                <div class="flex justify-between gap-2 overflow-x-auto text-center text-[10px] font-medium text-slate-500">@foreach($salesSeries as $sale)<span title="{{ $sale['date'] }}">{{ $sale['label'] }}</span>@endforeach</div>
             </div>
-            <div class="mt-4 grid grid-cols-3 divide-x divide-slate-200 border-t border-slate-100 pt-3 text-center"><div><p class="text-[10px] text-slate-500">Total Sales</p><p class="mt-1 text-sm font-bold text-red-600">Rs. {{ number_format($weekSales,2) }}</p></div><div><p class="text-[10px] text-slate-500">Average Daily</p><p class="mt-1 text-sm font-bold">Rs. {{ number_format($averageDailySales,2) }}</p></div><div><p class="text-[10px] text-slate-500">vs Last Week</p><p class="mt-1 text-sm font-bold {{ $weekTrend>=0?'text-emerald-600':'text-red-600' }}">{{ $weekTrend>=0?'↗':'↘' }} {{ abs($weekTrend) }}%</p></div></div>
+            <div class="mt-4 grid grid-cols-3 divide-x divide-slate-200 border-t border-slate-100 pt-3 text-center"><div><p class="text-[10px] text-slate-500">Total Sales</p><p class="mt-1 text-sm font-bold text-red-600">Rs. {{ number_format($weekSales,2) }}</p></div><div><p class="text-[10px] text-slate-500">Average Daily</p><p class="mt-1 text-sm font-bold">Rs. {{ number_format($averageDailySales,2) }}</p></div><div><p class="text-[10px] text-slate-500">{{ $filterLabel ?? 'vs previous' }}</p><p class="mt-1 text-sm font-bold {{ $weekTrend>=0?'text-emerald-600':'text-red-600' }}">{{ $weekTrend>=0?'↗':'↘' }} {{ abs($weekTrend) }}%</p></div></div>
         </article>
 
         <article class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_10px_35px_rgba(15,35,65,.055)] xl:col-span-3">
@@ -58,7 +81,7 @@
         </article>
 
         <article class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_10px_35px_rgba(15,35,65,.055)] xl:col-span-4">
-            <div class="flex items-center justify-between"><h2 class="font-bold text-slate-900">Technician Performance <span class="font-normal text-slate-500">(This Month)</span></h2><a href="{{ route('technicians.index') }}" class="text-xs font-semibold text-red-600">View all</a></div>
+            <div class="flex items-center justify-between"><h2 class="font-bold text-slate-900">Technician Performance <span class="font-normal text-slate-500">({{ $periodName }})</span></h2><a href="{{ route('technicians.index') }}" class="text-xs font-semibold text-red-600">View all</a></div>
             <div class="mt-5 flex h-52 items-end gap-3 border-b border-slate-200 px-2">
                 @forelse($technicianPerformance as $technician)
                     @php($height = max(4, round(((float)$technician->performance_total/$performanceMaximum)*165)))

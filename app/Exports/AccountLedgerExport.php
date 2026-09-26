@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\Account;
 use App\Models\AccountTransaction;
+use App\Services\AccountService;
 use App\Support\SpreadsheetSafeText;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -15,6 +16,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, WithMapping, WithStyles
 {
+    private ?float $cashBalance = null;
+
     public function __construct(
         protected string $accountType,
         protected ?string $fromDate = null,
@@ -22,14 +25,13 @@ class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, 
         protected ?string $method = null
     ) {}
 
-    public function query()
+    public function query(): Builder
     {
         $account = Account::systemAccount($this->accountType);
 
         return AccountTransaction::query()
-            ->where('account_type', $this->accountType)
-            ->where('account_id', $account?->id)
-            ->where('status', 'active')
+            ->ledger($this->accountType)
+            ->posted()
             ->when($this->fromDate, fn (Builder $q, $date) => $q->whereDate('transaction_date', '>=', $date))
             ->when($this->toDate, fn (Builder $q, $date) => $q->whereDate('transaction_date', '<=', $date))
             ->when($this->method, fn (Builder $q, $method) => $q->where('payment_method', $method))
@@ -54,12 +56,18 @@ class AccountLedgerExport implements FromQuery, WithColumnWidths, WithHeadings, 
 
     public function map($transaction): array
     {
+        if ($this->accountType === 'cash') {
+            $this->cashBalance ??= app(AccountService::class)->ledgerOpeningBalance('cash', $this->fromDate ?? '1900-01-01');
+            $this->cashBalance = round($this->cashBalance + (float) $transaction->credit - (float) $transaction->debit, 2);
+            $transaction->running_balance = $this->cashBalance;
+        }
+
         return [
             $transaction->transaction_date->format('Y-m-d'),
             $transaction->transaction_date->format('H:i:s'),
             ucwords(str_replace('_', ' ', $transaction->transaction_type)),
-            $transaction->payment_method ?? '-',
-            $transaction->description,
+            SpreadsheetSafeText::escape($transaction->payment_method ?? '-'),
+            SpreadsheetSafeText::escape($transaction->description),
             $transaction->reference_type ? class_basename($transaction->reference_type).' #'.$transaction->reference_id : '-',
             $transaction->debit > 0 ? number_format($transaction->debit, 2, '.', '') : '-',
             $transaction->credit > 0 ? number_format($transaction->credit, 2, '.', '') : '-',

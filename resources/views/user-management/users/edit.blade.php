@@ -22,7 +22,7 @@
       {{-- Form Column --}}
       <div class="lg:col-span-2 space-y-6">
         <form method="POST" action="{{ route('user-management.users.update', $user->id) }}" class="space-y-6">
-          @csrf @method('PUT')
+          @csrf<x-submission-token/> @method('PUT')
 
           {{-- 1. Basic Information --}}
           <div class="panel bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">

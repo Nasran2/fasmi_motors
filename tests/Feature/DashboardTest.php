@@ -23,7 +23,7 @@ test('weekly dashboard series contains seven consecutive calendar days', functio
     $user = User::factory()->create();
     $weekStart = now()->startOfWeek();
 
-    $response = $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $response = $this->actingAs($user)->get(route('dashboard', ['filter' => 'this_week']))->assertOk();
 
     foreach (range(0, 6) as $offset) {
         $response->assertSee('title="'.$weekStart->copy()->addDays($offset)->format('d M').'"', false);

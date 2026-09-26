@@ -5,13 +5,24 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\AuditLog;
+use App\Models\Invoice;
+use App\Models\Payment;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AccountService
 {
+    public function ledgerOpeningBalance(string $type, CarbonInterface|string $date): float
+    {
+        $prior = AccountTransaction::ledger($type)->posted()->where('transaction_date', '<', $date);
+        $base = $type === 'cash' ? 0 : (float) (Account::systemAccount($type)?->opening_balance ?? 0);
+
+        return round($base + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit'), 2);
+    }
+
     /**
      * Record a transaction ensuring running balance is calculated correctly.
      */
@@ -56,7 +67,22 @@ class AccountService
                 $accountId = Account::systemAccount($accountType)?->id;
             }
 
-            $account = $accountId ? Account::lockForUpdate()->find($accountId) : null;
+            $account = $accountId ? Account::lockForUpdate()->findOrFail($accountId) : Account::systemAccount($accountType);
+            if (! $account || ! $account->active || $amount < 0 || ! is_finite($amount)) {
+                throw ValidationException::withMessages(['account_id' => 'Select an active account and a valid amount.']);
+            }
+            $accountId = $account->id;
+            if ($reference instanceof Payment && $transactionType === 'income') {
+                $existing = AccountTransaction::where('account_id', $accountId)->where('account_type', $accountType)
+                    ->where('reference_type', $reference->getMorphClass())->where('reference_id', $reference->id)
+                    ->where('transaction_type', $transactionType)->first();
+                if ($existing) {
+                    return $existing;
+                }
+            }
+            $amount = round($amount, 2);
+            $debit = round($debit, 2);
+            $credit = round($credit, 2);
 
             // Lock the last entry so two simultaneous payments cannot calculate the same balance.
             $lastTransaction = AccountTransaction::where('account_type', $accountType)
@@ -66,8 +92,10 @@ class AccountService
                 ->lockForUpdate()
                 ->first();
 
-            $previousBalance = $lastTransaction ? (float) $lastTransaction->running_balance : (float) ($account?->opening_balance ?? 0);
-            $newBalance = $previousBalance + $credit - $debit;
+            $previousBalance = (float) $account->opening_balance
+                + (float) $account->transactions()->posted()->sum('credit')
+                - (float) $account->transactions()->posted()->sum('debit');
+            $newBalance = round($previousBalance + $credit - $debit, 2);
 
             $transaction = AccountTransaction::create([
                 'transaction_no' => 'TRX-'.strtoupper(Str::random(8)),
@@ -81,7 +109,7 @@ class AccountService
                 'category' => $category,
                 'running_balance' => $newBalance,
                 'payment_method' => $paymentMethod,
-                'reference_type' => $reference ? get_class($reference) : null,
+                'reference_type' => $reference?->getMorphClass(),
                 'reference_id' => $reference ? $reference->id : null,
                 'description' => $description,
                 'note' => $note,
@@ -89,18 +117,20 @@ class AccountService
                 'created_by' => auth()->id() ?? 1,
             ]);
 
-            return $transaction;
+            $this->recalculateBalances($account);
+
+            return $transaction->refresh();
         });
     }
 
     public function getRunningBalance(string $accountType): float
     {
         $account = Account::systemAccount($accountType);
-        $opening = (float) ($account?->opening_balance ?? 0);
+        if ($accountType === 'cash') {
+            return $this->ledgerOpeningBalance('cash', '9999-12-31');
+        }
 
-        return $opening
-            + (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->sum('credit')
-            - (float) AccountTransaction::where('account_type', $accountType)->where('account_id', $account?->id)->where('status', 'active')->sum('debit');
+        return (float) ($account?->balance ?? 0);
     }
 
     /**
@@ -109,7 +139,9 @@ class AccountService
     public function reverseTransaction(AccountTransaction $transaction, string $reason): bool
     {
         return DB::transaction(function () use ($transaction, $reason) {
-            if ($transaction->status !== 'active') {
+            $account = Account::lockForUpdate()->findOrFail($transaction->account_id);
+            $transaction = AccountTransaction::lockForUpdate()->findOrFail($transaction->id);
+            if ($transaction->status !== 'active' || $transaction->transaction_type === 'reversal') {
                 return false;
             }
 
@@ -131,6 +163,7 @@ class AccountService
                 'reversed_by' => auth()->id() ?? 1,
                 'reversal_reason' => $reason,
             ]);
+            $this->recalculateBalances($account);
 
             AuditLog::create([
                 'user_id' => auth()->id() ?? 1,
@@ -145,5 +178,61 @@ class AccountService
 
             return true;
         });
+    }
+
+    private function recalculateBalances(Account $account): void
+    {
+        $balance = (int) round((float) $account->opening_balance * 100);
+        foreach ($account->transactions()->posted()->orderBy('transaction_date')->orderBy('id')->get() as $entry) {
+            $balance += (int) round((float) $entry->credit * 100) - (int) round((float) $entry->debit * 100);
+            $entry->update(['running_balance' => $balance / 100]);
+        }
+    }
+
+    public function outgoing(string $type, float $amount, string $description, Model $reference, string $method, CarbonInterface|string|null $date = null, ?string $category = null): void
+    {
+        DB::transaction(function () use ($type, $amount, $description, $reference, $method, $date, $category) {
+            $this->recordTransaction($type, 'expense', $amount, $description, $reference, $method, null, null, $date, $category);
+            if ($method !== 'Cash') {
+                $this->recordTransaction('bank', 'expense', $amount, $description, $reference, $method, null, null, $date, $category);
+            }
+        });
+    }
+
+    public function receiveInvoicePayment(Invoice $invoice, Payment $payment): void
+    {
+        $total = (int) round((float) $invoice->total * 100);
+        $parts = min($total, (int) round((float) $invoice->parts_amount * 100));
+        $amount = (int) round((float) $payment->amount * 100);
+        $share = $total > 0 ? (int) round($amount * $parts / $total) : 0;
+        foreach (['spare_parts' => $share, 'main' => $amount - $share] as $type => $cents) {
+            if ($cents > 0) {
+                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, $payment->paid_at, $type === 'main' ? 'service' : 'parts');
+            }
+        }
+        if ($payment->method !== 'Cash') {
+            $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, $payment->paid_at);
+        }
+        $this->reallocateInvoiceReceipts($invoice);
+    }
+
+    public function reallocateInvoiceReceipts(Invoice $invoice): void
+    {
+        $cumulative = 0;
+        $previousParts = 0;
+        foreach ($invoice->payments()->where('status', 'Completed')->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->orderBy('id')->get() as $payment) {
+            $cumulative += (int) round((float) $payment->amount * 100);
+            $targetParts = (float) $invoice->total > 0 ? (int) round($cumulative * min(1, (float) $invoice->parts_amount / (float) $invoice->total)) : 0;
+            $parts = ($targetParts - $previousParts) / 100;
+            $previousParts = $targetParts;
+            foreach (['spare_parts' => $parts, 'main' => round((float) $payment->amount - $parts, 2)] as $type => $expected) {
+                $entries = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('account_type', $type);
+                $actual = (float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit');
+                $difference = round($expected - $actual, 2);
+                if ($difference != 0) {
+                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, now(), 'invoice_revision');
+                }
+            }
+        }
     }
 }

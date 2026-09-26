@@ -517,6 +517,7 @@
                 accountId: '',
                 paidAmount: 0,
                 isSubmitting: false,
+                submissionToken: crypto.randomUUID(),
 
                 currentTime: '',
 
@@ -604,13 +605,13 @@
                     if (existingIndex > -1) {
                         const item = this.cart.items[existingIndex];
                         if (item.qty + 1 > maxStock && !this.allowNegativeStock) {
-                            alert(`Cannot add more. Only ${maxStock} items available in stock.`);
+                            workshopNotify(`Cannot add more. Only ${maxStock} items available in stock.`);
                             return;
                         }
                         item.qty += 1;
                     } else {
                         if (1 > maxStock && !this.allowNegativeStock) {
-                            alert('This item is out of stock.');
+                            workshopNotify('This item is out of stock.');
                             return;
                         }
                         this.cart.items.unshift({
@@ -632,7 +633,7 @@
                     const maxStock = typeof item.max_qty !== 'undefined' ? item.max_qty : (item.product.currentStock || 99999);
                     
                     if (item.qty + change > maxStock && !this.allowNegativeStock) {
-                        alert(`Only ${maxStock} items available in stock.`);
+                        workshopNotify(`Only ${maxStock} items available in stock.`);
                         item.qty = maxStock;
                     } else {
                         item.qty += change;
@@ -649,7 +650,7 @@
                     }
                     const maxStock = typeof item.max_qty !== 'undefined' ? parseFloat(item.max_qty) : (parseFloat(item.product.currentStock) || 99999);
                     if (qty > maxStock && !this.allowNegativeStock) {
-                        alert(`Only ${maxStock} items available in stock.`);
+                        workshopNotify(`Only ${maxStock} items available in stock.`);
                         qty = maxStock;
                     }
                     item.qty = qty;
@@ -661,8 +662,8 @@
                     this.recalculateTotals();
                 },
 
-                clearCart() {
-                    if (confirm('Are you sure you want to clear the cart?')) {
+                async clearCart() {
+                    if (await workshopConfirm('Are you sure you want to clear the cart?')) {
                         this.cart.items = [];
                         this.cart.discountValue = 0;
                         this.cart.tax = 0;
@@ -672,7 +673,7 @@
 
                 openPayment() {
                     if (this.cart.items.length === 0) {
-                        alert('Cart is empty.');
+                        workshopNotify('Cart is empty.');
                         return;
                     }
                     this.paidAmount = this.cart.total;
@@ -719,11 +720,12 @@
                 },
 
                 async submitSale(type = 'Parts Sale') {
-                    if (this.cart.items.length === 0) return;
+                    if (this.isSubmitting || this.cart.items.length === 0) return;
                     
                     this.isSubmitting = true;
                     
                     const payload = {
+                        _submission_token: this.submissionToken,
                         customer_mode: this.cart.customerId ? 'existing' : 'walkin',
                         customer_id: this.cart.customerId || null,
                         store_id: this.storeId,
@@ -746,6 +748,7 @@
                         const res = await fetch('{{ route("sales.parts.store") }}', {
                             method: 'POST',
                             headers: {
+                                'Accept': 'application/json',
                                 'Content-Type': 'application/json',
                                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
                             },
@@ -755,8 +758,13 @@
                         const data = await res.json();
                         if (data.success) {
                             localStorage.removeItem('pos_cart');
+                            this.cart.items = [];
+                            this.cart.discountValue = 0;
+                            this.cart.tax = 0;
+                            this.recalculateTotals();
+                            this.submissionToken = crypto.randomUUID();
                             if (type === 'Quotation') {
-                                alert(data.message);
+                                workshopNotify(data.message);
                                 window.location.reload();
                             } else {
                                 this.lastInvoiceToken = data.public_token;
@@ -764,10 +772,10 @@
                                 document.getElementById('print-bill-modal').showModal();
                             }
                         } else {
-                            alert(data.message || 'Validation failed. Check the inputs.');
+                            workshopNotify(Object.values(data.errors || {}).flat()[0] || data.message || 'Validation failed. Check the inputs.');
                         }
                     } catch (e) {
-                        alert('An error occurred during submission.');
+                        workshopNotify('An error occurred during submission.');
                         console.error(e);
                     } finally {
                         this.isSubmitting = false;
@@ -781,7 +789,7 @@
                         const maxStock = typeof i.max_qty !== 'undefined' ? i.max_qty : (i.product.currentStock || 99999);
                         if (i.qty > maxStock && !this.allowNegativeStock) {
                             i.qty = maxStock;
-                            alert(`Only ${maxStock} items available in stock for ${i.product.name}.`);
+                            workshopNotify(`Only ${maxStock} items available in stock for ${i.product.name}.`);
                         }
                         sub += (i.qty * i.unit_price) - (i.discount || 0);
                     });

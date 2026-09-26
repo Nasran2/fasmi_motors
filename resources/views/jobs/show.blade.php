@@ -15,17 +15,11 @@
   $isLocked = in_array($job->status, ['Completed', 'Billed', 'Delivered']);
 @endphp
 <div class="space-y-5"><div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">{{ $job->number }} · {{ $job->intake->bike->number }}</h1><p class="page-subtitle">{{ $job->intake->bike->model }} · {{ $job->intake->bike->customer->name ?: 'Walk-in customer' }} · {{ $job->intake->bike->customer->phone }}</p></div><span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusColors[$job->status] ?? 'bg-slate-100 text-slate-700' }}">{{ $job->status }}</span></div><x-flash/>
-<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
-@if($isLocked)
-    @foreach(['Billed', 'Completed', 'Delivered'] as $s)
-        <option @selected($job->status===$s)>{{ $s }}</option>
-    @endforeach
-@else
+<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
     @foreach($statuses as $s)
         <option @selected($job->status===$s)>{{ $s }}</option>
     @endforeach
-@endif
-</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes @if($isLocked) * @endif</span><input name="change_reason" class="field" @required($isLocked) placeholder="@if($isLocked)Enter reason for status change (required)...@endif"></label>
+</select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes</span><input name="change_reason" class="field" placeholder="Enter reason for status change (optional)..."></label>
 
 <div class="relative">
     <input type="hidden" name="service_name" id="hidden_service_name" value="{{ $job->service_name ?: 'Service' }}">
@@ -77,7 +71,7 @@
         </div>
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
-            @csrf
+            @csrf<x-submission-token/>
             <input type="number" step=".01" min="0" max="{{ $job->total }}" name="paid_amount" value="0" class="field" placeholder="Paid amount">
             <select name="payment_method" class="field">
                 @foreach(['Cash','Card','Bank Transfer','Cheque','QR','Credit/Due'] as $m)
@@ -138,42 +132,68 @@
     </div>
     @else
     {{-- POS Aligned Form Layout --}}
-    <form method="POST" action="{{ route('jobs.parts.store',$job) }}" id="job-part-form" class="mb-5 grid gap-3 grid-cols-2 md:grid-cols-6 items-end border border-slate-100 bg-slate-50/30 p-4 rounded-xl">
-        @csrf
-        <div class="col-span-2">
-            <label class="label">Search Product *</label>
-            <x-searchable-product-field :products="$products" id="job-part-product"/>
-            <div id="batch-msg" class="mt-1 text-xs font-bold text-indigo-600 empty:hidden"></div>
-        </div>
-        <div>
-            <label class="label">Store *</label>
-            <select name="store_id" class="w-full" required>
-                @foreach($stores as $s)
-                    <option value="{{ $s->id }}">{{ $s->name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="label">Quantity *</label>
-            <input name="quantity" type="number" step="any" class="w-full" placeholder="Qty" required value="1">
-        </div>
-        <div>
-            <label class="label">Unit Price *</label>
-            <input name="unit_price" type="number" step=".01" class="w-full" placeholder="Price" required>
-        </div>
-        <div>
-            <label class="label">Discount</label>
-            <input name="discount" type="number" step=".01" class="w-full" placeholder="Discount" value="0">
-        </div>
-        <input type="hidden" name="stock_batch_id">
-        
-        <div class="col-span-2 md:col-span-6 flex flex-wrap items-center justify-between bg-slate-50 border p-3 rounded-xl mt-2 gap-3">
-            <div class="text-xs font-bold text-slate-500">
-                Total Amount: <span id="live-line-total" class="text-base font-black text-green-600">Rs. 0.00</span>
+    <div id="dynamic-parts-builder" class="mb-5 border border-slate-100 bg-slate-50/30 p-4 rounded-xl">
+        <div class="grid gap-3 grid-cols-2 md:grid-cols-6 items-end">
+            <div class="col-span-2">
+                <x-searchable-product-field :products="$products" id="job-part-product"/>
+                <div id="batch-msg" class="mt-1 text-xs font-bold text-indigo-600 empty:hidden"></div>
             </div>
-            <button class="btn-primary !min-h-9 !py-1 !px-4">Add / issue part</button>
+            <div>
+                <label class="label">Store *</label>
+                <select id="part-store" class="w-full">
+                    @foreach($stores as $s)
+                        <option value="{{ $s->id }}">{{ $s->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="label">Quantity *</label>
+                <input id="part-qty" type="number" step="any" class="w-full" placeholder="Qty" value="1">
+            </div>
+            <div>
+                <label class="label">Unit Price *</label>
+                <input id="part-price" type="number" step=".01" class="w-full" placeholder="Price">
+            </div>
+            <div>
+                <label class="label">Discount</label>
+                <input id="part-discount" type="number" step=".01" class="w-full" placeholder="Discount" value="0">
+            </div>
+            <input type="hidden" id="part-batch">
+            
+            <div class="col-span-2 md:col-span-6 flex flex-wrap items-center justify-between bg-white border border-slate-200 p-3 rounded-xl mt-2 gap-3 shadow-sm">
+                <div class="text-xs font-bold text-slate-500">
+                    Line Total: <span id="live-line-total" class="text-base font-black text-green-600">Rs. 0.00</span>
+                </div>
+                <button type="button" id="btn-add-pending" class="btn-secondary !min-h-9 !py-1 !px-4 text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100">+ Add to list</button>
+            </div>
         </div>
-    </form>
+
+        {{-- Pending Parts Table --}}
+        <form method="POST" action="{{ route('jobs.parts.store_multiple', $job) }}" id="multiple-parts-form" class="mt-6 hidden">
+            @csrf<x-submission-token/>
+            <h3 class="text-sm font-bold text-slate-700 mb-2">📋 Pending Parts to Save</h3>
+            <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 text-slate-500">
+                        <tr>
+                            <th class="p-2">Product</th>
+                            <th class="p-2">Store</th>
+                            <th class="p-2 text-right">Qty</th>
+                            <th class="p-2 text-right">Unit Price</th>
+                            <th class="p-2 text-right">Discount</th>
+                            <th class="p-2 text-right">Total</th>
+                            <th class="p-2 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pending-parts-list" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+            <div class="mt-3 flex justify-between items-center">
+                <div class="text-sm font-bold text-slate-600">Total Pending: <span id="pending-grand-total" class="text-green-600">Rs. 0.00</span></div>
+                <button type="submit" class="btn-primary">Save All Parts</button>
+            </div>
+        </form>
+    </div>
     @endif
 
     {{-- Issued Parts List --}}
@@ -181,12 +201,15 @@
         <table class="data-table text-xs">
             <thead>
                 <tr>
-                    <th class="font-bold">{{ $isLocked ? 'Product Name' : 'Product Name (Click to edit price)' }}</th>
+                    <th class="font-bold">{{ $isLocked ? 'Product Name' : 'Product Name (Click to edit)' }}</th>
                     <th class="font-bold">Store</th>
-                    <th class="font-bold">Qty</th>
-                    <th class="font-bold">Price</th>
-                    <th class="font-bold">Total</th>
-                    <th class="font-bold">Status</th>
+                    <th class="font-bold text-center">Qty</th>
+                    <th class="font-bold text-right">Price</th>
+                    <th class="font-bold text-right">Total</th>
+                    <th class="font-bold text-center">Status</th>
+                    @if(!$isLocked)
+                    <th class="font-bold text-center">Action</th>
+                    @endif
                 </tr>
             </thead>
             <tbody>
@@ -196,27 +219,34 @@
                         @if($isLocked)
                         <span class="font-extrabold text-slate-755 text-slate-700">{{ $part->product->name }}</span>
                         @else
-                        <button type="button" onclick="openPriceModal('{{ $part->id }}', '{{ $part->product->name }}', '{{ $part->cost_price }}', '{{ $part->unit_price }}')" class="font-extrabold text-blue-600 hover:underline text-left">
+                        <button type="button" onclick="openPartModal('{{ $part->id }}', '{{ $part->product->name }}', '{{ $part->cost_price }}', '{{ $part->unit_price }}', '{{ $part->quantity }}')" class="font-extrabold text-blue-600 hover:underline text-left">
                             {{ $part->product->name }}
                         </button>
                         @endif
                     </td>
                     <td>{{ $stores->firstWhere('id',$part->store_id)?->name }}</td>
-                    <td>{{ $part->quantity }}</td>
-                    <td>Rs. {{ number_format($part->unit_price, 2) }}</td>
-                    <td class="font-bold">Rs. {{ number_format($part->total, 2) }}</td>
+                    <td class="text-center font-mono">{{ $part->quantity }}</td>
+                    <td class="text-right font-mono">Rs. {{ number_format($part->unit_price, 2) }}</td>
+                    <td class="text-right font-bold text-slate-800">Rs. {{ number_format($part->total, 2) }}</td>
                     @php $currentStock = $part->product->stocks->where('store_id', $part->store_id)->first()?->quantity ?? 0; @endphp
-                    <td class="{{ $currentStock < 0 ? 'text-red-600 font-semibold' : 'text-slate-500' }}">
+                    <td class="text-center {{ $currentStock < 0 ? 'text-red-600 font-semibold' : 'text-slate-500' }}">
                         @if($currentStock < 0)
                             <span class="text-xs">Out of stock ({{ $currentStock }})</span>
                         @else
                             <span class="text-xs">Issued (Rem: {{ $currentStock }})</span>
                         @endif
                     </td>
+                    @if(!$isLocked)
+                    <td class="text-center">
+                        <button type="button" onclick="confirmDeletePart('{{ $part->id }}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded font-bold transition-colors" title="Delete part">
+                                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                            </button>
+                    </td>
+                    @endif
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="6" class="text-center py-6 text-slate-400">No parts added yet.</td>
+                    <td colspan="{{ $isLocked ? 6 : 7 }}" class="text-center py-6 text-slate-400">No parts added yet.</td>
                 </tr>
                 @endforelse
             </tbody>
@@ -269,34 +299,45 @@
 </div>
 
 {{-- Price Edit Modal --}}
-<dialog id="price-edit-modal" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="part-edit-modal" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <div class="p-6 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h2 class="text-base font-black text-slate-900" style="color: #0f172a !important;">Change Product Price</h2>
-            <button type="button" class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('price-edit-modal').close()">✕</button>
+            <h2 class="text-base font-black text-slate-900" style="color: #0f172a !important;">Edit Part Details</h2>
+            <button type="button" class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('part-edit-modal').close()">✕</button>
         </div>
-        <form id="price-edit-form" method="POST" action="">
-            @csrf
+        <form id="part-edit-form" method="POST" action="">
+            @csrf<x-submission-token/>
             <div class="space-y-4">
                 <div>
                     <label class="label" style="color: #475569 !important;">Product Name</label>
                     <div id="pe-name" class="text-xs font-bold text-slate-800 border p-2.5 rounded-lg" style="background-color: #f8fafc !important; color: #1e293b !important; border-color: #cbd5e1 !important;"></div>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-3 gap-3">
                     <div>
                         <label class="label" style="color: #475569 !important;">Cost Price</label>
                         <div id="pe-cost" class="text-xs font-bold text-slate-800 border p-2.5 rounded-lg font-mono" style="background-color: #f8fafc !important; color: #1e293b !important; border-color: #cbd5e1 !important;"></div>
                     </div>
                     <div>
-                        <label class="label" style="color: #475569 !important;">New Selling Price *</label>
+                        <label class="label" style="color: #475569 !important;">Quantity *</label>
+                        <input type="number" step="any" min="0.01" name="quantity" id="pe-qty" required class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
+                    </div>
+                    <div>
+                        <label class="label" style="color: #475569 !important;">Unit Price *</label>
                         <input type="number" step="0.01" min="0" name="unit_price" id="pe-price" required class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
                     </div>
                 </div>
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" class="btn-secondary text-xs" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('price-edit-modal').close()">Cancel</button>
-                    <button type="submit" class="btn-primary text-xs">Save Price</button>
+                <div class="flex items-center justify-between pt-2">
+                    <button type="button" id="btn-delete-part" class="btn-secondary text-xs text-red-600 border-red-200 bg-red-50 hover:bg-red-100" onclick="workshopConfirm('Are you sure you want to remove this part?').then(ok => { if (ok) document.getElementById('part-delete-form').requestSubmit(); })">🗑 Delete Part</button>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn-secondary text-xs" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('part-edit-modal').close()">Cancel</button>
+                        <button type="submit" class="btn-primary text-xs">Save Changes</button>
+                    </div>
                 </div>
             </div>
+        </form>
+        <form id="part-delete-form" method="POST" action="" class="hidden">
+            @csrf<x-submission-token/>
+            @method('DELETE')
         </form>
     </div>
 </dialog>
@@ -329,28 +370,37 @@
 <script>
 (() => {
     const products = {{ Illuminate\Support\Js::from($productBatchOptions) }};
-    const form = document.getElementById('job-part-form');
-    const storeSel = form.querySelector('[name="store_id"]');
+    const stores = {{ Illuminate\Support\Js::from($stores) }};
+    const storeSel = document.getElementById('part-store');
     const productIdInput = document.getElementById('job-part-product').querySelector('[data-product-id]');
     const searchInput = document.getElementById('job-part-product').querySelector('[data-product-search]');
-    const priceInput = form.querySelector('[name="unit_price"]');
-    const qtyInput = form.querySelector('[name="quantity"]');
-    const discountInput = form.querySelector('[name="discount"]');
+    const priceInput = document.getElementById('part-price');
+    const qtyInput = document.getElementById('part-qty');
+    const discountInput = document.getElementById('part-discount');
     const liveTotalSpan = document.getElementById('live-line-total');
-    const batchIdInput = form.querySelector('[name="stock_batch_id"]');
+    const batchIdInput = document.getElementById('part-batch');
     const batchMsg = document.getElementById('batch-msg');
+    const btnAddPending = document.getElementById('btn-add-pending');
     
+    const multiplePartsForm = document.getElementById('multiple-parts-form');
+    const pendingPartsList = document.getElementById('pending-parts-list');
+    const pendingGrandTotal = document.getElementById('pending-grand-total');
+
     const modal = document.getElementById('batch-modal');
     const list = document.getElementById('batch-list');
     const tpl = document.getElementById('batch-item-tpl');
     const money = n => 'Rs. ' + Number(n || 0).toFixed(2);
+
+    let pendingParts = [];
+    let partIndex = 0;
 
     function calculateLiveLineTotal() {
         const qty = parseFloat(qtyInput.value) || 0;
         const price = parseFloat(priceInput.value) || 0;
         const discount = parseFloat(discountInput.value) || 0;
         const total = Math.max(0, (qty * price) - discount);
-        liveTotalSpan.textContent = 'Rs. ' + total.toFixed(2);
+        liveTotalSpan.textContent = money(total);
+        return total;
     }
 
     qtyInput.addEventListener('input', calculateLiveLineTotal);
@@ -417,21 +467,131 @@
         calculateLiveLineTotal();
     };
 
-    // Need a tiny timeout to let the searchable field set the hidden input
     searchInput.addEventListener('input', () => setTimeout(checkBatch, 50));
     storeSel.addEventListener('change', checkBatch);
+
+    function updatePendingTable() {
+        pendingPartsList.innerHTML = '';
+        let grandTotal = 0;
+        
+        if (pendingParts.length > 0) {
+            multiplePartsForm.classList.remove('hidden');
+        } else {
+            multiplePartsForm.classList.add('hidden');
+        }
+
+        pendingParts.forEach((part, idx) => {
+            grandTotal += part.total;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-2 font-bold text-slate-700">${part.productName}
+                    <input type="hidden" name="parts[${idx}][product_id]" value="${part.productId}">
+                </td>
+                <td class="p-2 text-slate-500">${part.storeName}
+                    <input type="hidden" name="parts[${idx}][store_id]" value="${part.storeId}">
+                </td>
+                <td class="p-2 text-right font-mono">${part.qty}
+                    <input type="hidden" name="parts[${idx}][quantity]" value="${part.qty}">
+                </td>
+                <td class="p-2 text-right font-mono">${money(part.price)}
+                    <input type="hidden" name="parts[${idx}][unit_price]" value="${part.price}">
+                </td>
+                <td class="p-2 text-right font-mono text-red-500">${part.discount > 0 ? money(part.discount) : '-'}
+                    <input type="hidden" name="parts[${idx}][discount]" value="${part.discount}">
+                </td>
+                <td class="p-2 text-right font-bold text-slate-800">${money(part.total)}
+                    <input type="hidden" name="parts[${idx}][stock_batch_id]" value="${part.batchId || ''}">
+                </td>
+                <td class="p-2 text-center">
+                    <button type="button" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded" onclick="removePendingPart(${part.id})">✕</button>
+                </td>
+            `;
+            pendingPartsList.appendChild(tr);
+        });
+        
+        pendingGrandTotal.textContent = money(grandTotal);
+    }
+
+    window.removePendingPart = (id) => {
+        pendingParts = pendingParts.filter(p => p.id !== id);
+        updatePendingTable();
+    };
+
+    if(btnAddPending) {
+        btnAddPending.addEventListener('click', () => {
+            const pid = parseInt(productIdInput.value);
+            if (!pid) {
+                workshopNotify('Please search and select a product first.');
+                return searchInput.focus();
+            }
+            
+            const p = products.find(x => x.id === pid);
+            const storeId = +storeSel.value;
+            const storeName = stores.find(s => s.id === storeId)?.name || 'Store';
+            const qty = parseFloat(qtyInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            const discount = parseFloat(discountInput.value) || 0;
+            const batchId = batchIdInput.value;
+            const total = calculateLiveLineTotal();
+
+            if (qty <= 0) {
+                workshopNotify('Quantity must be greater than 0.');
+                return qtyInput.focus();
+            }
+
+            pendingParts.push({
+                id: ++partIndex,
+                productId: pid,
+                productName: p.name,
+                storeId: storeId,
+                storeName: storeName,
+                qty: qty,
+                price: price,
+                discount: discount,
+                batchId: batchId,
+                total: total
+            });
+
+            updatePendingTable();
+
+            // Reset inputs
+            searchInput.value = '';
+            productIdInput.value = '';
+            batchIdInput.value = '';
+            batchMsg.textContent = '';
+            qtyInput.value = '1';
+            priceInput.value = '';
+            discountInput.value = '0';
+            calculateLiveLineTotal();
+            searchInput.focus();
+        });
+    }
+
 })();
 
-function openPriceModal(partId, name, cost, price) {
-    const modal = document.getElementById('price-edit-modal');
-    const form = document.getElementById('price-edit-form');
+function confirmDeletePart(partId) {
+    const dialog = document.getElementById('delete-part-dialog');
+    const form = document.getElementById('delete-part-form');
+    const route = "{{ route('jobs.parts.destroy', ['job' => $job->id, 'part' => ':part']) }}";
+    form.action = route.replace(':part', partId);
+    dialog.showModal();
+}
+
+function openPartModal(partId, name, cost, price, qty) {
+    const modal = document.getElementById('part-edit-modal');
+    const form = document.getElementById('part-edit-form');
+    const delForm = document.getElementById('part-delete-form');
     
     // Set form action route dynamically
-    const route = "{{ route('jobs.parts.update-price', ['job' => $job->id, 'part' => ':part']) }}";
-    form.action = route.replace(':part', partId);
+    const updateRoute = "{{ route('jobs.parts.update', ['job' => $job->id, 'part' => ':part']) }}";
+    const deleteRoute = "{{ route('jobs.parts.destroy', ['job' => $job->id, 'part' => ':part']) }}";
+    
+    form.action = updateRoute.replace(':part', partId);
+    delForm.action = deleteRoute.replace(':part', partId);
     
     document.getElementById('pe-name').textContent = name;
     document.getElementById('pe-cost').textContent = 'Rs. ' + parseFloat(cost).toFixed(2);
+    document.getElementById('pe-qty').value = parseFloat(qty);
     document.getElementById('pe-price').value = parseFloat(price);
     
     modal.showModal();
@@ -465,7 +625,7 @@ function saveEditedName() {
 {{-- Due Payment Dialog --}}
 <dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <form method="POST" id="due-payment-form" class="p-6">
-        @csrf
+        @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
             <div>
                 <p class="text-xs font-bold uppercase tracking-wider text-red-600">Payment Collection</p>
@@ -534,9 +694,26 @@ function openUnlockModal() {
 </script>
 
 {{-- Unlock Job Dialog --}}
+<dialog id="delete-part-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 24rem !important;">
+    <div class="p-6 text-center space-y-4">
+        <div class="mx-auto flex items-center justify-center size-12 rounded-full bg-red-100 mb-4">
+            <svg class="size-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900" style="color: #0f172a !important;">Remove Part?</h3>
+        <p class="text-sm text-slate-500" style="color: #64748b !important;">Are you sure you want to remove this part from the job card? This action cannot be undone.</p>
+        <form id="delete-part-form" method="POST" action="" class="mt-6 flex justify-center gap-3">
+            @csrf<x-submission-token/>
+            @method('DELETE')
+            <button type="button" class="btn-secondary text-sm px-4" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('delete-part-dialog').close()">Cancel</button>
+            <button type="submit" class="btn-primary bg-red-600 hover:bg-red-700 text-sm px-4 shadow-red-200" style="background-color: #dc2626 !important;">Yes, Remove it</button>
+        </form>
+    </div>
+</dialog>
 <dialog id="unlock-job-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <form method="POST" action="{{ route('jobs.unlock', $job) }}" class="p-6">
-        @csrf
+        @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
             <div>
                 <p class="text-xs font-bold uppercase tracking-wider text-amber-600">Reopen Job Card</p>

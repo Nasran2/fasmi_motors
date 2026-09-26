@@ -16,7 +16,7 @@
             <flux:menu.separator />
             <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>Profile Settings</flux:menu.item>
             <form method="POST" action="{{ route('logout') }}" class="w-full">
-                @csrf
+                @csrf<x-submission-token/>
                 <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full cursor-pointer" data-test="logout-button">Log out</flux:menu.item>
             </form>
         </flux:menu>

@@ -29,7 +29,7 @@ class DailyClosingController extends BaseAccountController
             'Spare Parts Sales' => $bills->where('invoice_type', 'Parts Sale'),
             'Other Sales / Service' => $bills->whereNotIn('invoice_type', ['Job Card Bill', 'Parts Sale']),
         ]);
-        $summary = ['job_income' => (float) $billGroups['Job Income']->sum('total'), 'parts_sales' => (float) $billGroups['Spare Parts Sales']->sum('total'), 'other_income' => (float) $billGroups['Other Sales / Service']->sum('total'), 'expenses' => collect($expected)->sum('expenses_only'), 'drawings' => collect($expected)->sum('drawings'), 'transfer_in' => collect($expected)->sum('transfer_in'), 'transfer_out' => collect($expected)->sum('transfer_out'), 'deductions' => collect($expected)->sum('deductions'), 'adjustments' => collect($expected)->sum('adjustments'), 'closing' => collect($expected)->sum('closing'), 'bill_count' => $bills->count()];
+        $summary = ['job_income' => (float) $billGroups['Job Income']->sum('total'), 'parts_sales' => (float) $billGroups['Spare Parts Sales']->sum('total'), 'other_income' => (float) $billGroups['Other Sales / Service']->sum('total'), 'expenses' => collect($expected)->only(['main', 'spare_parts'])->sum('expenses_only'), 'drawings' => collect($expected)->only(['main', 'spare_parts'])->sum('drawings'), 'transfer_in' => collect($expected)->only(['main', 'spare_parts'])->sum('transfer_in'), 'transfer_out' => collect($expected)->only(['main', 'spare_parts'])->sum('transfer_out'), 'deductions' => collect($expected)->only(['main', 'spare_parts'])->sum('deductions'), 'adjustments' => collect($expected)->only(['main', 'spare_parts'])->sum('adjustments'), 'closing' => collect($expected)->only(['main', 'spare_parts'])->sum('closing'), 'bill_count' => $bills->count()];
 
         return view('accounts.daily-closing', compact('date', 'expected', 'closing', 'closings', 'bills', 'billGroups', 'summary'));
     }
@@ -108,10 +108,8 @@ class DailyClosingController extends BaseAccountController
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
         $account = Account::systemAccount($type);
-        $base = (float) ($account?->opening_balance ?? 0);
-        $prior = AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $start);
-        $opening = $base + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit');
-        $period = AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->whereBetween('transaction_date', [$start, $end])->get();
+        $opening = app(AccountService::class)->ledgerOpeningBalance($type, $start);
+        $period = AccountTransaction::ledger($type)->posted()->whereBetween('transaction_date', [$start, $end])->get();
         $income = (float) $period->sum('credit');
         $expense = (float) $period->sum('debit');
         $drawings = (float) $period->where('transaction_type', 'drawing')->sum('debit');

@@ -17,7 +17,7 @@
     })->filter(fn ($group) => count($group['children']) > 0)->values()->all();
 
     if (session('shop_mode', 'workshop') === 'helmet') {
-        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'accounts', 'expenses-drawings', 'reports', 'settings'];
+        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'accounts', 'expenses-drawings', 'reports', 'data-management', 'settings'];
         $groups = collect($groups)->filter(fn($g) => in_array($g['slug'], $allowedGroups))->values()->toArray();
         foreach ($groups as &$group) {
             if ($group['slug'] === 'dashboard') {

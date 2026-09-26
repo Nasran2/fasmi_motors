@@ -6,7 +6,7 @@
         <x-auth-session-status class="text-center" :status="session('status')" />
 
         <form method="POST" action="{{ route('register.store') }}" class="flex flex-col gap-6">
-            @csrf
+            @csrf<x-submission-token/>
             <!-- Name -->
             <flux:input
                 name="name"

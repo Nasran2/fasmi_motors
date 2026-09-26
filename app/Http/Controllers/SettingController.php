@@ -7,9 +7,12 @@ use App\Models\OtSlabRule;
 use App\Models\SalaryCycleSetting;
 use App\Models\SalarySetting;
 use App\Models\Setting;
+use App\Models\SmsLog;
 use App\Models\Store;
+use App\Services\DatabaseBackupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SettingController extends Controller
 {
@@ -372,8 +375,9 @@ class SettingController extends Controller
     public function smsSettings()
     {
         $settings = $this->getSettings();
+        $smsLogs = SmsLog::latest()->paginate(10);
 
-        return view('system-settings.sms', compact('settings'));
+        return view('system-settings.sms', compact('settings', 'smsLogs'));
     }
 
     public function testSms(Request $r)
@@ -421,32 +425,15 @@ class SettingController extends Controller
     {
         $settings = $this->getSettings();
 
-        // Sample backup list for demonstration
-        $backups = [
-            [
-                'id' => 1,
-                'date' => now()->subDay()->format('d M Y h:i A'),
-                'type' => 'Full Backup (DB + Files)',
-                'size' => '8.4 MB',
-                'status' => 'Success',
-                'created_by' => 'Fasmir Admin',
-            ],
-            [
-                'id' => 2,
-                'date' => now()->subDays(3)->format('d M Y h:i A'),
-                'type' => 'Database Dump Only',
-                'size' => '1.2 MB',
-                'status' => 'Success',
-                'created_by' => 'System (Auto)',
-            ],
-        ];
+        $backups = app(DatabaseBackupService::class)->backups();
 
         return view('system-settings.backup', compact('settings', 'backups'));
     }
 
     public function createBackup()
     {
-        $this->audit('Create Backup', 'Manually triggered backup creation.');
+        $file = app(DatabaseBackupService::class)->create();
+        $this->audit('Create Backup', 'Created database backup: '.$file);
 
         return back()->with('success', 'Backup file created successfully.');
     }
@@ -454,18 +441,18 @@ class SettingController extends Controller
     public function restoreBackup(Request $r)
     {
         $r->validate([
-            'password' => 'required',
+            'password' => 'required|current_password',
             'reason' => 'required|string',
         ]);
 
-        $this->audit('Restore Backup', 'Manually restored database from backup file. Reason: '.$r->reason);
-
-        return back()->with('success', 'Backup restored successfully.');
+        throw ValidationException::withMessages(['backup' => 'Online restoration is unavailable. Restore a verified SQL backup during an administrator-controlled maintenance window. No database changes were made.']);
     }
 
-    public function deleteBackup()
+    public function deleteBackup(Request $request)
     {
-        $this->audit('Delete Backup', 'Manually deleted a backup file.');
+        $data = $request->validate(['backup_id' => 'required|string|max:100']);
+        app(DatabaseBackupService::class)->delete($data['backup_id']);
+        $this->audit('Delete Backup', 'Deleted database backup: '.$data['backup_id']);
 
         return back()->with('success', 'Backup file deleted.');
     }

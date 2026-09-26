@@ -130,7 +130,7 @@
                   <a href="{{ route('user-management.users.edit', $row->id) }}" class="btn-secondary !py-1 !px-2.5 text-xs">Edit</a>
                   
                   <form method="POST" action="{{ route('user-management.users.toggle-status', $row->id) }}" class="inline">
-                    @csrf
+                    @csrf<x-submission-token/>
                     <button type="submit" class="btn-secondary !py-1 !px-2.5 text-xs {{ $row->active ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700' }}">
                       {{ $row->active ? 'Deactivate' : 'Activate' }}
                     </button>
@@ -138,8 +138,8 @@
 
                   <button onclick="openPasswordModal('{{ $row->id }}', '{{ $row->username }}')" class="btn-secondary !py-1 !px-2.5 text-xs text-blue-600">Password</button>
 
-                  <form method="POST" action="{{ route('user-management.users.destroy', $row->id) }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this user?')">
-                    @csrf @method('DELETE')
+                  <form method="POST" action="{{ route('user-management.users.destroy', $row->id) }}" class="inline" data-confirm="Are you sure you want to delete this user?">
+                    @csrf<x-submission-token/> @method('DELETE')
                     <button type="submit" class="btn-secondary !py-1 !px-2.5 text-xs text-red-600 hover:bg-red-50" @disabled($row->id === auth()->id() || $row->role?->name === 'Super Admin')>
                       Delete
                     </button>
@@ -171,7 +171,7 @@
       <p class="text-xs text-slate-500 mb-4">Reset password for <strong id="modalUsername"></strong>. The user will be required to change password on next login.</p>
       
       <form id="passwordForm" method="POST" action="" class="space-y-4">
-        @csrf
+        @csrf<x-submission-token/>
         <div>
           <label class="label">New Password <span class="required-star">*</span></label>
           <input type="password" name="password" id="modalPasswordInput" required placeholder="Enter new password" class="w-full">

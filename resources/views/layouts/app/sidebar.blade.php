@@ -17,11 +17,11 @@
 
             <div class="mt-4 px-3 relative z-10">
                 @if(session('shop_mode', 'workshop') === 'helmet')
-                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'workshop']) }}">@csrf<button class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-slate-700 transition">
+                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'workshop']) }}">@csrf<x-submission-token/><button class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-slate-700 transition">
                         🔧 Switch to Workshop
                     </button></form>
                 @else
-                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<button class="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
+                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<x-submission-token/><button class="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
                         🪖 Switch to Helmet Shop
                     </button></form>
                 @endif
@@ -48,12 +48,13 @@
                     <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
                 </span>
                 @if(session('shop_mode', 'workshop') === 'helmet')
-                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'workshop']) }}">@csrf<button class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-slate-800 px-4 text-xs font-bold text-white shadow-lg hover:bg-slate-900 xl:text-sm">
+                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'workshop']) }}">@csrf<x-submission-token/><button class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-slate-800 px-4 text-xs font-bold text-white shadow-lg hover:bg-slate-900 xl:text-sm">
                         🔧 Workshop Mode
                     </button></form>
                 @else
                     @if(auth()->user()->canAccess('job_card.view'))
                     <a href="{{ route('live-board.index') }}" class="hidden h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-[#0b2447] shadow-sm hover:border-red-200 hover:text-red-600 2xl:inline-flex" title="Live Bike Status Board"><span class="text-base">▦</span> Live Board</a>
+                    <a href="{{ route('live-board.customer') }}" target="_blank" class="hidden h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-[#0b2447] shadow-sm hover:border-red-200 hover:text-red-600 2xl:inline-flex" title="Customer TV Display"><span class="text-base">📺</span> TV Board</a>
                     @endif
                     @if(auth()->user()->canAccess('intake.add'))
                     <a href="{{ route('intakes.create') }}" class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-red-600 px-3 text-xs font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700 xl:px-4 xl:text-sm"><x-dashboard-icon name="bike" class="size-5"/> New Bike Intake</a>
@@ -61,7 +62,7 @@
                     @if(auth()->user()->canAccess('job_card.create'))
                     <a href="{{ route('jobs.create') }}" class="hidden h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-[#0b2447] px-4 text-sm font-bold text-white shadow-lg shadow-slate-200 hover:bg-[#123665] 2xl:inline-flex"><x-dashboard-icon name="clipboard" class="size-5"/> Create Job Card</a>
                     @endif
-                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<button class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-indigo-600 px-4 text-xs font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 xl:text-sm">
+                    <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<x-submission-token/><button class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-indigo-600 px-4 text-xs font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 xl:text-sm">
                         🪖 Helmet Shop
                     </button></form>
                 @endif
@@ -111,7 +112,7 @@
                     <flux:menu.separator />
 
                     <form method="POST" action="{{ route('logout') }}" class="w-full">
-                        @csrf
+                        @csrf<x-submission-token/>
                         <flux:menu.item
                             as="button"
                             type="submit"

@@ -8,6 +8,27 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class AccountTransaction extends Model
 {
+    public function scopeLedger($query, string $type)
+    {
+        if ($type !== 'cash') {
+            return $query->where('account_id', Account::systemAccount($type)?->id);
+        }
+
+        $ids = collect(['main', 'spare_parts'])->map(fn ($type) => Account::systemAccount($type)?->id)->filter();
+
+        return $query->whereIn('account_id', $ids)->where(function ($cash) {
+            $cash->where('account_type', 'cash')->orWhere(function ($logical) {
+                $logical->whereIn('account_type', ['main', 'spare_parts'])->where('payment_method', 'Cash');
+            });
+        });
+    }
+
+    public function scopePosted($query)
+    {
+        // Reversed originals remain part of history; their compensating entry cancels them.
+        return $query->whereIn('status', ['active', 'reversed']);
+    }
+
     protected $guarded = [];
 
     protected $casts = [

@@ -40,7 +40,7 @@
           <td class="p-4 max-w-sm text-slate-600"><p class="line-clamp-2 text-xs">{{ $t->body }}</p></td>
           <td class="p-4 text-center">@if($t->auto_send)<span class="badge-sent">Auto</span>@else<span class="badge-pending">Manual</span>@endif</td>
           <td class="p-4 text-center">
-            <form method="POST" action="{{ route('sms.templates.toggle',$t) }}" class="inline">@csrf
+            <form method="POST" action="{{ route('sms.templates.toggle',$t) }}" class="inline">@csrf<x-submission-token/>
               <button type="submit" class="{{ $t->status==='active'?'badge-sent':'badge-failed' }} cursor-pointer hover:opacity-80">{{ ucfirst($t->status ?? 'active') }}</button>
             </form>
           </td>
@@ -48,7 +48,7 @@
           <td class="p-4">
             <div class="flex gap-2">
               <a href="{{ route('sms.templates.edit',$t) }}" class="text-xs font-bold text-blue-600 hover:underline">Edit</a>
-              <form method="POST" action="{{ route('sms.templates.destroy',$t) }}" onsubmit="return confirm('Delete this template?')">@csrf @method('DELETE')
+              <form method="POST" action="{{ route('sms.templates.destroy',$t) }}" data-confirm="Delete this template?">@csrf<x-submission-token/> @method('DELETE')
                 <button class="text-xs font-bold text-red-600 hover:underline">Delete</button>
               </form>
             </div>

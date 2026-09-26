@@ -9,6 +9,9 @@ trait ShopScoped
     public static function bootShopScoped()
     {
         static::creating(function ($model) {
+            if ($model->shop_type) {
+                return;
+            }
             if (request()->hasSession()) {
                 $model->shop_type = session('shop_mode', 'workshop');
             } else {

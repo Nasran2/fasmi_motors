@@ -112,7 +112,7 @@
 <script>
 function exportTable() {
   const table = document.getElementById('reportTable');
-  if (!table) { alert('No table found.'); return; }
+  if (!table) { workshopNotify('No table found.'); return; }
   let csv = [];
   for (const row of table.querySelectorAll('tr')) {
     const cols = [...row.querySelectorAll('th,td')].map(c => window.csvCell(c.innerText));

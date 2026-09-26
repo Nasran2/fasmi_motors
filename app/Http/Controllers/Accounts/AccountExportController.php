@@ -6,6 +6,7 @@ use App\Exports\AccountLedgerExport;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\AccountTransaction;
+use App\Services\AccountService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -39,9 +40,8 @@ class AccountExportController extends Controller
 
         // PDF Generation
         $query = AccountTransaction::query()
-            ->where('account_type', $type)
-            ->where('account_id', Account::systemAccount($type)?->id)
-            ->where('status', 'active')
+            ->ledger($type)
+            ->posted()
             ->whereBetween('transaction_date', [$from, $to])
             ->when($request->payment_method, fn (Builder $q, $method) => $q->where('payment_method', $method))
             ->when($request->transaction_type, fn (Builder $q, $value) => $q->where('transaction_type', $value))
@@ -50,9 +50,14 @@ class AccountExportController extends Controller
 
         $transactions = $query->get();
         $account = Account::systemAccount($type);
-        $opening = (float) ($account?->opening_balance ?? 0)
-            + (float) AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('credit')
-            - (float) AccountTransaction::where('account_type', $type)->where('account_id', $account?->id)->where('status', 'active')->where('transaction_date', '<', $from)->sum('debit');
+        $opening = app(AccountService::class)->ledgerOpeningBalance($type, $from);
+        if ($type === 'cash') {
+            $balance = $opening;
+            foreach ($transactions as $transaction) {
+                $balance += (float) $transaction->credit - (float) $transaction->debit;
+                $transaction->running_balance = round($balance, 2);
+            }
+        }
         $totals = ['opening' => $opening, 'debit' => (float) $transactions->sum('debit'), 'credit' => (float) $transactions->sum('credit')];
         $totals['closing'] = $opening + $totals['credit'] - $totals['debit'];
 

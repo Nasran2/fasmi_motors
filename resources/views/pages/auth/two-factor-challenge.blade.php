@@ -44,7 +44,7 @@
             </div>
 
             <form method="POST" action="{{ route('two-factor.login.store') }}">
-                @csrf
+                @csrf<x-submission-token/>
 
                 <div class="space-y-5 text-center">
                     <div x-show="!showRecoveryInput">

@@ -12,7 +12,7 @@
         <x-flash/>
 
         <form method="POST" action="{{ route('intakes.store') }}" class="space-y-5">
-            @csrf
+            @csrf<x-submission-token/>
             <div class="grid min-w-0 gap-5 xl:grid-cols-12">
                 <section class="panel min-w-0 xl:col-span-8">
                     <div class="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4">
@@ -64,7 +64,7 @@
                 </aside>
             </div>
 
-            <section class="panel">
+            <section class="panel relative z-10">
                 <div class="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4"><span class="grid size-10 place-items-center rounded-xl bg-[#0b2447]/5 text-[#0b2447]"><x-dashboard-icon name="bike" class="size-5"/></span><div><h2 class="font-extrabold">Bike Condition & Intake Notes</h2><p class="mt-0.5 text-[11px] text-slate-400">Operational details, expected delivery and payment information.</p></div></div>
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <label><span class="label">Fuel level</span><select name="fuel_level" class="field"><option value="">Select level</option>@foreach(['Empty','Quarter','Half','Three quarters','Full'] as $fuel)<option @selected(old('fuel_level')===$fuel)>{{ $fuel }}</option>@endforeach</select></label>
@@ -78,7 +78,7 @@
 
                 <div class="mt-5 grid gap-4 border-t border-slate-100 pt-5 md:grid-cols-2">
                     <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"><label class="flex cursor-pointer items-center gap-3 font-bold text-slate-800"><input type="checkbox" name="is_service" value="1" class="size-4 accent-red-600" onchange="document.getElementById('service-fields').classList.toggle('hidden',!this.checked)" @checked(old('is_service'))> Service job</label><p class="ml-7 mt-1 text-[11px] text-slate-400">Schedule the customer's next service reminder.</p><div id="service-fields" class="mt-3 {{ old('is_service') ? '' : 'hidden' }} grid gap-3 sm:grid-cols-2"><label><span class="label">Next service KM</span><input type="number" name="next_service_km" value="{{ old('next_service_km') }}" class="field" placeholder="Next service KM"></label><label><span class="label">Next service Date</span><input type="date" name="next_service_date" value="{{ old('next_service_date') }}" class="field"></label></div></div>
-                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"><label class="flex cursor-pointer items-center gap-3 font-bold text-slate-800"><input type="checkbox" name="is_technician_bike" value="1" class="size-4 accent-red-600" onchange="document.getElementById('tech-field').classList.toggle('hidden',!this.checked)" @checked(old('is_technician_bike'))> Technician bike</label><p class="ml-7 mt-1 text-[11px] text-slate-400">Link this intake to an internal technician.</p><select id="tech-field" name="technician_id" class="field mt-3 {{ old('is_technician_bike') ? '' : 'hidden' }}"><option value="">Select technician</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected(old('technician_id')==$t->id)>{{ $t->name }}</option>@endforeach</select></div>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"><label class="flex cursor-pointer items-center gap-3 font-bold text-slate-800"><input type="checkbox" name="is_technician_bike" value="1" class="size-4 accent-red-600" onchange="document.getElementById('tech-field').classList.toggle('hidden',!this.checked)" @checked(old('is_technician_bike'))> Staff bike</label><p class="ml-7 mt-1 text-[11px] text-slate-400">Link this intake to an internal staff member.</p><select id="tech-field" name="technician_id" class="field mt-3 {{ old('is_technician_bike') ? '' : 'hidden' }}"><option value="">Select staff</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected(old('technician_id')==$t->id)>{{ $t->name }}</option>@endforeach</select></div>
                 </div>
             </section>
 
@@ -145,18 +145,20 @@
             
             // Provide feedback
             const container = document.getElementById('lookup-results-container');
+            let dueHtml = '';
+            if (type === 'bike' && item.total_due && parseFloat(item.total_due) > 0) {
+                dueHtml = `<div class="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-500/20"><svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Previous Due: Rs. ${parseFloat(item.total_due).toFixed(2)}</div>`;
+            }
+            
             container.innerHTML = `
                 <div class="p-5 text-center">
                     <div class="mx-auto grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-600 mb-3"><svg class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>
-                    <p class="font-bold text-slate-800 text-sm">Form populated!</p>
+                    <p class="font-bold text-slate-800 text-sm">Bike details populated!</p>
                     <p class="text-xs text-slate-500 mt-1">You can continue editing the details.</p>
+                    ${dueHtml}
                 </div>
             `;
-            setTimeout(() => {
-                document.getElementById('lookup-empty').classList.remove('hidden');
-                container.classList.add('hidden');
-                document.getElementById('lookup-results-container').innerHTML = '<div id="lookup-results" class="max-h-[500px] overflow-y-auto"></div>';
-            }, 2500);
+            // Removed setTimeout so the message stays visible
         };
         
         function renderLookupResults(bikesData, customersData) {

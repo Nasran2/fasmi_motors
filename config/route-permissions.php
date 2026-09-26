@@ -3,6 +3,11 @@
 return [
     'routes' => [
         'dashboard' => 'dashboard.view',
+        'data-management.index' => 'settings.backup',
+        'customers.excel.export' => ['customer.view', 'reports.export_excel'],
+        'customers.excel.import' => 'customer.add',
+        'products.excel.export' => ['product.view', 'reports.export_excel'],
+        'products.excel.import' => 'product.import',
         'search' => 'dashboard.view',
         'shop.switch' => 'dashboard.view',
         'live-board.status' => 'job_card.change_status',

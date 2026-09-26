@@ -1,1 +1,0 @@
-window.spreadsheetSafeText=e=>{let t=String(e??``);return/^\s*[=+\-@]/u.test(t)?`'${t}`:t},window.csvCell=e=>`"${window.spreadsheetSafeText(e).replace(/"/g,`""`)}"`;

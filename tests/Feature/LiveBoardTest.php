@@ -28,6 +28,8 @@ test('authenticated staff can load both live board views and live data', functio
         ->getJson(route('live-board.data'))
         ->assertOk()
         ->assertJsonStructure(['groups', 'counts', 'total', 'updated_at']);
+
+    $this->get(route('live-board.customer'))->assertOk()->assertSee('Object.values(data.groups || {})', false);
 });
 
 test('live data includes unassigned intakes and excludes terminal jobs', function () {

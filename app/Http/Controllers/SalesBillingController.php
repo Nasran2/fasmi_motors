@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AccountTransaction;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
@@ -10,6 +11,7 @@ use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\Technician;
@@ -141,7 +143,7 @@ class SalesBillingController extends Controller
                 'subtotal' => $subtotal,
                 'discount' => $v['discount'] ?? 0,
                 'tax' => $v['tax'] ?? 0,
-                'parts_amount' => $subtotal,
+                'parts_amount' => $total,
                 'payment_method' => $v['payment_method'] ?? null,
                 'total' => $total,
                 'paid_amount' => $paid,
@@ -160,7 +162,7 @@ class SalesBillingController extends Controller
                     if (! $batch || (int) $batch->product_id !== (int) $product->id || (int) $batch->store_id !== (int) $v['store_id']) {
                         throw ValidationException::withMessages(["items.{$index}.stock_batch_id" => 'The selected stock batch does not belong to this product and store.']);
                     }
-                    if ($invType !== 'Quotation' && (float) $batch->available_qty < (float) $item['quantity'] && !filter_var(\App\Models\Setting::valueFor('negative_stock', false), FILTER_VALIDATE_BOOL)) {
+                    if ($invType !== 'Quotation' && (float) $batch->available_qty < (float) $item['quantity'] && ! filter_var(Setting::valueFor('negative_stock', false), FILTER_VALIDATE_BOOL)) {
                         throw ValidationException::withMessages(["items.{$index}.quantity" => 'Insufficient quantity in the selected stock batch.']);
                     }
                     $costPrice = (float) $batch->cost_price;
@@ -187,10 +189,7 @@ class SalesBillingController extends Controller
             if ($paid > 0 && $invType !== 'Quotation') {
                 $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(8)), 'amount' => $paid, 'method' => $v['payment_method'], 'paid_at' => now(), 'account_id' => $v['account_id'], 'balance_after' => $total - $paid, 'status' => 'Completed', 'created_by' => auth()->id()]);
                 $accountService = app(AccountService::class);
-                $accountService->recordTransaction('spare_parts', 'income', $paid, "Payment for Sale #{$invoice->number}", $payment, $v['payment_method'], null, (int) $v['account_id']);
-                if ($v['payment_method'] !== 'Cash') {
-                    $accountService->recordTransaction('bank', 'income', $paid, "Bank receipt for Sale #{$invoice->number}", $payment, $v['payment_method'], null, (int) $v['account_id']);
-                }
+                $accountService->receiveInvoicePayment($invoice, $payment);
             }
 
             return $invoice;
@@ -224,6 +223,13 @@ class SalesBillingController extends Controller
             return back()->with('error', 'Invoice is already cancelled.');
         }
         DB::transaction(function () use ($invoice, $data, $service) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
+            if ($invoice->status === 'Cancelled') {
+                return;
+            }
+            if ($invoice->payments()->where('status', 'Completed')->where('method', 'Salary Deduction')->exists()) {
+                throw ValidationException::withMessages(['reason' => 'Reopen the staff salary recovery before cancelling this invoice.']);
+            }
             $invoice->load(['items', 'payments']);
             foreach ($invoice->payments->where('status', 'Completed') as $payment) {
                 $this->reversePayment($payment, $data['reason'], $service);
@@ -274,6 +280,9 @@ class SalesBillingController extends Controller
 
     public function cancelPayment(Request $request, Payment $payment, WorkshopService $service)
     {
+        if ($payment->method === 'Salary Deduction') {
+            throw ValidationException::withMessages(['reason' => 'Reopen the originating salary sheet to reverse this repair recovery.']);
+        }
         $data = $request->validate(['reason' => ['required', 'min:5', 'max:500']]);
         if ($payment->status !== 'Completed') {
             return back()->with('error', 'Payment is already cancelled.');
@@ -287,7 +296,7 @@ class SalesBillingController extends Controller
     {
         $query = Invoice::with(['customer', 'bike', 'jobCard.intake.bike'])->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn (Builder $c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))->orWhereHas('jobCard.intake.bike', fn (Builder $b) => $b->where('number', 'like', "%{$term}%"))))->when($request->overdue === 'yes', fn (Builder $q) => $q->whereDate('due_date', '<', today()))->when($request->min, fn (Builder $q, string $value) => $q->where('due_amount', '>=', $value))->when($request->max, fn (Builder $q, string $value) => $q->where('due_amount', '<=', $value));
 
-        return view('sales.dues', ['dues' => $query->orderBy('due_date')->paginate(15)->withQueryString(), 'topCustomers' => Customer::withSum(['invoices as due_total' => fn (Builder $q) => $q->where('status', '!=', 'Cancelled')], 'due_amount')->orderByDesc('due_total')->limit(5)->get(), 'stats' => ['total' => Invoice::where('status', '!=', 'Cancelled')->sum('due_amount'), 'count' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->count(), 'overdue' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->whereDate('due_date', '<', today())->count(), 'today' => Payment::where('status', 'Completed')->whereDate('paid_at', today())->sum('amount'), 'customers' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->distinct('customer_id')->count('customer_id')]]);
+        return view('sales.dues', ['dues' => $query->orderBy('due_date')->paginate(15)->withQueryString(), 'topCustomers' => Customer::withSum(['invoices as due_total' => fn (Builder $q) => $q->where('status', '!=', 'Cancelled')], 'due_amount')->orderByDesc('due_total')->limit(5)->get(), 'stats' => ['total' => Invoice::where('status', '!=', 'Cancelled')->sum('due_amount'), 'count' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->count(), 'overdue' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->whereDate('due_date', '<', today())->count(), 'today' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereDate('paid_at', today())->sum('amount'), 'customers' => Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->distinct('customer_id')->count('customer_id')]]);
     }
 
     public function publicLinks(Request $request)
@@ -322,7 +331,7 @@ class SalesBillingController extends Controller
     {
         $payments = Payment::with(['invoice.customer', 'invoice.jobCard.intake.bike', 'account'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('invoice', fn (Builder $i) => $i->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn (Builder $c) => $c->where('name', 'like', "%{$term}%")))))->when($request->method, fn (Builder $q, string $method) => $q->where('method', $method))->when($request->account_id, fn (Builder $q, string $id) => $q->where('account_id', $id))->latest('paid_at')->paginate(15)->withQueryString();
 
-        return ['payments' => $payments, 'customers' => Customer::where('active', true)->withSum(['invoices as due_total' => fn (Builder $q) => $q->where('status', '!=', 'Cancelled')], 'due_amount')->orderBy('name')->get(), 'invoices' => Invoice::with('customer')->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->orderBy('due_date')->get(), 'accounts' => Account::where('active', true)->get(), 'customerMode' => $customerMode, 'stats' => ['today' => Payment::where('status', 'Completed')->whereDate('paid_at', today())->sum('amount'), 'month' => Payment::where('status', 'Completed')->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])->sum('amount'), 'cash' => Payment::where('status', 'Completed')->where('method', 'Cash')->sum('amount'), 'bank' => Payment::where('status', 'Completed')->whereIn('method', ['Card', 'Bank Transfer', 'QR'])->sum('amount'), 'cheque' => Payment::where('status', 'Completed')->where('method', 'Cheque')->sum('amount'), 'due' => Invoice::where('status', '!=', 'Cancelled')->sum('due_amount')]];
+        return ['payments' => $payments, 'customers' => Customer::where('active', true)->withSum(['invoices as due_total' => fn (Builder $q) => $q->where('status', '!=', 'Cancelled')], 'due_amount')->orderBy('name')->get(), 'invoices' => Invoice::with('customer')->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->orderBy('due_date')->get(), 'accounts' => Account::where('active', true)->get(), 'customerMode' => $customerMode, 'stats' => ['today' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereDate('paid_at', today())->sum('amount'), 'month' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])->sum('amount'), 'cash' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->where('method', 'Cash')->sum('amount'), 'bank' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereIn('method', ['Card', 'Bank Transfer', 'QR'])->sum('amount'), 'cheque' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->where('method', 'Cheque')->sum('amount'), 'due' => Invoice::where('status', '!=', 'Cancelled')->sum('due_amount')]];
     }
 
     private function createPayment(Invoice $invoice, float $amount, string $method, int $accountId, mixed $paidAt, ?string $note, WorkshopService $service, ?string $reference = null): Payment
@@ -338,40 +347,30 @@ class SalesBillingController extends Controller
         $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => $method, 'reference' => $reference, 'paid_at' => $paidAt, 'note' => $note, 'status' => 'Completed', 'created_by' => auth()->id()]);
 
         $accountService = app(AccountService::class);
-        $this->postIncomeLedgers($invoice, $payment, $amount, $method, $accountService, false, $accountId);
+        $accountService->receiveInvoicePayment($invoice, $payment);
 
         return $payment;
     }
 
-    private function postIncomeLedgers(Invoice $invoice, Payment $payment, float $amount, string $method, AccountService $service, bool $reversal, ?int $accountId = null): void
-    {
-        $partsShare = (float) $invoice->total > 0 ? min($amount, $amount * ((float) $invoice->parts_amount / (float) $invoice->total)) : 0;
-        $mainShare = max(0, $amount - $partsShare);
-
-        $type = $reversal ? 'refund' : 'income';
-
-        if ($partsShare > 0) {
-            $service->recordTransaction('spare_parts', $type, $partsShare, ($reversal ? 'Reversal ' : '')."parts income {$invoice->number}", $payment, $method, null, $accountId);
-        }
-        if ($mainShare > 0) {
-            $service->recordTransaction('main', $type, $mainShare, ($reversal ? 'Reversal ' : '')."service income {$invoice->number}", $payment, $method, null, $accountId);
-        }
-
-        if (! in_array($method, ['Cash'], true)) {
-            $service->recordTransaction('bank', $reversal ? 'expense' : 'income', $amount, ($reversal ? 'Reversal ' : '')."bank receipt {$invoice->number}", $payment, $method, null, $accountId);
-        }
-    }
-
     private function reversePayment(Payment $payment, string $reason, WorkshopService $service): void
     {
-        $payment->load('invoice');
+        $invoice = Invoice::lockForUpdate()->findOrFail($payment->invoice_id);
+        $payment = Payment::lockForUpdate()->findOrFail($payment->id);
+        if ($payment->status !== 'Completed') {
+            return;
+        }
+        $payment->setRelation('invoice', $invoice);
         $accountService = app(AccountService::class);
-        $this->postIncomeLedgers($payment->invoice, $payment, (float) $payment->amount, $payment->method, $accountService, true, $payment->account_id);
+        AccountTransaction::where('reference_type', $payment->getMorphClass())
+            ->where('reference_id', $payment->id)->where('status', 'active')
+            ->where('transaction_type', '!=', 'reversal')->get()
+            ->each(fn ($entry) => $accountService->reverseTransaction($entry, $reason));
         $payment->invoice->decrement('paid_amount', (float) $payment->amount);
         $payment->invoice->increment('due_amount', (float) $payment->amount);
         $payment->invoice->refresh();
         $payment->invoice->update(['status' => (float) $payment->invoice->paid_amount > 0 ? 'Partially Paid' : 'Unpaid']);
         $payment->update(['status' => 'Cancelled', 'cancel_reason' => $reason, 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
+        $accountService->reallocateInvoiceReceipts($payment->invoice);
     }
 
     private function queueBillSms(Invoice $invoice): void

@@ -72,7 +72,7 @@
           <td class="p-4 max-w-[200px]"><p class="text-xs text-red-600 font-semibold">{{ $log->failure_reason ?? $log->api_response ?? '—' }}</p></td>
           <td class="p-4 text-center"><span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{{ $log->retry_count ?? 0 }}</span></td>
           <td class="p-4">
-            <form method="POST" action="{{ route('sms.resend',$log) }}" class="inline">@csrf
+            <form method="POST" action="{{ route('sms.resend',$log) }}" class="inline">@csrf<x-submission-token/>
               <button class="btn-primary text-xs px-3 py-1.5 min-h-0">↻ Resend</button>
             </form>
           </td>

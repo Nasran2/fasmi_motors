@@ -89,7 +89,7 @@
           <td class="p-4 text-xs">{{ $log->sender?->name ?? 'System' }}</td>
           <td class="p-4">
             @if(in_array(strtolower($log->status), ['failed', 'queued', 'pending']))
-            <form method="POST" action="{{ route('sms.resend',$log) }}" class="inline">@csrf
+            <form method="POST" action="{{ route('sms.resend',$log) }}" class="inline">@csrf<x-submission-token/>
               <button class="text-xs font-bold text-red-600 hover:underline">
                 {{ in_array(strtolower($log->status), ['queued', 'pending']) ? 'Send Now' : 'Resend' }}
               </button>

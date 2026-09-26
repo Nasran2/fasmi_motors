@@ -1,4 +1,21 @@
 @import 'tailwindcss';
+
+.workshop-dialog {
+    margin: auto;
+    width: min(28rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    overflow: auto;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    color: #17212f;
+    box-shadow: 0 20px 60px #0003;
+}
+.workshop-dialog::backdrop { background: #0007; }
+.workshop-dialog h2 { font-size: 1.125rem; font-weight: 700; }
+.workshop-dialog p { margin: 1rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workshop-dialog-actions { display: flex; justify-content: flex-end; gap: .75rem; }
 @import '../../vendor/livewire/flux/dist/flux.css';
 
 @source '../views';
@@ -107,7 +124,7 @@
     .field { @apply min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-400 focus:bg-white focus:ring-4 focus:ring-red-50; }
     .label { @apply mb-1.5 block text-[12px] font-bold text-slate-700; }
     .table-wrap { @apply overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,35,65,.04)]; }
-    .data-table { @apply min-w-full divide-y divide-slate-200 bg-white text-sm; }
+    .data-table { @apply w-full min-w-full divide-y divide-slate-200 bg-white text-sm; }
     .data-table th { @apply bg-slate-50 px-4 py-3 text-left font-semibold text-slate-600; }
     .data-table td { @apply px-4 py-3 text-slate-700; }
     .data-table tbody { @apply divide-y divide-slate-100; }
@@ -329,7 +346,7 @@ select:focus[data-flux-control] {
    Ensures all inputs, selects, and textareas have clear borders
    ============================================================ */
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-flux-control]):not(.erp-search):not(.noinput),
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([data-flux-control]):not(.erp-search):not(.noinput):not(.sr-only),
 select:not([data-flux-control]):not(.noinput),
 textarea:not([data-flux-control]):not(.noinput) {
     min-height: 44px;

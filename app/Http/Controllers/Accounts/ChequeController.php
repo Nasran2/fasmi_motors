@@ -26,10 +26,12 @@ class ChequeController extends BaseAccountController
     public function store(Request $request)
     {
         $v = $request->validate(['cheque_type' => 'required|in:Received,Issued', 'party_name' => 'required|string|max:120', 'related_reference' => 'nullable|string|max:120', 'cheque_number' => 'required|string|max:80', 'bank_name' => 'required|string|max:120', 'branch' => 'nullable|string|max:120', 'cheque_date' => 'required|date', 'amount' => 'required|numeric|gt:0', 'status' => 'required|in:Pending,Deposited,Cleared', 'realized_date' => 'nullable|required_if:status,Cleared|date', 'bank_account_id' => 'nullable|exists:accounts,id', 'note' => 'nullable|string|max:1000']);
-        $cheque = Cheque::create($v + ['created_by' => auth()->id(), 'updated_by' => auth()->id()]);
-        if ($cheque->status === 'Cleared') {
-            $this->postLedger($cheque, app(AccountService::class));
-        }
+        DB::transaction(function () use ($v) {
+            $cheque = Cheque::create($v + ['created_by' => auth()->id(), 'updated_by' => auth()->id()]);
+            if ($cheque->status === 'Cleared') {
+                $this->postLedger($cheque, app(AccountService::class));
+            }
+        });
 
         return back()->with('success', 'Cheque recorded successfully. Pending cheques do not affect the bank ledger.');
     }
@@ -38,7 +40,9 @@ class ChequeController extends BaseAccountController
     {
         $v = $request->validate(['status' => 'required|in:Pending,Deposited,Cleared,Returned,Cancelled', 'realized_date' => 'nullable|required_if:status,Cleared|date', 'reason' => 'nullable|required_if:status,Returned|required_if:status,Cancelled|string|min:5|max:500']);
         DB::transaction(function () use ($v, $cheque, $service) {
+            $cheque = Cheque::lockForUpdate()->findOrFail($cheque->id);
             $was = $cheque->status;
+            abort_if($was === 'Cleared' && in_array($v['status'], ['Pending', 'Deposited'], true), 422, 'Reverse or return a cleared cheque before recording a new settlement.');
             if ($v['status'] === 'Cleared' && $was !== 'Cleared') {
                 $this->postLedger($cheque, $service, $v['realized_date'] ?? today());
             }if (in_array($v['status'], ['Returned', 'Cancelled']) && $was === 'Cleared') {
@@ -51,6 +55,6 @@ class ChequeController extends BaseAccountController
 
     private function postLedger(Cheque $cheque, AccountService $service, $date = null): void
     {
-        $service->recordTransaction('bank', $cheque->cheque_type === 'Received' ? 'income' : 'expense', $cheque->amount, "{$cheque->cheque_type} cheque {$cheque->cheque_number} cleared", $cheque, 'Cheque', $cheque->note, $cheque->bank_account_id, $date ?: $cheque->realized_date ?: today(), 'cheque');
+        $service->recordTransaction('bank', $cheque->cheque_type === 'Received' ? 'income' : 'expense', (float) $cheque->amount, "{$cheque->cheque_type} cheque {$cheque->cheque_number} cleared", $cheque, 'Cheque', $cheque->note, $cheque->bank_account_id, $date ?: $cheque->realized_date ?: today(), 'cheque');
     }
 }

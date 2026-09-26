@@ -36,6 +36,11 @@ class LiveBoardController extends Controller
         return view('live-board.fullscreen');
     }
 
+    public function customer()
+    {
+        return view('live-board.customer');
+    }
+
     public function data(Request $request): JsonResponse
     {
         $jobs = JobCard::query()
@@ -166,9 +171,10 @@ class LiveBoardController extends Controller
     {
         $data = $request->validate(['status' => 'required|in:'.implode(',', array_keys(self::BOARD_STATUSES))]);
         $newStatus = self::BOARD_STATUSES[$data['status']];
-        $oldStatus = $job->status;
-
-        DB::transaction(function () use ($job, $oldStatus, $newStatus) {
+        DB::transaction(function () use ($job, $newStatus) {
+            $job = JobCard::lockForUpdate()->findOrFail($job->id);
+            abort_if(in_array($job->status, self::TERMINAL_STATUSES, true) || $job->invoice()->exists(), 422, 'Reopen this job through its audited job-card workflow before changing its status.');
+            $oldStatus = $job->status;
             $job->update(['status' => $newStatus]);
             DB::table('job_card_status_logs')->insert([
                 'job_card_id' => $job->id,

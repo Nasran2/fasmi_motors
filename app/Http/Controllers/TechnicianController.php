@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\AttendanceImportBatch;
 use App\Models\AuditLog;
 use App\Models\Bike;
+use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\OtSlabRule;
 use App\Models\SalarySetting;
@@ -534,6 +535,7 @@ class TechnicianController extends Controller
             'other_allowances' => ['nullable', 'numeric', 'min:0'], 'manual_addition' => ['nullable', 'numeric', 'min:0'],
             'other_deductions' => ['nullable', 'numeric', 'min:0'], 'manual_deduction' => ['nullable', 'numeric', 'min:0'],
             'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
+            'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
         ]);
         $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
         $existing = TechnicianSalarySheet::where('technician_id', $data['technician_id'])
@@ -551,6 +553,7 @@ class TechnicianController extends Controller
             'technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'],
             'allowances' => ['nullable', 'numeric', 'min:0'], 'manual_additions' => ['nullable', 'numeric', 'min:0'],
             'other_deductions' => ['nullable', 'numeric', 'min:0'],
+            'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
             'manual_deductions' => ['nullable'],
             'manual_deductions.*.name' => ['required_with:manual_deductions.*.amount', 'string', 'max:150'],
             'manual_deductions.*.amount' => ['required_with:manual_deductions.*.name', 'numeric', 'min:0'],
@@ -571,19 +574,20 @@ class TechnicianController extends Controller
         if (($data['action'] ?? 'save') === 'preview') {
             return back()->withInput()->with('salary_preview', $calculation + ['technician_name' => $technician->name]);
         }
-        $existing = TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $calculation['period_start'])->first();
-        if ($existing) {
-            if ($existing->status === 'Draft') {
-                $existing->additions()->delete();
-                $existing->paymentDeductions()->delete();
-                TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
-                $existing->delete();
-            } else {
-                throw ValidationException::withMessages(['month' => 'A finalized or paid salary sheet already exists for this technician and month. Please reopen it first to edit.']);
-            }
-        }
-
         $sheet = DB::transaction(function () use ($data, $technician, $calculation, $manualDeductionsList) {
+            Technician::whereKey($technician->id)->lockForUpdate()->firstOrFail();
+            $existing = TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $calculation['period_start'])->lockForUpdate()->first();
+            if ($existing) {
+                if ($existing->status === 'Draft') {
+                    $existing->additions()->delete();
+                    $existing->paymentDeductions()->delete();
+                    TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
+                    $existing->delete();
+                } else {
+                    throw ValidationException::withMessages(['month' => 'A finalized or paid salary sheet already exists for this technician and month. Please reopen it first to edit.']);
+                }
+            }
+
             $sheetFields = [
                 'period_start', 'period_end', 'salary_cycle_mode', 'salary_period_days', 'carried_from_previous_month_days',
                 'carried_to_next_month_days', 'excluded_dates', 'basic_salary', 'daily_salary', 'attendance_salary_amount', 'working_days', 'worked_days',
@@ -648,30 +652,18 @@ class TechnicianController extends Controller
             'payment_note' => ['nullable', 'max:1000'],
         ]);
 
-        $calculator->finalizeSalaryPayment($sheet, auth()->id());
-        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Finalized', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Finalized'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+        return DB::transaction(function () use ($sheet, $data, $request, $calculator) {
+            $sheet = $calculator->finalizeSalaryPayment($sheet, auth()->id());
+            AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Finalized', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Finalized'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
-        if (! empty($data['amount']) && $data['amount'] > 0) {
-            $request->validate(['account_id' => 'required', 'payment_method' => 'required']);
-            DB::transaction(function () use ($sheet, $data) {
-                $paid = (float) $sheet->paid_amount + (float) $data['amount'];
-                $balance = round((float) $sheet->net_payable - $paid, 2);
-                $overpaid = max(0, -$balance);
-                $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'] ?? today(), 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? now() : null, 'paid_by' => auth()->id()]);
-                if ($overpaid > 0) {
-                    TechnicianDeduction::updateOrCreate(
-                        ['technician_id' => $sheet->technician_id, 'source_type' => 'salary_overpayment', 'source_id' => $sheet->id],
-                        ['reference_no' => $sheet->number, 'deduction_name' => 'Previous salary overpayment adjustment', 'amount' => $overpaid, 'reason' => 'Automatically carried forward from an overpaid salary.', 'deduction_date' => $sheet->period_start->copy()->addMonth(), 'status' => 'pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id()]
-                    );
-                }
-                app(AccountService::class)->recordTransaction($data['payment_method'] === 'Cash' ? 'cash' : 'bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id']);
-            });
-            AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+            if (! empty($data['amount']) && $data['amount'] > 0) {
+                $request->validate(['account_id' => 'required', 'payment_method' => 'required']);
 
-            return back()->with('success', "{$sheet->number} finalized and payment of Rs. {$data['amount']} recorded.");
-        }
+                return $this->salaryPay($request, $sheet);
+            }
 
-        return back()->with('success', "{$sheet->number} finalized and attendance locked.");
+            return back()->with('success', "{$sheet->number} finalized and attendance locked.");
+        });
     }
 
     public function salaryPay(Request $request, TechnicianSalarySheet $sheet)
@@ -679,6 +671,8 @@ class TechnicianController extends Controller
         abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
         $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
         DB::transaction(function () use ($sheet, $data) {
+            $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
+            abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
             $paid = (float) $sheet->paid_amount + (float) $data['amount'];
             $balance = round((float) $sheet->net_payable - $paid, 2);
             $overpaid = max(0, -$balance);
@@ -689,7 +683,7 @@ class TechnicianController extends Controller
                     ['reference_no' => $sheet->number, 'deduction_name' => 'Previous salary overpayment adjustment', 'amount' => $overpaid, 'reason' => 'Automatically carried forward from an overpaid salary.', 'deduction_date' => $sheet->period_start->copy()->addMonth(), 'status' => 'pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id()]
                 );
             }
-            app(AccountService::class)->recordTransaction($data['payment_method'] === 'Cash' ? 'cash' : 'bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, $data['account_id']);
+            app(AccountService::class)->outgoing('main', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $data['payment_date'] ?? today(), 'salary');
         });
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
@@ -737,12 +731,7 @@ class TechnicianController extends Controller
         DB::transaction(function () use ($data) {
             $advance = TechnicianAdvance::create($data + ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'deduct_month' => $data['deduct_month'].'-01', 'created_by' => auth()->id()]);
 
-            $accountService = app(AccountService::class);
-            if (in_array($data['payment_method'], ['Cash'])) {
-                $accountService->recordTransaction('cash', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id'], $data['payment_date'], 'salary_advance');
-            } else {
-                $accountService->recordTransaction('bank', 'expense', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], null, $data['account_id'], $data['payment_date'], 'salary_advance');
-            }
+            app(AccountService::class)->outgoing('main', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], $data['payment_date'], 'salary_advance');
         });
 
         return back()->with('success', 'Advance recorded and account ledger updated.');
@@ -774,7 +763,24 @@ class TechnicianController extends Controller
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'bike_id' => ['required', 'exists:bikes,id'], 'job_card_id' => ['nullable', 'exists:job_cards,id'], 'total_amount' => ['required', 'numeric', 'gt:0'], 'deduction_type' => ['required', Rule::in(['Full deduction', 'Partial deduction', 'Monthly installment'])], 'installment_amount' => ['required', 'numeric', 'gt:0'], 'installments' => ['required', 'integer', 'min:1'], 'start_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000']]);
         $job = ! empty($data['job_card_id']) ? JobCard::with('invoice')->find($data['job_card_id']) : null;
-        TechnicianBikeDeduction::create($data + ['number' => 'TBD-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'invoice_id' => $job?->invoice?->id, 'start_month' => $data['start_month'].'-01', 'next_deduction_month' => $data['start_month'].'-01', 'created_by' => auth()->id()]);
+        $bike = Bike::findOrFail($data['bike_id']);
+        if (! $bike->is_technician_bike || (int) $bike->technician_id !== (int) $data['technician_id']) {
+            throw ValidationException::withMessages(['bike_id' => 'Select a bike belonging to this staff member.']);
+        }
+        if ($job && ($job->intake->bike_id !== $bike->id || ! $job->invoice || $job->invoice->status === 'Cancelled')) {
+            throw ValidationException::withMessages(['job_card_id' => 'Select a billed job for this staff bike.']);
+        }
+        DB::transaction(function () use ($data, $job) {
+            if ($job) {
+                $invoice = Invoice::lockForUpdate()->findOrFail($job->invoice->id);
+                $assigned = TechnicianBikeDeduction::where('invoice_id', $invoice->id)->whereIn('status', ['Active', 'Completed'])->sum(DB::raw('total_amount-deducted_amount'));
+                if ((float) $data['total_amount'] + (float) $assigned > (float) $invoice->due_amount) {
+                    throw ValidationException::withMessages(['total_amount' => 'Salary recovery exceeds the unassigned invoice due.']);
+                }
+            }
+            $data['start_month'] .= '-01';
+            TechnicianBikeDeduction::create($data + ['number' => 'TBD-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'invoice_id' => $job?->invoice?->id, 'next_deduction_month' => $data['start_month'], 'created_by' => auth()->id()]);
+        });
 
         return back()->with('success', 'Own-bike salary deduction plan created.');
     }
@@ -880,6 +886,6 @@ class TechnicianController extends Controller
 
     private function technicianData(Request $request, ?Technician $technician = null): array
     {
-        return $request->validate(['attendance_person_id' => ['nullable', 'max:80', Rule::unique('technicians', 'attendance_person_id')->ignore($technician)], 'department' => ['nullable', 'max:150'], 'name' => ['required', 'max:150'], 'phone' => ['required', 'max:30', Rule::unique('technicians', 'phone')->ignore($technician)], 'alternative_phone' => ['nullable', 'max:30'], 'nic' => ['nullable', 'max:30'], 'address' => ['nullable', 'max:1000'], 'emergency_contact' => ['nullable', 'max:100'], 'joining_date' => ['nullable', 'date'], 'active' => ['required', 'boolean'], 'basic_salary' => ['required', 'numeric', 'min:0'], 'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])], 'daily_salary' => ['nullable', 'numeric', 'min:0'], 'ot_rate' => ['nullable', 'numeric', 'min:0'], 'late_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'commission_enabled' => ['nullable', 'boolean'], 'commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'commission_type' => ['required', 'max:100'], 'epf_number' => ['nullable', 'max:50'], 'etf_number' => ['nullable', 'max:50'], 'epf_eligible' => ['nullable', 'boolean'], 'etf_eligible' => ['nullable', 'boolean'], 'epf_employee_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100']]);
+        return $request->validate(['attendance_person_id' => ['nullable', 'max:80', Rule::unique('technicians', 'attendance_person_id')->ignore($technician)], 'department' => ['nullable', 'max:150'], 'name' => ['required', 'max:150'], 'phone' => ['required', 'max:30', Rule::unique('technicians', 'phone')->ignore($technician)], 'alternative_phone' => ['nullable', 'max:30'], 'nic' => ['nullable', 'max:30'], 'address' => ['nullable', 'max:1000'], 'emergency_contact' => ['nullable', 'max:100'], 'joining_date' => ['nullable', 'date'], 'active' => ['required', 'boolean'], 'basic_salary' => ['required', 'numeric', 'min:0'], 'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])], 'daily_salary' => ['nullable', 'numeric', 'min:0'], 'ot_rate' => ['nullable', 'numeric', 'min:0'], 'late_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'], 'commission_enabled' => ['nullable', 'boolean'], 'commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'commission_type' => ['required', 'max:100'], 'epf_number' => ['nullable', 'max:50'], 'etf_number' => ['nullable', 'max:50'], 'epf_eligible' => ['nullable', 'boolean'], 'etf_eligible' => ['nullable', 'boolean'], 'epf_employee_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'role' => ['nullable', Rule::in(['technician', 'staff'])], 'designation' => ['nullable', 'max:100']]);
     }
 }

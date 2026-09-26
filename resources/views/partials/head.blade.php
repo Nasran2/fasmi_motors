@@ -60,6 +60,9 @@
         const initFlatpickr = (elements) => {
             if (!elements || elements.length === 0) return;
             Array.from(elements).forEach(el => {
+                if (!el.getAttribute('placeholder')) {
+                    el.setAttribute('placeholder', 'YYYY-MM-DD');
+                }
                 flatpickr(el, {
                     allowInput: true,
                     dateFormat: "Y-m-d",
@@ -75,6 +78,9 @@
         const initMonthPickr = (elements) => {
             if (!elements || elements.length === 0) return;
             Array.from(elements).forEach(el => {
+                if (!el.getAttribute('placeholder')) {
+                    el.setAttribute('placeholder', 'YYYY-MM');
+                }
                 flatpickr(el, {
                     allowInput: true,
                     plugins: [

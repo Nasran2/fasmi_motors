@@ -13,7 +13,7 @@
 <div class="grid gap-6 xl:grid-cols-[1fr_320px]">
 
 <form method="POST" action="{{ $template ? route('sms.templates.update',$template) : route('sms.templates.store') }}">
-@csrf
+@csrf<x-submission-token/>
 @if($template) @method('PUT') @endif
 
 <div class="space-y-5">

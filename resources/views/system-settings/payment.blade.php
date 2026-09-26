@@ -21,7 +21,7 @@
     <x-flash />
 
     <form method="POST" action="{{ route('system-settings.save') }}" class="space-y-6">
-      @csrf
+      @csrf<x-submission-token/>
       <input type="hidden" name="group" value="payment">
 
       {{-- Payment Options Panel --}}

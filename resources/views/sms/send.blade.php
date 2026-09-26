@@ -11,7 +11,7 @@
 
 {{-- Main Form --}}
 <form method="POST" action="{{ route('sms.send.post') }}" id="smsForm">
-@csrf
+@csrf<x-submission-token/>
 <div class="space-y-5">
 
   {{-- Recipient Section --}}
@@ -189,8 +189,8 @@ function insertVar(v) {
 
 function previewSms() {
   const msg = document.getElementById('message').value;
-  if (!msg.trim()) { alert('Please type a message first.'); return; }
-  alert('SMS Preview:\n\n' + msg + '\n\n(' + msg.length + ' characters)');
+  if (!msg.trim()) { workshopNotify('Please type a message first.'); return; }
+  workshopNotify('SMS Preview:\n\n' + msg + '\n\n(' + msg.length + ' characters)');
 }
 
 function resetForm() {
