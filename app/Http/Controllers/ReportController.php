@@ -376,7 +376,7 @@ class ReportController extends Controller
 
         $rows = Technician::withCount(['jobs' => fn ($q) => $q->whereBetween('created_at', [$from, $to])])
             ->withCount(['jobs as completed_jobs' => fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', 'Completed')])
-            ->withSum(['commissions' => fn ($q) => $q->whereBetween('created_at', [$from, $to])], 'amount')
+            ->withSum(['commissions' => fn ($q) => $q->whereBetween('earned_date', [$from->toDateString(), $to->toDateString()])], 'amount')
             ->withSum(['attendance as total_ot_amount' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'ot_amount')
             ->withSum(['attendance as total_late_deduction' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'late_deduction_amount')
             ->withSum(['attendance as total_early_leave_deduction' => fn ($q) => $q->whereBetween('date', [$from, $to])], 'early_leave_deduction_amount')
@@ -401,19 +401,19 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = TechnicianAttendance::with('technician')
-            ->whereBetween('date', [$from, $to])
+        $query = TechnicianAttendance::with('technician')
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
             ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
-            ->when($r->status, fn ($q, $v) => $q->where('status', $v))
-            ->orderByDesc('date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
+            ->when($r->status, fn ($q, $v) => $q->where('status', $v));
+        $rows = (clone $query)->orderByDesc('date')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
-        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave', 'Auto Closed', 'Worked on Leave Day'];
 
         $stats = [
-            'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', $presentStatuses)->count(),
-            'absent' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
-            'late' => TechnicianAttendance::whereBetween('date', [$from, $to])->where('status', 'Late')->count(),
-            'leave' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
+            'present' => (clone $query)->whereIn('status', $presentStatuses)->count(),
+            'absent' => (clone $query)->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
+            'late' => (clone $query)->where('late_minutes', '>', 0)->count(),
+            'leave' => (clone $query)->whereIn('status', ['Leave', 'Paid Leave'])->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -427,16 +427,16 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = TechnicianSalarySheet::with('technician')
-            ->whereBetween('period_start', [$from, $to])
-            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
-            ->latest('period_start')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
+        $query = TechnicianSalarySheet::with('technician')
+            ->whereDate('period_start', '<=', $to)->whereDate('period_end', '>=', $from)
+            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v));
+        $rows = (clone $query)->latest('period_start')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'gross' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('gross_salary'),
-            'net' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('net_payable'),
-            'advances' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('advances'),
-            'epf' => TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->sum('epf_employee'),
+            'gross' => (clone $query)->sum('gross_salary'),
+            'net' => (clone $query)->sum('net_payable'),
+            'advances' => (clone $query)->sum('advances'),
+            'epf' => (clone $query)->sum('epf_employee'),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -450,17 +450,17 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = TechnicianContribution::with('technician')
-            ->whereBetween('created_at', [$from, $to])
-            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
-            ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
+        $query = TechnicianContribution::with('technician')
+            ->whereBetween('month', [$from->copy()->startOfMonth()->toDateString(), $to->copy()->endOfMonth()->toDateString()])
+            ->whereHas('salarySheet', fn ($q) => $q->whereIn('status', ['Finalized', 'Partially Paid', 'Paid']))
+            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v));
+        $rows = (clone $query)->latest('month')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
-        $sheets = TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->get();
         $stats = [
-            'employee_epf' => $sheets->sum('epf_employee'),
-            'company_epf' => $sheets->sum('epf_company'),
-            'total_epf' => $sheets->sum('epf_employee') + $sheets->sum('epf_company'),
-            'eligible' => Technician::where('epf_eligible', true)->count(),
+            'employee_epf' => (clone $query)->sum('employee_epf_amount'),
+            'company_epf' => (clone $query)->sum('company_epf_amount'),
+            'total_epf' => (clone $query)->sum(DB::raw('employee_epf_amount + company_epf_amount')),
+            'eligible' => Technician::where('epf_eligible', true)->when($r->technician, fn ($q, $v) => $q->whereKey($v))->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);
@@ -474,15 +474,15 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($r);
 
-        $rows = TechnicianContribution::with('technician')
-            ->whereBetween('created_at', [$from, $to])
-            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v))
-            ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
+        $query = TechnicianContribution::with('technician')
+            ->whereBetween('month', [$from->copy()->startOfMonth()->toDateString(), $to->copy()->endOfMonth()->toDateString()])
+            ->whereHas('salarySheet', fn ($q) => $q->whereIn('status', ['Finalized', 'Partially Paid', 'Paid']))
+            ->when($r->technician, fn ($q, $v) => $q->where('technician_id', $v));
+        $rows = (clone $query)->latest('month')->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
-        $sheets = TechnicianSalarySheet::whereBetween('period_start', [$from, $to])->get();
         $stats = [
-            'total_etf' => $sheets->sum('etf_company'),
-            'eligible' => Technician::where('etf_eligible', true)->count(),
+            'total_etf' => (clone $query)->sum('company_etf_amount'),
+            'eligible' => Technician::where('etf_eligible', true)->when($r->technician, fn ($q, $v) => $q->whereKey($v))->count(),
         ];
 
         $technicians = Technician::orderBy('name')->get(['id', 'name']);

@@ -1,1 +1,177 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ $invoice->number }} · Fasmir Motors</title>@vite(['resources/css/app.css'])<style>@page{margin:0;size:auto}@media print{html,body{background:#fff!important;padding:0!important;margin:0!important;color:#000!important;width:100%!important;font-family:monospace,sans-serif!important}.invoice-paper{box-shadow:none!important;width:100%!important;max-width:100%!important;margin:0!important;padding:4mm!important;border:none!important;border-radius:0!important}.print-hide{display:none!important}*{color:#000!important}table,tr,td,th,tbody{page-break-inside:avoid!important}}</style></head><body class="bg-slate-100 p-3 text-slate-900 sm:p-6"><main class="invoice-paper mx-auto max-w-2xl rounded-3xl bg-white p-5 shadow-xl sm:p-10"><header class="flex flex-col items-center border-b border-slate-200 border-dashed pb-4 text-center sm:flex-row sm:justify-between sm:border-solid sm:text-left print:flex-col print:items-center print:text-center print:pb-2 print:border-dashed"><div class="mb-3 sm:mb-0 print:mb-2"><h1 class="text-2xl font-black italic tracking-tight sm:text-3xl print:text-xl print:tracking-normal"><span class="text-red-600 print:text-black">FASMIR</span> MOTORS</h1><p class="text-[10px] text-slate-500 sm:text-sm print:text-[10px] print:text-black">Bike Repair Center · Sri Lanka</p></div><div class="sm:text-right print:text-center"><p class="text-[10px] font-bold uppercase tracking-widest text-red-600 sm:text-xs print:text-black print:tracking-normal">{{ str_ireplace('Parts Sale', 'Invoice', $invoice->invoice_type) }}</p><p class="mt-0.5 text-lg font-black sm:mt-1 sm:text-2xl print:text-base">{{ $invoice->number }}</p><p class="text-[10px] text-slate-500 sm:text-sm print:text-black">{{ $invoice->created_at->format('d M Y, h:i A') }}</p></div></header><section class="grid gap-4 py-4 text-xs sm:grid-cols-2 sm:py-6 sm:text-sm print:grid-cols-1 print:gap-2 print:py-2 print:text-[10px]"><div class="text-center sm:text-left print:text-left"><p class="font-bold uppercase text-slate-400 print:text-black">Bill To</p><p class="mt-1 font-extrabold print:mt-0">{{ $invoice->customer?->name ?: 'Walk-in Customer' }}</p><p>{{ $invoice->customer?->phone }}</p></div><div class="text-center sm:text-right print:text-left"><p class="font-bold uppercase text-slate-400 print:text-black">Bike / Reference</p><p class="mt-1 font-extrabold print:mt-0">{{ $invoice->bike?->number ?? $invoice->jobCard?->intake?->bike?->number ?? 'Counter Sale' }}</p><p>{{ $invoice->jobCard?->number ?? $invoice->store?->name }}</p>@if($invoice->jobCard?->intake?->next_service_km)<p class="mt-1 text-[11px] font-bold text-red-600 print:text-black">Next Service: {{ number_format($invoice->jobCard->intake->next_service_km, 0) }} KM</p>@endif</div></section><div><table class="w-full text-left text-[11px] sm:text-sm print:text-[10px]"><thead><tr class="border-b border-slate-200 border-dashed bg-slate-50 print:bg-transparent"><th class="py-2 pr-1 font-bold print:py-1">Item</th><th class="py-2 px-1 text-right font-bold print:py-1">Qty</th><th class="py-2 px-1 text-right font-bold print:py-1">Rate</th><th class="py-2 pl-1 text-right font-bold print:py-1">Total</th></tr></thead><tbody class="align-top">@if($invoice->invoice_type==='Parts Sale')@foreach($invoice->items as $item)<tr class="border-b border-slate-100 border-dashed print:border-slate-300"><td class="py-2 pr-1 font-semibold print:py-1">{{ $item->product->name }}</td><td class="py-2 px-1 text-right print:py-1">{{ number_format($item->quantity,0) }}</td><td class="py-2 px-1 text-right print:py-1">{{ number_format($item->unit_price,2) }}</td><td class="py-2 pl-1 text-right print:py-1">{{ number_format($item->total,2) }}</td></tr>@endforeach @else @foreach($invoice->jobCard?->parts??[] as $item)<tr class="border-b border-slate-100 border-dashed print:border-slate-300"><td class="py-2 pr-1 font-semibold print:py-1">{{ $item->product->name }}</td><td class="py-2 px-1 text-right print:py-1">{{ number_format($item->quantity,0) }}</td><td class="py-2 px-1 text-right print:py-1">{{ number_format($item->unit_price,2) }}</td><td class="py-2 pl-1 text-right print:py-1">{{ number_format($item->total,2) }}</td></tr>@endforeach @php $serviceAmt = (float)$invoice->service_amount; $laborAmt = (float)$invoice->labor_amount; $washAmt = (float)$invoice->washing_amount; $otherAmt = (float)$invoice->other_amount; if($invoice->jobCard && !$invoice->jobCard->show_washing_on_bill){ $serviceAmt += $washAmt; $washAmt = 0; } if($invoice->jobCard && !$invoice->jobCard->show_labor_on_bill){ $serviceAmt += $laborAmt; $laborAmt = 0; } $serviceLabel = $invoice->jobCard?->service_name ?: 'Service'; $otherLabel = $invoice->jobCard?->other_income_name ?: 'Other'; $servicesToBill = [$serviceLabel => $serviceAmt, 'Labor' => $laborAmt, 'Wash' => $washAmt, $otherLabel => $otherAmt]; @endphp @foreach($servicesToBill as $label => $amt)@if($amt>0)<tr class="border-b border-slate-100 border-dashed print:border-slate-300"><td class="py-2 pr-1 font-semibold print:py-1">{{ $label }}</td><td class="py-2 px-1 text-right print:py-1">1</td><td class="py-2 px-1 text-right print:py-1">{{ number_format($amt,2) }}</td><td class="py-2 pl-1 text-right print:py-1">{{ number_format($amt,2) }}</td></tr>@endif @endforeach @endif</tbody></table></div><div class="ml-auto mt-4 max-w-[240px] space-y-1.5 text-[11px] sm:mt-6 sm:max-w-xs sm:space-y-2 sm:text-sm print:mt-2 print:max-w-full print:space-y-1 print:text-[10px]"><div class="flex justify-between"><span>Subtotal</span><span>{{ number_format($invoice->subtotal,2) }}</span></div><div class="flex justify-between"><span>Discount</span><span>- {{ number_format($invoice->discount,2) }}</span></div><div class="flex justify-between border-t border-slate-200 border-dashed pt-2 text-sm font-black sm:pt-3 sm:text-xl print:pt-1 print:text-xs"><span>Total</span><span>Rs. {{ number_format($invoice->total,2) }}</span></div><div class="flex justify-between font-bold text-emerald-700 print:text-black"><span>Paid</span><span>{{ number_format($invoice->paid_amount,2) }}</span></div><div class="flex justify-between font-bold text-red-600 print:text-black"><span>Due</span><span>{{ number_format($invoice->due_amount,2) }}</span></div></div><footer class="mt-6 border-t border-slate-200 border-dashed pt-4 text-center text-[10px] text-slate-500 sm:mt-10 sm:flex sm:justify-between sm:pt-5 sm:text-xs sm:text-left print:mt-2 print:pt-2 print:text-center print:text-black"><p>Thank you for choosing Fasmir Motors.</p><div class="mt-2 text-[8px] uppercase tracking-wider print:mt-1"><p>Powered by {{ env('DDEVELOPER_NAME', 'Twinsofte.com') }}</p><p>{{ env('WEBSITE', 'twinsofte.com') }} | {{ env('PHONE', '0762472822') }}</p></div><div class="print-hide mt-4 flex justify-center gap-2 sm:mt-0"><button onclick="goBack()" class="rounded-xl bg-slate-200 px-4 py-2 font-bold text-slate-700 hover:bg-slate-300">← Go Back</button><button onclick="triggerPrint()" class="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white">Print Receipt</button></div></footer></main><script>function goBack(){if(window.history.length>1){window.history.back();}else{window.close();}}function triggerPrint(){window.print();}window.onload=function(){const urlParams=new URLSearchParams(window.location.search);if(urlParams.has('print')){triggerPrint();}};window.onafterprint=function(){goBack();};</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ $isQuotation ? 'Quotation' : 'Invoice' }} {{ $invoice->number }} - {{ $business['business_name'] ?? 'Fasmir Motors' }}</title>
+    @php
+        $printContent = static function ($value): string {
+            $text = trim(preg_replace('/\s+/u', ' ', (string) $value) ?? '');
+            return '"'.str_replace(['\\', '"', '<', '>'], ['\\\\', '\\"', '\\3C ', '\\3E '], $text).'"';
+        };
+    @endphp
+    <style>
+        @page { size: A4; margin: 16mm 17mm 30mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #e9edf3; color: #17243a; font-family: "DejaVu Sans", Arial, sans-serif; font-size: 11px; line-height: 1.48; }
+        .toolbar { max-width: 794px; margin: 20px auto 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-family: Arial, sans-serif; }
+        .toolbar-title { font-size: 13px; font-weight: 700; color: #40516b; }
+        .toolbar-actions { display: flex; gap: 8px; }
+        .action { display: inline-block; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; padding: 10px 14px; color: #16243a; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; }
+        .action-primary { border-color: #d91e2b; background: #d91e2b; color: #fff; }
+        .sheet { display: flex; flex-direction: column; width: 794px; min-height: 1123px; margin: 0 auto 28px; padding: 53px 64px 48px; background: #fff; box-shadow: 0 14px 45px rgba(13, 28, 50, .15); }
+        .top-rule { height: 6px; background: #d91e2b; margin: -53px -64px 35px; }
+        table { width: 100%; border-collapse: collapse; }
+        .header td { vertical-align: top; }
+        .brand-cell { width: 56%; }
+        .brand-logo { max-width: 68px; max-height: 68px; margin-right: 12px; vertical-align: middle; }
+        .brand-name { margin: 0; color: #0b1d36; font-size: 22px; font-weight: 700; line-height: 1.13; letter-spacing: -.5px; }
+        .brand-subtitle { margin: 5px 0 0; color: #d91e2b; font-size: 9px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
+        .business-contact { margin-top: 12px; color: #536178; font-size: 9px; line-height: 1.55; }
+        .document-cell { width: 44%; text-align: right; }
+        .document-type { color: #d91e2b; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+        .document-number { margin: 5px 0 10px; color: #0b1d36; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+        .meta { margin-left: auto; width: 90%; font-size: 10px; }
+        .meta td { padding: 3px 0; }
+        .meta td:first-child { color: #68788f; text-align: left; }
+        .meta td:last-child { color: #17243a; font-weight: 700; text-align: right; }
+        .divider { height: 1px; margin: 17px 0; background: #dce3eb; }
+        .party td { width: 50%; vertical-align: top; }
+        .party td + td { padding-left: 28px; }
+        .eyebrow { margin: 0 0 7px; color: #d91e2b; font-size: 9px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; }
+        .party-name { color: #0b1d36; font-size: 13px; font-weight: 700; }
+        .muted { color: #64748b; }
+        .detail-line { margin-top: 4px; }
+        .items { margin-top: 20px; table-layout: fixed; }
+        .items thead { display: table-header-group; }
+        .items th { padding: 11px 10px; background: #0b1d36; color: #fff; font-size: 9px; font-weight: 700; letter-spacing: .6px; text-align: left; text-transform: uppercase; }
+        .items td { padding: 9px 10px; border-bottom: 1px solid #e5eaf0; vertical-align: top; }
+        .items tbody tr:nth-child(even) td { background: #f7f9fc; }
+        .items tr { page-break-inside: avoid; }
+        .items .num { text-align: right; white-space: nowrap; }
+        .item-name { color: #13233a; font-weight: 700; }
+        .item-detail { margin-top: 3px; color: #7b8ba1; font-size: 9px; }
+        .summary-wrap { margin-top: 16px; page-break-inside: avoid; }
+        .summary { width: 49%; margin-left: auto; font-size: 10px; }
+        .summary td { padding: 6px 0; }
+        .summary td:first-child { color: #607087; }
+        .summary td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
+        .summary .grand td { padding: 12px 10px; background: #f1f4f8; color: #0b1d36; font-size: 13px; font-weight: 700; }
+        .summary .grand td:last-child { color: #d91e2b; }
+        .summary .balance td { border-top: 1px solid #dce3eb; padding-top: 9px; color: #a91d2c; font-weight: 700; }
+        .note-box { margin-top: 13px; padding: 10px 14px; border-left: 3px solid #d91e2b; background: #f7f9fc; page-break-inside: avoid; }
+        .note-title { margin: 0 0 5px; color: #0b1d36; font-size: 10px; font-weight: 700; }
+        .note-box p { margin: 0; color: #4e5e73; white-space: pre-line; }
+        .terms { margin-top: 13px; color: #66768a; font-size: 9px; page-break-inside: avoid; }
+        .terms strong { color: #22344e; }
+        .signature { width: 42%; margin: 44px 0 0 auto; padding-top: 7px; border-top: 1px solid #a8b4c2; color: #64748b; font-size: 9px; text-align: center; page-break-inside: avoid; }
+        .document-footer-screen { margin-top: auto; padding-top: 24px; }
+        .document-footer-print { display: none; }
+        .footer { padding-top: 12px; border-top: 1px solid #dce3eb; color: #6a7b91; font-size: 9px; page-break-inside: avoid; }
+        .footer td:last-child { text-align: right; }
+        .footer strong { color: #0b1d36; }
+        .developer-credit { margin-top: 8px; color: #94a3b8; font-size: 8px; text-align: right; }
+        .developer-credit a { color: inherit; text-decoration: none; }
+        body.pdf { background: #fff; }
+        .pdf .sheet { display: block; width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+        .pdf .top-rule { margin: -16mm -17mm 17px; }
+        .pdf .document-footer-screen { display: none; }
+        .pdf .document-footer-print { display: block; position: fixed; right: 0; bottom: -10mm; left: 0; }
+        @media print {
+            body { background: #fff; }
+            .toolbar, .document-footer-screen, .document-footer-print { display: none; }
+            .sheet { display: block; width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+            .top-rule { margin: 0 -17mm 25px; }
+        }
+        @unless($pdfMode)
+        @media print {
+            @page {
+                @bottom-left {
+                    content: {!! $printContent($wording['footerNote']) !!};
+                    border-top: 1px solid #dce3eb;
+                    padding-top: 3mm;
+                    color: #0b1d36;
+                    font: 700 9px Arial, sans-serif;
+                    vertical-align: top;
+                }
+                @bottom-right {
+                    content: {!! $printContent($business['business_phone'] ?? '') !!} "\A" "Software developed by Twinsofte.com";
+                    border-top: 1px solid #dce3eb;
+                    padding-top: 3mm;
+                    color: #94a3b8;
+                    font: 8px Arial, sans-serif;
+                    text-align: right;
+                    vertical-align: top;
+                    white-space: pre;
+                }
+            }
+        }
+        @endunless
+        @media screen and (max-width: 820px) { .sheet { width: 100%; min-height: 0; padding: 28px 24px; } .top-rule { margin: -28px -24px 24px; } .toolbar { margin: 12px; flex-wrap: wrap; } .document-number { font-size: 13px; } }
+    </style>
+</head>
+<body class="{{ $pdfMode ? 'pdf' : '' }}">
+@unless($pdfMode)
+<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions"><button type="button" class="action" onclick="window.print()">Print</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', $invoice->public_token) }}">Download PDF</a>@endif</div></div>
+@endunless
+<div class="document-footer-print">@include('invoices.partials.footer')</div>
+<main class="sheet">
+    <div class="top-rule"></div>
+    <table class="header"><tr>
+        <td class="brand-cell">
+            @if($logo)<img class="brand-logo" src="{{ $logo }}" alt="">@endif
+            <div class="brand-name">{{ $business['business_name'] ?? 'Fasmir Motors' }}</div>
+            @if($business['business_subtitle'] ?? 'Bike Repair Center')<div class="brand-subtitle">{{ $business['business_subtitle'] ?? 'Bike Repair Center' }}</div>@endif
+            <div class="business-contact">
+                @if($business['business_address'] ?? null)<div>{{ $business['business_address'] }}</div>@endif
+                @if($business['business_phone'] ?? null)<div>{{ $business['business_phone'] }}@if($business['business_email'] ?? null) &nbsp;|&nbsp; {{ $business['business_email'] }}@endif</div>@endif
+                @if($business['business_website'] ?? null)<div>{{ $business['business_website'] }}</div>@endif
+            </div>
+        </td>
+        <td class="document-cell">
+            <div class="document-type">{{ $isQuotation ? 'Quotation' : ($invoice->invoice_type === 'Job Card Bill' ? 'Service Invoice' : 'Sales Invoice') }}</div>
+            <div class="document-number">{{ $invoice->number }}</div>
+            <table class="meta">
+                <tr><td>Date</td><td>{{ $invoice->created_at->format('d M Y') }}</td></tr>
+                @if(!$isQuotation)<tr><td>Status</td><td>{{ $invoice->status }}</td></tr>@endif
+                @if($business['business_registration_no'] ?? null)<tr><td>BRN</td><td>{{ $business['business_registration_no'] }}</td></tr>@endif
+                @if($business['tax_registration_no'] ?? null)<tr><td>TIN</td><td>{{ $business['tax_registration_no'] }}</td></tr>@endif
+            </table>
+        </td>
+    </tr></table>
+    <div class="divider"></div>
+    @php($documentBike = $invoice->bike ?? $invoice->jobCard?->intake?->bike)
+    <table class="party"><tr>
+        <td><p class="eyebrow">Prepared for</p><div class="party-name">{{ $invoice->customer?->name ?: 'Walk-in Customer' }}</div>@if($invoice->customer?->phone)<div class="detail-line muted">{{ $invoice->customer->phone }}</div>@endif</td>
+        <td><p class="eyebrow">Reference</p><div class="party-name">{{ $documentBike?->number ?? 'Counter Sale' }}</div>
+            @if($invoice->jobCard?->number)<div class="detail-line muted">Job {{ $invoice->jobCard->number }}</div>@elseif($invoice->store?->name)<div class="detail-line muted">{{ $invoice->store->name }}</div>@endif
+            @if(($business['show_bike_invoice'] ?? '1') !== '0' && $documentBike)<div class="detail-line muted">{{ collect([$documentBike->brand, $documentBike->model, $documentBike->color])->filter()->implode(' · ') }}</div>@endif
+            @if(($business['show_technician_invoice'] ?? '1') !== '0' && $invoice->jobCard?->technician?->name)<div class="detail-line muted">Technician: {{ $invoice->jobCard->technician->name }}</div>@endif
+        </td>
+    </tr></table>
+    <table class="items">
+        <thead><tr><th style="width:49%">Description</th><th class="num" style="width:13%">Qty</th><th class="num" style="width:19%">Unit price</th><th class="num" style="width:19%">Amount</th></tr></thead>
+        <tbody>
+            @forelse($lines as $line)
+                <tr><td><div class="item-name">{{ $line['name'] }}</div>@if($line['detail'])<div class="item-detail">{{ $line['detail'] }}</div>@endif</td><td class="num">{{ number_format($line['qty'], $line['qty'] == floor($line['qty']) ? 0 : 2) }}</td><td class="num">{{ number_format($line['rate'], 2) }}</td><td class="num">{{ number_format($line['total'], 2) }}</td></tr>
+            @empty
+                <tr><td colspan="4" class="muted">No line items recorded.</td></tr>
+            @endforelse
+        </tbody>
+    </table>
+    <div class="summary-wrap"><table class="summary">
+        <tr><td>Subtotal</td><td>Rs. {{ number_format((float) $invoice->subtotal, 2) }}</td></tr>
+        @if((float) $invoice->discount > 0)<tr><td>Discount</td><td>- Rs. {{ number_format((float) $invoice->discount, 2) }}</td></tr>@endif
+        @if((float) $invoice->tax > 0)<tr><td>Tax</td><td>+ Rs. {{ number_format((float) $invoice->tax, 2) }}</td></tr>@endif
+        <tr class="grand"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
+        @unless($isQuotation)<tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr><tr class="balance"><td>Balance due</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>@endunless
+    </table></div>
+    @if($wording['introText'])<div class="note-box">@if($wording['introHeading'])<p class="note-title">{{ $wording['introHeading'] }}</p>@endif<p>{{ $wording['introText'] }}</p></div>@endif
+    @if($wording['customerNote'])<div class="note-box">@if($wording['customerNoteHeading'])<p class="note-title">{{ $wording['customerNoteHeading'] }}</p>@endif<p>{{ $wording['customerNote'] }}</p></div>@endif
+    @if($wording['terms'])<div class="terms">@if($wording['termsHeading'])<strong>{{ $wording['termsHeading'] }}</strong><br>@endif{!! nl2br(e($wording['terms'])) !!}</div>@endif
+    @if($business['invoice_signature_text'] ?? null)<div class="signature">{{ $business['invoice_signature_text'] }}</div>@endif
+    <div class="document-footer-screen">@include('invoices.partials.footer')</div>
+</main>
+@unless($pdfMode)<script>window.addEventListener('load', () => { if (new URLSearchParams(window.location.search).has('print')) window.print(); });</script>@endunless
+</body>
+</html>

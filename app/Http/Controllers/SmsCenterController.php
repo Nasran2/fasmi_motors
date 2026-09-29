@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\Invoice;
 use App\Models\SmsLog;
 use App\Models\SmsSetting;
 use App\Models\SmsTemplate;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\Sms\TextitSmsService;
+use App\Services\Sms\WorkshopSmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -262,7 +264,18 @@ class SmsCenterController extends Controller
 
     public function resend(SmsLog $smsLog, TextitSmsService $sms)
     {
-        $result = $sms->resend($smsLog, auth()->id());
+        if ($smsLog->message_type === 'Due Reminder') {
+            return back()->with('error', 'Preview a new reminder from Customer Due so the customer receives their current balance.');
+        }
+        if ($smsLog->message_type === 'event:billed' && $smsLog->reference_type === (new Invoice)->getMorphClass()) {
+            $invoice = Invoice::findOrFail($smsLog->reference_id);
+            $result = app(WorkshopSmsService::class)->send('billed', $invoice, true, auth()->id(), $smsLog->retry_count + 1);
+        } else {
+            if (! SmsSetting::instance()->manual_sms_enabled) {
+                return back()->with('error', 'Manual SMS sending is switched off.');
+            }
+            $result = $sms->resend($smsLog, auth()->id());
+        }
 
         if ($result['success']) {
             if (in_array(strtolower($smsLog->status), ['queued', 'pending'])) {

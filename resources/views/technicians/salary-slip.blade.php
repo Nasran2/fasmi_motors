@@ -124,6 +124,9 @@
             @foreach(['Late deduction'=>$sheet->late_deduction,'Early leave deduction'=>$sheet->early_leave_deduction,'No-pay deduction'=>$sheet->no_pay_deduction,'Half-day deduction'=>$sheet->half_day_deduction,'Salary advances'=>$sheet->total_advance_deduction,'Job / bike repair'=>$sheet->total_job_deduction,'Employee EPF'=>$sheet->epf_employee,'Other deduction'=>$sheet->total_other_deduction,'Manual deduction'=>$sheet->manual_deductions] as $label=>$amount)
                 <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
             @endforeach
+            @if(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0) != 0)
+                <div class="flex justify-between"><dt class="text-slate-600">Attendance override adjustment</dt><dd class="font-medium">Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment'), 2) }}</dd></div>
+            @endif
             <div class="flex justify-between border-t border-red-200 pt-2 font-black text-red-700 mt-3">
                 <dt>Total deductions</dt>
                 <dd>Rs. {{ number_format($sheet->total_deductions,2) }}</dd>

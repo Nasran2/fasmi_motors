@@ -28,6 +28,7 @@ use App\Models\TechnicianBikeDeduction;
 use App\Models\TechnicianCommission;
 use App\Models\TechnicianContribution;
 use App\Models\TechnicianSalarySheet;
+use App\Observers\WorkshopSmsObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
@@ -57,6 +58,10 @@ class AppServiceProvider extends ServiceProvider
     {
         Schema::defaultStringLength(191);
         $this->configureDefaults();
+
+        foreach ([BikeIntake::class, JobCard::class, Invoice::class, Payment::class] as $model) {
+            $model::observe(WorkshopSmsObserver::class);
+        }
 
         foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class, AccountTransaction::class, AccountTransfer::class, DailyClosing::class, Cheque::class] as $model) {
             $model::created(fn (Model $item) => $this->audit('created', $item, [], $item->getAttributes()));

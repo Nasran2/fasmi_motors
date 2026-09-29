@@ -55,6 +55,7 @@
             <div class="flex justify-between"><dt>Service & labor</dt><dd>Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd>- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd>Rs. {{ number_format($job->total,2) }}</dd></div>
+            <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
@@ -132,7 +133,8 @@
     </div>
     @else
     {{-- POS Aligned Form Layout --}}
-    <div id="dynamic-parts-builder" class="mb-5 border border-slate-100 bg-slate-50/30 p-4 rounded-xl">
+    <form method="POST" action="{{ route('jobs.parts.store', $job) }}" id="dynamic-parts-builder" class="mb-5 border border-slate-100 bg-slate-50/30 p-4 rounded-xl">
+        @csrf<x-submission-token/>
         <div class="grid gap-3 grid-cols-2 md:grid-cols-6 items-end">
             <div class="col-span-2">
                 <x-searchable-product-field :products="$products" id="job-part-product"/>
@@ -140,7 +142,7 @@
             </div>
             <div>
                 <label class="label">Store *</label>
-                <select id="part-store" class="w-full">
+                <select id="part-store" name="store_id" class="w-full" required>
                     @foreach($stores as $s)
                         <option value="{{ $s->id }}">{{ $s->name }}</option>
                     @endforeach
@@ -148,52 +150,27 @@
             </div>
             <div>
                 <label class="label">Quantity *</label>
-                <input id="part-qty" type="number" step="any" class="w-full" placeholder="Qty" value="1">
+                <input id="part-qty" name="quantity" type="number" min="0.01" step="any" class="w-full" placeholder="Qty" value="{{ old('quantity', 1) }}" required>
             </div>
             <div>
                 <label class="label">Unit Price *</label>
-                <input id="part-price" type="number" step=".01" class="w-full" placeholder="Price">
+                <input id="part-price" name="unit_price" type="number" min="0" step=".01" class="w-full" placeholder="Price" value="{{ old('unit_price') }}" required>
             </div>
             <div>
                 <label class="label">Discount</label>
-                <input id="part-discount" type="number" step=".01" class="w-full" placeholder="Discount" value="0">
+                <input id="part-discount" name="discount" type="number" min="0" step=".01" class="w-full" placeholder="Discount" value="{{ old('discount', 0) }}">
             </div>
-            <input type="hidden" id="part-batch">
+            <input type="hidden" id="part-batch" name="stock_batch_id">
             
             <div class="col-span-2 md:col-span-6 flex flex-wrap items-center justify-between bg-white border border-slate-200 p-3 rounded-xl mt-2 gap-3 shadow-sm">
                 <div class="text-xs font-bold text-slate-500">
                     Line Total: <span id="live-line-total" class="text-base font-black text-green-600">Rs. 0.00</span>
                 </div>
-                <button type="button" id="btn-add-pending" class="btn-secondary !min-h-9 !py-1 !px-4 text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100">+ Add to list</button>
+                <button type="submit" id="btn-add-part" class="btn-secondary !min-h-9 !py-1 !px-4 text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100">+ Add to list</button>
             </div>
         </div>
 
-        {{-- Pending Parts Table --}}
-        <form method="POST" action="{{ route('jobs.parts.store_multiple', $job) }}" id="multiple-parts-form" class="mt-6 hidden">
-            @csrf<x-submission-token/>
-            <h3 class="text-sm font-bold text-slate-700 mb-2">📋 Pending Parts to Save</h3>
-            <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-50 text-slate-500">
-                        <tr>
-                            <th class="p-2">Product</th>
-                            <th class="p-2">Store</th>
-                            <th class="p-2 text-right">Qty</th>
-                            <th class="p-2 text-right">Unit Price</th>
-                            <th class="p-2 text-right">Discount</th>
-                            <th class="p-2 text-right">Total</th>
-                            <th class="p-2 text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pending-parts-list" class="divide-y divide-slate-100"></tbody>
-                </table>
-            </div>
-            <div class="mt-3 flex justify-between items-center">
-                <div class="text-sm font-bold text-slate-600">Total Pending: <span id="pending-grand-total" class="text-green-600">Rs. 0.00</span></div>
-                <button type="submit" class="btn-primary">Save All Parts</button>
-            </div>
-        </form>
-    </div>
+    </form>
     @endif
 
     {{-- Issued Parts List --}}
@@ -213,7 +190,7 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse($job->parts as $part)
+                @forelse($job->parts->sortByDesc('id') as $part)
                 <tr>
                     <td>
                         @if($isLocked)
@@ -370,7 +347,8 @@
 <script>
 (() => {
     const products = {{ Illuminate\Support\Js::from($productBatchOptions) }};
-    const stores = {{ Illuminate\Support\Js::from($stores) }};
+    const partsForm = document.getElementById('dynamic-parts-builder');
+    if (!partsForm) return;
     const storeSel = document.getElementById('part-store');
     const productIdInput = document.getElementById('job-part-product').querySelector('[data-product-id]');
     const searchInput = document.getElementById('job-part-product').querySelector('[data-product-search]');
@@ -380,19 +358,12 @@
     const liveTotalSpan = document.getElementById('live-line-total');
     const batchIdInput = document.getElementById('part-batch');
     const batchMsg = document.getElementById('batch-msg');
-    const btnAddPending = document.getElementById('btn-add-pending');
-    
-    const multiplePartsForm = document.getElementById('multiple-parts-form');
-    const pendingPartsList = document.getElementById('pending-parts-list');
-    const pendingGrandTotal = document.getElementById('pending-grand-total');
+    const btnAddPart = document.getElementById('btn-add-part');
 
     const modal = document.getElementById('batch-modal');
     const list = document.getElementById('batch-list');
     const tpl = document.getElementById('batch-item-tpl');
     const money = n => 'Rs. ' + Number(n || 0).toFixed(2);
-
-    let pendingParts = [];
-    let partIndex = 0;
 
     function calculateLiveLineTotal() {
         const qty = parseFloat(qtyInput.value) || 0;
@@ -470,102 +441,18 @@
     searchInput.addEventListener('input', () => setTimeout(checkBatch, 50));
     storeSel.addEventListener('change', checkBatch);
 
-    function updatePendingTable() {
-        pendingPartsList.innerHTML = '';
-        let grandTotal = 0;
-        
-        if (pendingParts.length > 0) {
-            multiplePartsForm.classList.remove('hidden');
-        } else {
-            multiplePartsForm.classList.add('hidden');
+    partsForm.addEventListener('submit', event => {
+        if (!productIdInput.value || !partsForm.checkValidity()) {
+            event.preventDefault();
+            partsForm.reportValidity();
+            return;
         }
 
-        pendingParts.forEach((part, idx) => {
-            grandTotal += part.total;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="p-2 font-bold text-slate-700">${part.productName}
-                    <input type="hidden" name="parts[${idx}][product_id]" value="${part.productId}">
-                </td>
-                <td class="p-2 text-slate-500">${part.storeName}
-                    <input type="hidden" name="parts[${idx}][store_id]" value="${part.storeId}">
-                </td>
-                <td class="p-2 text-right font-mono">${part.qty}
-                    <input type="hidden" name="parts[${idx}][quantity]" value="${part.qty}">
-                </td>
-                <td class="p-2 text-right font-mono">${money(part.price)}
-                    <input type="hidden" name="parts[${idx}][unit_price]" value="${part.price}">
-                </td>
-                <td class="p-2 text-right font-mono text-red-500">${part.discount > 0 ? money(part.discount) : '-'}
-                    <input type="hidden" name="parts[${idx}][discount]" value="${part.discount}">
-                </td>
-                <td class="p-2 text-right font-bold text-slate-800">${money(part.total)}
-                    <input type="hidden" name="parts[${idx}][stock_batch_id]" value="${part.batchId || ''}">
-                </td>
-                <td class="p-2 text-center">
-                    <button type="button" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded" onclick="removePendingPart(${part.id})">✕</button>
-                </td>
-            `;
-            pendingPartsList.appendChild(tr);
-        });
-        
-        pendingGrandTotal.textContent = money(grandTotal);
-    }
+        btnAddPart.disabled = true;
+        btnAddPart.textContent = 'Saving...';
+    });
 
-    window.removePendingPart = (id) => {
-        pendingParts = pendingParts.filter(p => p.id !== id);
-        updatePendingTable();
-    };
-
-    if(btnAddPending) {
-        btnAddPending.addEventListener('click', () => {
-            const pid = parseInt(productIdInput.value);
-            if (!pid) {
-                workshopNotify('Please search and select a product first.');
-                return searchInput.focus();
-            }
-            
-            const p = products.find(x => x.id === pid);
-            const storeId = +storeSel.value;
-            const storeName = stores.find(s => s.id === storeId)?.name || 'Store';
-            const qty = parseFloat(qtyInput.value) || 0;
-            const price = parseFloat(priceInput.value) || 0;
-            const discount = parseFloat(discountInput.value) || 0;
-            const batchId = batchIdInput.value;
-            const total = calculateLiveLineTotal();
-
-            if (qty <= 0) {
-                workshopNotify('Quantity must be greater than 0.');
-                return qtyInput.focus();
-            }
-
-            pendingParts.push({
-                id: ++partIndex,
-                productId: pid,
-                productName: p.name,
-                storeId: storeId,
-                storeName: storeName,
-                qty: qty,
-                price: price,
-                discount: discount,
-                batchId: batchId,
-                total: total
-            });
-
-            updatePendingTable();
-
-            // Reset inputs
-            searchInput.value = '';
-            productIdInput.value = '';
-            batchIdInput.value = '';
-            batchMsg.textContent = '';
-            qtyInput.value = '1';
-            priceInput.value = '';
-            discountInput.value = '0';
-            calculateLiveLineTotal();
-            searchInput.focus();
-        });
-    }
+    calculateLiveLineTotal();
 
 })();
 

@@ -8,8 +8,11 @@ use App\Models\SalaryCycleSetting;
 use App\Models\SalarySetting;
 use App\Models\Setting;
 use App\Models\SmsLog;
+use App\Models\SmsSetting;
 use App\Models\Store;
 use App\Services\DatabaseBackupService;
+use App\Services\Sms\TextitSmsService;
+use App\Services\Sms\WorkshopSmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -64,6 +67,10 @@ class SettingController extends Controller
     public function save(Request $r)
     {
         $group = $r->input('group', 'general');
+
+        if ($group === 'sms') {
+            return $this->saveSms($r);
+        }
 
         if ($group === 'salary') {
             $salarySetting = SalarySetting::firstOrCreate([]);
@@ -185,6 +192,21 @@ class SettingController extends Controller
             $this->audit('Updated Salary Settings', 'Updated technician payroll rules and OT slabs', $oldVal, $newVal);
 
             return back()->with('success', 'Technician Attendance & Salary settings saved successfully.');
+        }
+
+        if ($group === 'invoice') {
+            $r->validate([
+                'quotation_intro_heading' => ['nullable', 'string', 'max:100'],
+                'quotation_intro_text' => ['nullable', 'string', 'max:2000'],
+                'quotation_default_note' => ['nullable', 'string', 'max:1000'],
+                'bill_intro_heading' => ['nullable', 'string', 'max:100'],
+                'bill_intro_text' => ['nullable', 'string', 'max:2000'],
+                'bill_default_note' => ['nullable', 'string', 'max:1000'],
+                'customer_note_heading' => ['nullable', 'string', 'max:100'],
+                'terms_heading' => ['nullable', 'string', 'max:100'],
+                'terms_and_conditions' => ['nullable', 'string', 'max:5000'],
+                'invoice_footer_note' => ['nullable', 'string', 'max:300'],
+            ]);
         }
 
         $inputs = $r->except(['_token', '_method', 'group', 'logo_file', 'favicon_file', 'slabs']);
@@ -375,21 +397,66 @@ class SettingController extends Controller
     public function smsSettings()
     {
         $settings = $this->getSettings();
+        $gateway = SmsSetting::instance();
+        foreach (['sms_provider' => 'provider_name', 'sms_gateway_url' => 'gateway_url', 'textit_id' => 'textit_id', 'sms_api_method' => 'api_method', 'sms_country_code' => 'default_country_code', 'sms_sender_id' => 'sender_id', 'sms_gateway_enabled' => 'enabled', 'sms_auto_enabled' => 'auto_sms_enabled'] as $key => $attribute) {
+            $settings[$key] = $gateway->$attribute;
+        }
+        unset($settings['textit_password']);
+        $events = WorkshopSmsService::events();
+        $publicUrlReady = WorkshopSmsService::hasPublicBaseUrl();
         $smsLogs = SmsLog::latest()->paginate(10);
 
-        return view('system-settings.sms', compact('settings', 'smsLogs'));
+        return view('system-settings.sms', compact('settings', 'smsLogs', 'events', 'publicUrlReady'));
     }
 
-    public function testSms(Request $r)
+    private function saveSms(Request $request)
     {
-        $r->validate([
-            'phone' => 'required|string',
-            'message' => 'required|string',
-        ]);
+        $rules = [
+            'sms_provider' => 'required|string|max:80', 'sms_gateway_url' => 'required|url|max:255',
+            'textit_id' => 'required|string|max:80', 'textit_password' => 'nullable|string|max:255',
+            'sms_api_method' => 'required|in:GET,POST', 'sms_country_code' => 'required|in:94',
+            'sms_sender_id' => 'nullable|string|max:11', 'sms_gateway_enabled' => 'required|boolean',
+            'sms_auto_enabled' => 'required|boolean',
+            'sms_reminders_enabled' => 'nullable|boolean',
+        ];
+        foreach (WorkshopSmsService::events() as $event => $definition) {
+            $rules['sms_event_'.$event] = 'required|boolean';
+            $rules['sms_tmpl_'.$event] = 'required|string|max:1000';
+        }
+        $data = $request->validate($rules);
+        DB::transaction(function () use ($data) {
+            $gateway = ['provider_name' => $data['sms_provider'], 'gateway_url' => $data['sms_gateway_url'], 'textit_id' => $data['textit_id'],
+                'api_method' => $data['sms_api_method'], 'default_country_code' => $data['sms_country_code'], 'sender_id' => $data['sms_sender_id'] ?? null,
+                'enabled' => $data['sms_gateway_enabled'], 'auto_sms_enabled' => $data['sms_auto_enabled'], 'updated_by' => auth()->id()];
+            if (! empty($data['textit_password'])) {
+                $gateway['textit_password'] = $data['textit_password'];
+            }
+            SmsSetting::instance()->update($gateway);
+            foreach ($data as $key => $value) {
+                if ($key === 'textit_password') {
+                    continue;
+                }
+                Setting::updateOrCreate(['key' => $key], ['group' => 'sms', 'value' => $value ?? '', 'type' => 'text']);
+            }
+            // Keep the existing reminder scheduler's switch in sync.
+            Setting::updateOrCreate(['key' => 'reminder_auto_send'], ['group' => 'service_reminders', 'value' => $data['sms_reminders_enabled'] ?? '0']);
+        });
 
-        $this->audit('Test SMS Sent', 'Triggered settings test SMS to: '.$r->phone);
+        $this->audit('Updated SMS Settings', 'Updated SMS gateway, event switches and templates.');
 
-        return back()->with('success', 'Test SMS request dispatched successfully.');
+        return back()->with('success', 'SMS settings saved.');
+    }
+
+    public function testSms(Request $r, TextitSmsService $sms)
+    {
+        $data = $r->validate(['phone' => 'required|string|max:20', 'message' => 'required|string|max:1000']);
+        if (! SmsSetting::instance()->manual_sms_enabled) {
+            return back()->with('error', 'Manual SMS sending is switched off in SMS Center settings.');
+        }
+        $result = $sms->send($data['phone'], $data['message'], ['module' => 'test', 'message_type' => 'Test SMS']);
+        $this->audit('Test SMS Attempt', 'SMS gateway test: '.$result['status']);
+
+        return back()->with($result['success'] ? 'success' : 'error', $result['success'] ? 'SMS accepted by provider. Message ID: '.($result['message_id'] ?? 'N/A') : 'SMS failed: '.$result['error']);
     }
 
     // ─── 12. SERVICE REMINDER SETTINGS ───────────────────────────

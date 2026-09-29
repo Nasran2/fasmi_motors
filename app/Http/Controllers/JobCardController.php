@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\BikeIntake;
+use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\JobCardPart;
 use App\Models\Product;
@@ -11,7 +12,6 @@ use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\Technician;
-use App\Services\Sms\TextitSmsService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,39 +47,12 @@ class JobCardController extends Controller
     {
         $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
         $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
-        $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
-        DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
+        $job = DB::transaction(function () use ($v, $r) {
+            $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
+            DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
 
-        // Send SMS to Customer & Technician immediately
-        $job->load('intake.bike.customer', 'technician');
-        $customer = $job->intake?->bike?->customer;
-        $smsService = app(TextitSmsService::class);
-
-        if ($customer && $customer->phone) {
-            $smsService->send($customer->phone, "Fasmir Motors: Job Card {$job->number} has been created for your bike {$job->intake->bike->number}. Status: {$job->status}.", [
-                'module' => 'Job Card',
-                'message_type' => 'Customer Alert',
-                'recipient_name' => $customer->name,
-                'recipient_type' => 'customer',
-                'reference_no' => $job->number,
-                'related_type' => $job->getMorphClass(),
-                'related_id' => $job->id,
-                'sent_by' => auth()->id(),
-            ]);
-        }
-
-        if ($job->main_technician_id && $job->technician && $job->technician->phone) {
-            $smsService->send($job->technician->phone, "Dear {$job->technician->name}, Job Card {$job->number} has been assigned to you for bike {$job->intake->bike->number}. Complaint: ".($job->intake->complaint ?? 'N/A').". Priority: {$job->priority}.", [
-                'module' => 'Job Card',
-                'message_type' => 'Technician Alert',
-                'recipient_name' => $job->technician->name,
-                'recipient_type' => 'technician',
-                'reference_no' => $job->number,
-                'related_type' => $job->getMorphClass(),
-                'related_id' => $job->id,
-                'sent_by' => auth()->id(),
-            ]);
-        }
+            return $job;
+        });
 
         return redirect()->route('jobs.show', $job)->with('success', 'Job card created.');
     }
@@ -113,8 +86,16 @@ class JobCardController extends Controller
             ->orderBy('job_card_status_logs.created_at', 'desc')
             ->get();
 
+        $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'services', 'invoice.payments');
+        $oldDue = Invoice::where('customer_id', $job->intake->bike->customer_id)
+            ->where('status', '!=', 'Cancelled')
+            ->where('due_amount', '>', 0)
+            ->when($job->invoice, fn ($query) => $query->whereKeyNot($job->invoice->id))
+            ->sum('due_amount');
+
         return view('jobs.show', [
-            'job' => $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'services', 'invoice.payments'),
+            'job' => $job,
+            'oldDue' => $oldDue,
             'technicians' => Technician::where('active', 1)->get(),
             'products' => $products,
             'productBatchOptions' => $productBatchOptions,
@@ -218,7 +199,7 @@ class JobCardController extends Controller
     $job->update(['parts_total' => $job->parts()->sum('total')]);
     $this->syncInvoice($job);
 
-    return back()->with('success', 'Part added successfully.');
+    return redirect(route('jobs.show', $job).'#spare-parts')->with('success', 'Part added successfully.');
     });
 }
 
@@ -347,22 +328,6 @@ public function addMultipleParts(\Illuminate\Http\Request $r, \App\Models\JobCar
     {
         $v = $r->validate(['paid_amount' => 'required|numeric|min:0', 'payment_method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR,Credit/Due']);
         $invoice = $service->invoice($job, (float) $v['paid_amount'], $v['payment_method']);
-
-        // Send Billing SMS to customer
-        $invoice->loadMissing('customer');
-        if ($invoice->customer && $invoice->customer->phone) {
-            $smsService = app(\App\Services\Sms\TextitSmsService::class);
-            $smsService->send($invoice->customer->phone, "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), [
-                'module' => 'Billing',
-                'message_type' => 'Bill SMS',
-                'recipient_name' => $invoice->customer->name,
-                'recipient_type' => 'customer',
-                'reference_no' => $invoice->number,
-                'related_type' => $invoice->getMorphClass(),
-                'related_id' => $invoice->id,
-            ]);
-            $invoice->update(['sms_sent_at' => now()]);
-        }
 
         return redirect()->route('invoices.public', $invoice->public_token)->with('success', 'Invoice generated.');
     }

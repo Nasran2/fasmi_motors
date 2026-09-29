@@ -17,6 +17,11 @@ class Product extends Model
 
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return ['pos_pinned' => 'boolean', 'pos_pin_order' => 'integer'];
+    }
+
     public function stocks(): HasMany
     {
         return $this->hasMany(StoreStock::class);

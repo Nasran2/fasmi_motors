@@ -152,7 +152,7 @@ class AttendanceImportService
                         $row['source_status'],
                         $row['check_in'],
                         $row['check_out'],
-                        ['break_minutes' => $row['break_minutes']]
+                        ['break_minutes' => $row['break_minutes'], 'auto_filled_checkout' => $row['auto_filled_checkout'] ?? false]
                     );
                     TechnicianAttendance::updateOrCreate(
                         ['technician_id' => $technician->id, 'date' => $row['date']],
@@ -163,7 +163,7 @@ class AttendanceImportService
                             'timetable' => $row['timetable'] ?: null,
                             'in_time' => $row['check_in'],
                             'out_time' => $row['check_out'],
-                            'leave_type' => $row['leave_type'] ?: null,
+                            'leave_type' => $row['leave_type'] ?: $metrics['leave_type'],
                             'is_manual_entry' => false,
                             'is_manual_edit' => false,
                             'import_batch_id' => $batch->id,

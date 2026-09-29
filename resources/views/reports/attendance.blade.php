@@ -1,6 +1,7 @@
 <x-layouts::app title="Attendance Report">
   <div class="space-y-6">
-    @include('reports._filter', [
+    @component('reports._filter', [
+      'from' => $from, 'to' => $to, 'range' => $range,
       'title' => 'Attendance Report',
       'subtitle' => 'View technician attendance, working hours, OT, late, and leave',
     ])
@@ -27,6 +28,7 @@
         </div>
       </div>
     @endslot
+    @endcomponent
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
       @foreach($stats ?? [] as $label => $value)

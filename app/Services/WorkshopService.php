@@ -9,6 +9,7 @@ use App\Models\JobCard;
 use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\StoreStock;
+use App\Support\InvoiceNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -50,7 +51,7 @@ class WorkshopService
                 throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the invoice total.']);
             }
             $invoice = $job->invoice()->create([
-                'number' => 'INV-'.now()->format('ymd').'-'.Str::upper(Str::random(10)),
+                'number' => InvoiceNumber::next('Job Card Bill'),
                 'invoice_type' => 'Job Card Bill',
                 'customer_id' => $job->intake->bike->customer_id,
                 'bike_id' => $job->intake->bike_id,

@@ -186,7 +186,7 @@ class CustomerBikeController extends Controller
 
     public function dues(Request $request)
     {
-        $query = Invoice::query()->with(['customer', 'jobCard.intake.bike.customer', 'payments'])
+        $query = Invoice::query()->with(['customer', 'bike.customer', 'jobCard.intake.bike.customer', 'payments'])
             ->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)
             ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))->orWhereHas('jobCard.intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"))))
             ->when($request->from, fn ($q, $date) => $q->whereDate('due_date', '>=', $date))
@@ -258,9 +258,30 @@ class CustomerBikeController extends Controller
 
     public function ownershipStore(Request $request)
     {
-        $data = $request->validate(['bike_id' => ['required', 'exists:bikes,id'], 'new_customer_id' => ['required', 'exists:customers,id'], 'changed_at' => ['required', 'date'], 'due_handling' => ['required', Rule::in(['keep_old', 'transfer_new', 'clear'])], 'reason' => ['nullable', 'required_if:due_handling,clear', 'max:1000']]);
+        $request->merge(['owner_mode' => $request->input('owner_mode', 'existing')]);
+        $data = $request->validate([
+            'bike_id' => ['required', 'exists:bikes,id'],
+            'owner_mode' => ['required', Rule::in(['existing', 'new'])],
+            'new_customer_id' => ['exclude_unless:owner_mode,existing', 'required', 'exists:customers,id'],
+            'new_name' => ['exclude_unless:owner_mode,new', 'required', 'string', 'max:150'],
+            'new_phone' => ['exclude_unless:owner_mode,new', 'required', 'string', 'max:30'],
+            'new_address' => ['exclude_unless:owner_mode,new', 'nullable', 'string', 'max:500'],
+            'changed_at' => ['required', 'date'],
+            'due_handling' => ['required', Rule::in(['keep_old', 'transfer_new', 'clear'])],
+            'reason' => ['nullable', 'required_if:due_handling,clear', 'max:1000'],
+        ]);
         DB::transaction(function () use ($data) {
             $bike = Bike::with('customer', 'intakes.jobCard.invoice')->lockForUpdate()->findOrFail($data['bike_id']);
+            if ($data['owner_mode'] === 'new') {
+                $customer = Customer::create([
+                    'name' => $data['new_name'],
+                    'phone' => $data['new_phone'],
+                    'address' => $data['new_address'] ?? null,
+                    'customer_type' => 'Normal Customer',
+                    'active' => true,
+                ]);
+                $data['new_customer_id'] = $customer->id;
+            }
             if ($bike->customer_id === (int) $data['new_customer_id']) {
                 throw ValidationException::withMessages(['new_customer_id' => 'Select a different owner.']);
             }

@@ -129,6 +129,16 @@
 
         {{ $slot }}
 
+        @if(\App\Support\RoutePermission::allows(auth()->user(), 'sales.parts'))
+            <a href="{{ route('sales.parts') }}"
+               aria-label="Open POS"
+               title="Open POS"
+               class="fixed bottom-6 right-6 z-50 inline-flex h-14 items-center gap-2 rounded-full bg-red-600 px-5 text-sm font-bold text-white shadow-xl shadow-red-600/30 transition hover:bg-red-700 hover:shadow-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 print:hidden">
+                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4h2l2.2 10h11.6l2-7H6"/><circle cx="9" cy="19" r="1"/><circle cx="18" cy="19" r="1"/></svg>
+                <span>POS</span>
+            </a>
+        @endif
+
         @persist('toast')
             <flux:toast.group>
                 <flux:toast />

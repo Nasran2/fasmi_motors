@@ -6,7 +6,7 @@
       <div>
         <p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Settings Center</p>
         <h1 class="page-title">Invoice Settings</h1>
-        <p class="page-subtitle">Manage invoice formats, numbering, PDF layouts, and public bill links</p>
+        <p class="page-subtitle">Manage document wording, PDF layout, and public bill links</p>
       </div>
       <a href="{{ route('system-settings.index') }}" class="btn-secondary flex items-center gap-1.5">
         ⚙️ Settings Dashboard
@@ -15,7 +15,7 @@
 
     {{-- Help Box --}}
     <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed">
-      ℹ️ <strong>Invoice Configurations:</strong> This page controls print paper sizes, invoice number prefixes, public bill access, QR codes, and default footer signatures.
+      Changes to the wording below appear on both the print preview and downloaded PDFs. Customer notes entered in POS take priority over the default note.
     </div>
 
     <x-flash />
@@ -27,34 +27,12 @@
       {{-- Left Columns: Forms --}}
       <div class="lg:col-span-2 space-y-6">
         
-        {{-- Section 1: Numbering Prefixes --}}
+        {{-- Section 1: Document numbering --}}
         <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-          <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🔢 Invoice Numbering</h2>
-          
-          <div class="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label class="label">Standard Invoice Prefix</label>
-              <input type="text" name="invoice_prefix" value="{{ $settings['invoice_prefix'] ?? 'INV' }}" class="w-full">
-            </div>
-            <div>
-              <label class="label">POS Sale Prefix</label>
-              <input type="text" name="pos_prefix" value="{{ $settings['pos_prefix'] ?? 'POS' }}" class="w-full">
-            </div>
-            <div>
-              <label class="label">Job Card Bill Prefix</label>
-              <input type="text" name="job_card_bill_prefix" value="{{ $settings['job_card_bill_prefix'] ?? 'JCB' }}" class="w-full">
-            </div>
-            <div>
-              <label class="label">Invoice Start Number Offset</label>
-              <input type="number" name="invoice_start_no" value="{{ $settings['invoice_start_no'] ?? 1000 }}" class="w-full">
-            </div>
-            <div class="sm:col-span-2 pt-6">
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="hidden" name="reset_invoice_yearly" value="0">
-                <input type="checkbox" name="reset_invoice_yearly" value="1" @checked(($settings['reset_invoice_yearly'] ?? 0) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Reset invoice serial counter yearly</span>
-              </label>
-            </div>
+          <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">Invoice Numbering</h2>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase text-slate-500">Quotation</p><p class="mt-1 font-mono text-sm font-bold text-slate-900">QTN-YYYYMM-0001</p><p class="mt-1 text-xs text-slate-500">The sequence starts at 0001 each month.</p></div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-bold uppercase text-slate-500">POS and job card invoices</p><p class="mt-1 font-mono text-sm font-bold text-slate-900">INV-YYYYMMDD-0001</p><p class="mt-1 text-xs text-slate-500">The shared sequence starts at 0001 each day.</p></div>
           </div>
         </div>
 
@@ -103,6 +81,31 @@
                 <span class="text-xs font-bold text-slate-700">Include QR code link for online payments</span>
               </label>
             </div>
+          </div>
+        </div>
+
+        {{-- Document wording --}}
+        <div class="panel space-y-5 rounded-xl border border-slate-200 bg-white p-6">
+          <div><h2 class="text-base font-black text-slate-800">Document Wording</h2><p class="mt-1 text-xs text-slate-500">Edit the message shown on quotations and bills. Leave a message blank to hide its box.</p></div>
+          <div class="grid gap-5 xl:grid-cols-2">
+            <section class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 class="font-extrabold text-slate-900">Quotation</h3>
+              <label class="block"><span class="label">Message heading</span><input name="quotation_intro_heading" value="{{ $settings->has('quotation_intro_heading') ? $settings['quotation_intro_heading'] : \App\Support\InvoiceDocument::QUOTATION_INTRO_HEADING }}" class="field" maxlength="100"></label>
+              <label class="block"><span class="label">Message text</span><textarea name="quotation_intro_text" rows="3" class="field" maxlength="2000">{{ $settings->has('quotation_intro_text') ? $settings['quotation_intro_text'] : \App\Support\InvoiceDocument::QUOTATION_INTRO_TEXT }}</textarea></label>
+              <label class="block"><span class="label">Default customer note</span><textarea name="quotation_default_note" rows="2" class="field" maxlength="1000" placeholder="Optional note when none is entered in POS">{{ $settings['quotation_default_note'] ?? '' }}</textarea></label>
+            </section>
+            <section class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 class="font-extrabold text-slate-900">Bill</h3>
+              <label class="block"><span class="label">Message heading</span><input name="bill_intro_heading" value="{{ $settings->has('bill_intro_heading') ? $settings['bill_intro_heading'] : \App\Support\InvoiceDocument::BILL_INTRO_HEADING }}" class="field" maxlength="100"></label>
+              <label class="block"><span class="label">Message text</span><textarea name="bill_intro_text" rows="3" class="field" maxlength="2000">{{ $settings->has('bill_intro_text') ? $settings['bill_intro_text'] : \App\Support\InvoiceDocument::BILL_INTRO_TEXT }}</textarea></label>
+              <label class="block"><span class="label">Default customer note</span><textarea name="bill_default_note" rows="2" class="field" maxlength="1000" placeholder="Optional note when none is entered in POS">{{ $settings['bill_default_note'] ?? '' }}</textarea></label>
+            </section>
+          </div>
+          <div class="grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2">
+            <label class="block"><span class="label">Customer note heading</span><input name="customer_note_heading" value="{{ $settings->has('customer_note_heading') ? $settings['customer_note_heading'] : 'Note for customer' }}" class="field" maxlength="100"></label>
+            <label class="block"><span class="label">Terms heading</span><input name="terms_heading" value="{{ $settings->has('terms_heading') ? $settings['terms_heading'] : 'Terms and conditions' }}" class="field" maxlength="100"></label>
+            <label class="block sm:col-span-2"><span class="label">Terms shown on both documents</span><textarea name="terms_and_conditions" rows="4" class="field" maxlength="5000">{{ $settings['terms_and_conditions'] ?? '' }}</textarea></label>
+            <label class="block sm:col-span-2"><span class="label">Footer message shown on both documents</span><input name="invoice_footer_note" value="{{ $settings->has('invoice_footer_note') ? $settings['invoice_footer_note'] : 'Thank you for choosing Fasmir Motors.' }}" class="field" maxlength="300"></label>
           </div>
         </div>
 

@@ -4,9 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BikeIntake;
 use App\Models\JobCard;
-use App\Models\Setting;
 use App\Models\Technician;
-use App\Services\Sms\TextitSmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -167,7 +165,7 @@ class LiveBoardController extends Controller
         ]);
     }
 
-    public function updateStatus(Request $request, JobCard $job, TextitSmsService $sms): JsonResponse
+    public function updateStatus(Request $request, JobCard $job): JsonResponse
     {
         $data = $request->validate(['status' => 'required|in:'.implode(',', array_keys(self::BOARD_STATUSES))]);
         $newStatus = self::BOARD_STATUSES[$data['status']];
@@ -186,23 +184,6 @@ class LiveBoardController extends Controller
                 'updated_at' => now(),
             ]);
         });
-
-        if (Setting::valueFor('job_status_sms_enabled', '0') === '1') {
-            $job->load('intake.bike.customer');
-            $customer = $job->intake?->bike?->customer;
-            if ($customer?->phone) {
-                $sms->send($customer->phone, "Fasmir Motors: {$job->number} status updated to {$newStatus}.", [
-                    'module' => 'Job Card',
-                    'message_type' => 'Status Update',
-                    'recipient_name' => $customer->name,
-                    'recipient_type' => 'customer',
-                    'reference_no' => $job->number,
-                    'related_type' => $job->getMorphClass(),
-                    'related_id' => $job->id,
-                    'sent_by' => auth()->id(),
-                ]);
-            }
-        }
 
         return response()->json(['message' => 'Status updated.', 'status' => $data['status']]);
     }

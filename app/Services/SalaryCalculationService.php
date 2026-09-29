@@ -81,6 +81,15 @@ class SalaryCalculationService
         $presentStatuses = ['Present', 'Late', 'Early Leave', 'Auto Closed', 'Worked on Leave Day'];
         $fullPresent = $records->whereIn('status', $presentStatuses)->count();
         $halfDays = $records->whereIn('status', ['Half Day', 'Morning Half Day', 'Evening Half Day'])->count();
+        $technician = Technician::findOrFail($technicianId);
+        $noPayRate = (float) ($technician->no_pay_deduction_rate ?: $this->dailySalary($technician));
+        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate) {
+            $calculated = in_array($record->status, ['Absent', 'No Pay Leave'], true)
+                ? $noPayRate
+                : (float) $record->late_deduction_amount + (float) $record->early_leave_deduction_amount + (float) $record->half_day_deduction_amount;
+
+            return (float) $record->deduction_amount - $calculated;
+        });
 
         return [
             'total_month_days' => $start->diffInDays($end) + 1,
@@ -108,6 +117,7 @@ class SalaryCalculationService
             'late_deduction' => round((float) $records->sum('late_deduction_amount'), 2),
             'early_leave_deduction' => round((float) $records->sum('early_leave_deduction_amount'), 2),
             'half_day_deduction' => round((float) $records->sum('half_day_deduction_amount'), 2),
+            'attendance_override_adjustment' => round((float) $overrideAdjustment, 2),
         ];
     }
 
@@ -220,8 +230,15 @@ class SalaryCalculationService
         $attendanceSalary = $technician->salary_type === 'Daily'
             ? $dailySalary * ($attendance['worked_days'] + $attendance['approved_leave_days'])
             : (float) $technician->basic_salary;
-        $commission = (float) TechnicianCommission::where('technician_id', $technician->id)
-            ->whereBetween('earned_date', [$start, $end])->where('status', 'Pending')->sum('amount');
+        $attendanceAdjustment = $attendance['attendance_override_adjustment'];
+        if ($technician->salary_type === 'Daily' && $attendanceAdjustment < 0) {
+            // A waived deduction restores daily earnings already reduced by absence/half days.
+            $attendanceSalary -= $attendanceAdjustment;
+            $attendanceAdjustment = 0;
+        }
+        $commissions = TechnicianCommission::where('technician_id', $technician->id)
+            ->whereBetween('earned_date', [$start, $end])->where('status', 'Pending')->orderBy('id')->get();
+        $commission = (float) $commissions->sum('amount');
         $allowances = max(0, (float) ($custom['allowances'] ?? $custom['other_allowances'] ?? 0));
         $manualAdditions = max(0, (float) ($custom['manual_additions'] ?? $custom['manual_addition'] ?? 0));
         $otherDeductions = max(0, (float) ($custom['other_deductions'] ?? 0));
@@ -236,7 +253,12 @@ class SalaryCalculationService
             'no_pay' => $noPay, 'half_day' => $attendance['half_day_deduction'], 'advance' => $advance['total_amount'],
             'employee_epf' => $contributions['employee_epf_amount'], 'job_bike' => $pendingDeductions['total_amount'],
             'other' => $otherDeductions, 'manual' => $manualDeductions,
+            'attendance_adjustment' => $attendanceAdjustment,
         ];
+        // Daily pay already counts half days as half a day's earnings.
+        if ($technician->salary_type === 'Daily') {
+            $deductionParts['half_day'] = 0;
+        }
         $totalDeductions = $this->calculateTotalDeductions($deductionParts);
         if ($totalDeductions > $gross) {
             throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the selected deductions before saving.']);
@@ -276,7 +298,7 @@ class SalaryCalculationService
             'allowances' => $allowances, 'manual_additions' => $manualAdditions, 'worked_on_leave_pay' => $workedOnLeavePay,
             'gross_salary' => $gross, 'advances' => $advance['total_amount'], 'total_advance_deduction' => $advance['total_amount'],
             'late_deduction' => $attendance['late_deduction'], 'early_leave_deduction' => $attendance['early_leave_deduction'],
-            'half_day_deduction' => $attendance['half_day_deduction'], 'no_pay_deduction' => round($noPay, 2),
+            'half_day_deduction' => $deductionParts['half_day'], 'no_pay_deduction' => round($noPay, 2),
             'own_bike_deduction' => $pendingDeductions['total_amount'], 'total_job_deduction' => $pendingDeductions['total_amount'],
             'other_deductions' => $otherDeductions, 'total_other_deduction' => $otherDeductions,
             'manual_deductions' => $manualDeductions, 'deductions' => round($totalDeductions - $contributions['employee_epf_amount'], 2),
@@ -290,7 +312,7 @@ class SalaryCalculationService
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'inputs' => $custom, 'earnings' => ['gross' => $gross], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['gross' => $gross], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 
@@ -300,6 +322,29 @@ class SalaryCalculationService
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Draft', 422);
             $snapshot = $sheet->calculation_snapshot ?? [];
+            if (isset($snapshot['attendance_summary']) && $snapshot['attendance_summary'] != $this->getAttendanceSummary($sheet->technician_id, $sheet->period_start, $sheet->period_end)) {
+                throw ValidationException::withMessages(['month' => 'Attendance changed after this draft was calculated. Regenerate the salary draft.']);
+            }
+            if (isset($snapshot['technician']) && $snapshot['technician'] != $this->getTechnicianSalaryData($sheet->technician_id)) {
+                throw ValidationException::withMessages(['month' => 'Staff salary settings changed. Regenerate the salary draft.']);
+            }
+            $salaryMonth = data_get($snapshot, 'salary_cycle.salary_month', $sheet->period_end->copy()->startOfMonth());
+            if (isset($snapshot['advance_summary']) && $snapshot['advance_summary'] != $this->getAdvanceSummary($sheet->technician_id, $salaryMonth)) {
+                throw ValidationException::withMessages(['month' => 'Salary advances changed. Regenerate the salary draft.']);
+            }
+            $currentDeductions = $this->getTechnicianPendingDeductions($sheet->technician_id, $salaryMonth, $sheet->period_end);
+            $currentManual = collect($currentDeductions['items'])->where('kind', 'technician_deduction')->values()->all();
+            $snapshotManual = collect(data_get($snapshot, 'pending_deductions.items', []))->where('kind', 'technician_deduction')->values()->all();
+            if (isset($snapshot['pending_deductions']) && $snapshotManual != $currentManual) {
+                throw ValidationException::withMessages(['month' => 'Staff deductions changed. Regenerate the salary draft.']);
+            }
+            $commissions = TechnicianCommission::where('technician_id', $sheet->technician_id)->where('status', 'Pending')
+                ->whereBetween('earned_date', [$sheet->period_start, $sheet->period_end])->orderBy('id')->lockForUpdate()->get();
+            $commissionItems = $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all();
+            if (round((float) $commissions->sum('amount'), 2) !== round((float) $sheet->commission, 2)
+                || (array_key_exists('commissions', $snapshot) && $snapshot['commissions'] != $commissionItems)) {
+                throw ValidationException::withMessages(['month' => 'Commissions changed after this draft was calculated. Regenerate the salary draft.']);
+            }
             $advanceIds = collect(data_get($snapshot, 'advance_summary.items', []))->pluck('id')->filter();
             $advances = TechnicianAdvance::whereIn('id', $advanceIds)->lockForUpdate()->get();
             if ($advances->contains(fn ($advance) => $advance->status !== 'Pending Deduction')) {
@@ -346,8 +391,7 @@ class SalaryCalculationService
                     'next_deduction_month' => $deducted >= (float) $plan->total_amount ? null : Carbon::parse(data_get($snapshot, 'salary_cycle.salary_month', $sheet->period_start))->startOfMonth()->addMonth(),
                 ]);
             }
-            TechnicianCommission::where('technician_id', $sheet->technician_id)->where('status', 'Pending')
-                ->whereBetween('earned_date', [$sheet->period_start, $sheet->period_end])->update(['status' => 'Paid', 'salary_sheet_id' => $sheet->id]);
+            TechnicianCommission::whereIn('id', $commissions->modelKeys())->update(['status' => 'Paid', 'salary_sheet_id' => $sheet->id]);
             $sheet->update(['status' => 'Finalized', 'finalized_at' => now(), 'finalized_by' => $userId]);
 
             return $sheet->fresh();

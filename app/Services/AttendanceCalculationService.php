@@ -9,6 +9,7 @@ use App\Models\TechnicianAttendance;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class AttendanceCalculationService
 {
@@ -25,6 +26,9 @@ class AttendanceCalculationService
         $dateString = Carbon::parse($date)->toDateString();
         $in = $this->time($dateString, $checkIn);
         $out = $this->time($dateString, $checkOut);
+        if ($in && $out && $out->lt($in)) {
+            throw ValidationException::withMessages(['out_time' => 'Checkout must be after check-in.']);
+        }
         $open = $this->time($dateString, $settings->opening_time);
         $close = $this->time($dateString, $settings->closing_time);
         $dailySalary = $this->dailySalary($technician);
@@ -69,7 +73,7 @@ class AttendanceCalculationService
         }
 
         // Apply auto checkout logic
-        if ($in && ! $out && empty($status)) {
+        if ($in && ((! $out && empty($status)) || ! empty($overrides['auto_filled_checkout']))) {
             $out = $close;
             $result['is_auto_checkout'] = true;
             $result['auto_checkout_reason'] = 'Missing checkout time, used workshop closing time';
@@ -98,7 +102,7 @@ class AttendanceCalculationService
             $result['status'] = 'Worked on Leave Day';
         }
 
-        $worked = max(0, (int) floor(abs($out->getTimestamp() - $in->getTimestamp()) / 60) - $result['break_minutes']);
+        $worked = max(0, (int) floor(($out->getTimestamp() - $in->getTimestamp()) / 60) - $result['break_minutes']);
         $result['working_minutes'] = $worked;
         $result['working_hours'] = round($worked / 60, 2);
         $result['late_minutes'] = $this->calculateLateMinutes($in, $open, (int) $settings->late_grace_minutes);
@@ -251,6 +255,10 @@ class AttendanceCalculationService
     private function normalizeStatus(?string $status, ?CarbonInterface $in, ?CarbonInterface $out, bool $isLeaveDay = false, ?string $leaveType = null, bool $isAutoCheckout = false): string
     {
         $status = strtolower(trim((string) $status));
+        // Work statuses containing "leave" must not become approved leave.
+        if (in_array($status, ['absent', 'early leave', 'half day', 'morning half day', 'evening half day', 'worked on leave day', 'auto closed'], true)) {
+            return $status === 'worked on leave day' ? 'Worked on Leave Day' : ucwords($status);
+        }
         if (str_contains($status, 'no shift')) {
             return 'No Shift';
         }

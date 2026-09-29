@@ -13,11 +13,6 @@
       </a>
     </div>
 
-    {{-- Help Box --}}
-    <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed">
-      ℹ️ <strong>SMS Gateway:</strong> This page links the workshop database to the Textit.biz SMS gateway, enabling automated bike intake receipts, ready alerts, and reminders to be dispatched.
-    </div>
-
     <x-flash />
 
     {{-- Forms & Actions --}}
@@ -48,7 +43,7 @@
               </div>
               <div>
                 <label class="label">Textit Password</label>
-                <input type="password" name="textit_password" value="{{ $settings['textit_password'] ?? '' }}" placeholder="Enter password to change" class="w-full">
+                <input type="password" name="textit_password" autocomplete="new-password" placeholder="Leave blank to keep existing password" class="w-full">
               </div>
               <div>
                 <label class="label">API HTTP Method</label>
@@ -68,7 +63,7 @@
               <div class="pt-6">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
                   <input type="hidden" name="sms_gateway_enabled" value="0">
-                  <input type="checkbox" name="sms_gateway_enabled" value="1" @checked(($settings['sms_gateway_enabled'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+                  <input type="checkbox" name="sms_gateway_enabled" value="1" @checked(old('sms_gateway_enabled', $settings['sms_gateway_enabled'] ?? 0) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                   <span class="text-xs font-bold text-slate-700">Enable SMS sending globally</span>
                 </label>
               </div>
@@ -79,27 +74,34 @@
           <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
             <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🔔 Event triggers</h2>
             
-            <div class="grid gap-4 sm:grid-cols-2">
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="hidden" name="sms_event_received" value="0">
-                <input type="checkbox" name="sms_event_received" value="1" @checked(($settings['sms_event_received'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Bike Received Receipt SMS</span>
+            <label class="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 cursor-pointer">
+              <span class="font-bold text-sm text-slate-800">Automatic workshop messages</span>
+              <input type="hidden" name="sms_auto_enabled" value="0">
+              <input type="checkbox" role="switch" name="sms_auto_enabled" value="1" @checked(old('sms_auto_enabled', $settings['sms_auto_enabled'] ?? 0) == 1) class="sms-event-switch">
+            </label>
+            <div class="divide-y divide-slate-100">
+              @foreach($events as $event => $definition)
+                <label class="flex items-center justify-between gap-4 py-3 cursor-pointer">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-semibold text-slate-800">{{ $definition['label'] }}</span>
+                    <span class="block text-xs text-slate-500 mt-1">{{ $definition['recipient'] }}</span>
+                  </span>
+                  <input type="hidden" name="sms_event_{{ $event }}" value="0">
+                  <input type="checkbox" role="switch" aria-label="{{ $definition['label'] }} SMS" name="sms_event_{{ $event }}" value="1" @checked(old('sms_event_'.$event, $settings['sms_event_'.$event] ?? $definition['default']) == 1) class="sms-event-switch">
+                </label>
+              @endforeach
+              <label class="flex items-center justify-between gap-4 py-3 cursor-pointer">
+                <span class="min-w-0"><span class="block text-sm font-semibold text-slate-800">Scheduled service reminders</span><span class="block text-xs text-slate-500 mt-1">Customer</span></span>
+                <input type="hidden" name="sms_reminders_enabled" value="0">
+                <input type="checkbox" role="switch" name="sms_reminders_enabled" value="1" @checked(old('sms_reminders_enabled', $settings['reminder_auto_send'] ?? $settings['reminder_auto_sms'] ?? 0) == 1) class="sms-event-switch">
               </label>
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="hidden" name="sms_event_assigned" value="0">
-                <input type="checkbox" name="sms_event_assigned" value="1" @checked(($settings['sms_event_assigned'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Technician Assigned SMS</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="hidden" name="sms_event_completed" value="0">
-                <input type="checkbox" name="sms_event_completed" value="1" @checked(($settings['sms_event_completed'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Repair Job Completed SMS</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="hidden" name="sms_event_billed" value="0">
-                <input type="checkbox" name="sms_event_billed" value="1" @checked(($settings['sms_event_billed'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Bill & Invoice Generated SMS</span>
-              </label>
+            </div>
+            <div class="border-t border-slate-200 pt-4 text-sm">
+              <div class="font-semibold text-slate-700">Customer invoice address</div>
+              <div class="mt-1 break-all text-slate-500">{{ \App\Services\Sms\WorkshopSmsService::publicBaseUrl() }}</div>
+              @unless($publicUrlReady)
+                <div role="status" class="mt-2 text-amber-700">Invoice SMS is blocked until APP_URL in .env points to your public HTTPS address.</div>
+              @endunless
             </div>
           </div>
 
@@ -108,16 +110,15 @@
             <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">📝 Default Message Templates</h2>
             
             <div class="space-y-4">
-              <div>
-                <label class="label">Bike Received Template</label>
-                <textarea name="sms_tmpl_received" rows="2" class="w-full text-xs font-mono">{{ $settings['sms_tmpl_received'] ?? "Dear Customer, we received your bike {bike_no} for service. Job Card: {job_no}. - Fasmir Motors" }}</textarea>
-                <p class="text-[9px] text-slate-400 mt-0.5">Use markers: {bike_no}, {job_no}, {customer_name}</p>
-              </div>
-              <div>
-                <label class="label">Job Completed Template</label>
-                <textarea name="sms_tmpl_completed" rows="2" class="w-full text-xs font-mono">{{ $settings['sms_tmpl_completed'] ?? "Dear Customer, your bike {bike_no} service is completed and ready for pickup. Total Bill: {bill_amount}. - Fasmir Motors" }}</textarea>
-                <p class="text-[9px] text-slate-400 mt-0.5">Use markers: {bike_no}, {bill_amount}, {customer_name}</p>
-              </div>
+              @foreach($events as $event => $definition)
+                <details class="border-b border-slate-100 pb-3" @if(in_array($event, ['received', 'billed'])) open @endif>
+                  <summary class="cursor-pointer text-sm font-semibold text-slate-700">{{ $definition['label'] }} <span class="font-normal text-slate-400">({{ $definition['recipient'] }})</span></summary>
+                  <label class="sr-only" for="sms-tmpl-{{ $event }}">{{ $definition['label'] }} template</label>
+                  <textarea id="sms-tmpl-{{ $event }}" name="sms_tmpl_{{ $event }}" rows="3" required maxlength="1000" class="w-full text-xs font-mono mt-3">{{ old('sms_tmpl_'.$event, $settings['sms_tmpl_'.$event] ?? $definition['template']) }}</textarea>
+                  @php preg_match_all('/\{[a-z_]+\}/', $definition['template'], $markers); @endphp
+                  <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-500">@foreach(array_unique($markers[0]) as $marker)<code>{{ $marker }}</code>@endforeach</div>
+                </details>
+              @endforeach
             </div>
           </div>
 
@@ -159,7 +160,7 @@
     <div class="panel mt-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-black text-slate-800">📋 SMS Delivery Logs</h2>
-        <span class="text-xs text-slate-500">Showing most recent messages</span>
+        <a href="{{ route('sms.failed') }}" class="text-sm font-semibold text-red-600">Failed messages</a>
       </div>
       
       <div class="overflow-hidden rounded-xl border border-slate-200">
@@ -169,6 +170,7 @@
               <tr>
                 <th>Date & Time</th>
                 <th>Phone Number</th>
+                <th>Event / Recipient</th>
                 <th>Message Snippet</th>
                 <th>Status</th>
                 <th>Response / Reason</th>
@@ -179,23 +181,24 @@
                 <tr>
                   <td class="whitespace-nowrap font-medium">{{ $log->created_at->format('d M Y, h:i A') }}</td>
                   <td class="whitespace-nowrap text-slate-600">{{ $log->phone }}</td>
+                  <td class="text-xs text-slate-600"><span class="block">{{ $events[explode(':', $log->message_type ?? '')[1] ?? '']['label'] ?? $log->message_type }}</span><span class="block text-slate-400">{{ $log->recipient_name ?: ucfirst($log->recipient_type ?? '') }}</span></td>
                   <td class="max-w-[300px] truncate" title="{{ $log->message }}">{{ $log->message }}</td>
                   <td class="whitespace-nowrap">
                     @if(strtolower($log->status) === 'success' || strtolower($log->status) === 'sent')
-                      <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Success</span>
+                      <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Provider accepted</span>
                     @elseif(strtolower($log->status) === 'failed')
                       <span class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">Failed</span>
                     @else
                       <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">{{ $log->status }}</span>
                     @endif
                   </td>
-                  <td class="max-w-[200px] truncate text-xs text-slate-500" title="{{ $log->api_response }}">
-                    {{ $log->api_response ?: 'No response data' }}
+                  <td class="max-w-[200px] truncate text-xs text-slate-500" title="{{ $log->failure_reason ?: $log->api_response }}">
+                    {{ $log->failure_reason ?: $log->api_response ?: 'No response data' }}
                   </td>
                 </tr>
               @empty
                 <tr>
-                  <td colspan="5" class="py-8 text-center text-slate-500">No SMS logs recorded yet.</td>
+                  <td colspan="6" class="py-8 text-center text-slate-500">No SMS logs recorded yet.</td>
                 </tr>
               @endforelse
             </tbody>
@@ -210,4 +213,11 @@
     </div>
 
   </div>
+  <style>
+    .sms-event-switch { appearance: none; flex: 0 0 42px; width: 42px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: #94a3b8; cursor: pointer; position: relative; transition: background .15s; }
+    .sms-event-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: white; transition: transform .15s; }
+    .sms-event-switch:checked { background: #059669; }
+    .sms-event-switch:checked::after { transform: translateX(18px); }
+    .sms-event-switch:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+  </style>
 </x-layouts::app>

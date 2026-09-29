@@ -16,8 +16,10 @@ use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\Technician;
 use App\Services\AccountService;
-use App\Services\Sms\TextitSmsService;
 use App\Services\WorkshopService;
+use App\Support\InvoiceDocument;
+use App\Support\InvoiceNumber;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +51,7 @@ class SalesBillingController extends Controller
         return redirect()->route('sales.invoices.show', $invoice)->with('success', 'Job card invoice generated with account split and secure public link.');
     }
 
-    public function partsSales()
+    public function partsSales(Request $request)
     {
         $shopMode = session('shop_mode', 'workshop');
         Store::firstOrCreate(
@@ -58,10 +60,97 @@ class SalesBillingController extends Controller
         );
         Account::ensureSystemAccounts($shopMode);
 
-        $categories = ProductCategory::orderBy('name')->get();
-        $products = Product::with(['stocks.store', 'stockBatches' => fn ($q) => $q->where('status', 'active')->where('available_qty', '>', 0)])->where('active', true)->orderBy('name')->get();
+        $categories = ProductCategory::query()->orderBy('name')->get(['id', 'name']);
+        $products = Product::query()
+            ->select(['id', 'name', 'code', 'barcode', 'selling_price', 'cost_price', 'unit', 'category_id', 'pos_pinned', 'pos_pin_order'])
+            ->with([
+                'stocks:id,product_id,store_id,quantity',
+                'stockBatches' => fn ($query) => $query
+                    ->where('status', 'active')
+                    ->where('available_qty', '>', 0)
+                    ->select(['id', 'product_id', 'store_id', 'batch_no', 'cost_price', 'selling_price', 'available_qty', 'purchase_date']),
+            ])
+            ->where('active', true)
+            ->orderByDesc('pos_pinned')
+            ->orderBy('pos_pin_order')
+            ->orderBy('name')
+            ->get();
 
-        return view('sales.parts-sales', ['customers' => Customer::where('active', true)->orderBy('name')->get(), 'stores' => Store::where('active', true)->orderByDesc('is_default')->get(), 'accounts' => Account::where('active', true)->get(), 'categories' => $categories, 'products' => $products, 'productOptions' => $products->map(fn (Product $p) => ['id' => $p->id, 'label' => $p->name.' — '.$p->code.($p->barcode ? ' — '.$p->barcode : ''), 'name' => $p->name, 'sku' => $p->code, 'barcode' => $p->barcode, 'price' => (float) $p->selling_price, 'unit' => $p->unit, 'category_id' => $p->category_id, 'stocks' => $p->stocks->map(fn ($stock) => ['store_id' => $stock->store_id, 'quantity' => (float) $stock->quantity])->values(), 'batches' => $p->stockBatches->map(fn ($b) => ['id' => $b->id, 'store_id' => $b->store_id, 'batch_no' => $b->batch_no, 'cost' => (float) $b->cost_price, 'selling' => (float) $b->selling_price, 'qty' => (float) $b->available_qty, 'date' => $b->purchase_date?->format('d/m/Y') ?? 'N/A'])->values()])->values(), 'recent' => Invoice::with('customer')->where('invoice_type', 'Parts Sale')->latest()->limit(5)->get(), 'stats' => ['today' => Invoice::where('invoice_type', 'Parts Sale')->whereDate('created_at', today())->sum('total'), 'items' => InvoiceItem::whereHas('invoice', fn ($query) => $query->whereDate('created_at', today()))->sum('quantity'), 'income' => Account::systemAccount('spare_parts')?->balance ?? 0, 'due' => Invoice::where('invoice_type', 'Parts Sale')->sum('due_amount'), 'low' => Product::whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id=products.id)<=products.minimum_stock')->count()]]);
+        $productOptions = $products->map(fn (Product $product) => [
+            'id' => $product->id,
+            'name' => $product->name,
+            'sku' => $product->code,
+            'barcode' => $product->barcode,
+            'price' => (float) $product->selling_price,
+            'cost_price' => (float) $product->cost_price,
+            'unit' => $product->unit,
+            'category_id' => $product->category_id,
+            'posPinned' => $product->pos_pinned,
+            'posPinOrder' => $product->pos_pin_order,
+            'stocks' => $product->stocks->map(fn ($stock) => [
+                'store_id' => $stock->store_id,
+                'quantity' => (float) $stock->quantity,
+            ])->values(),
+            'batches' => $product->stockBatches->map(fn ($batch) => [
+                'id' => $batch->id,
+                'store_id' => $batch->store_id,
+                'batch_no' => $batch->batch_no,
+                'cost' => (float) $batch->cost_price,
+                'selling' => (float) $batch->selling_price,
+                'qty' => (float) $batch->available_qty,
+                'date' => $batch->purchase_date?->format('d/m/Y') ?? 'N/A',
+            ])->values(),
+        ])->values();
+
+        $importQuotation = null;
+        if ($request->filled('quotation')) {
+            $quotation = Invoice::query()->where('invoice_type', 'Quotation')
+                ->with(['items.product', 'charges', 'customer', 'bike', 'store'])
+                ->findOrFail($request->integer('quotation'));
+            if ($quotation->status !== 'Draft') {
+                return redirect()->route('sales.quotations')->with('error', 'Only draft quotations can be opened in POS.');
+            }
+            if ($quotation->is_accident_quotation) {
+                return redirect()->route('sales.quotations')->with('error', 'Accident bike quotations cannot be opened in POS.');
+            }
+            if (! $quotation->store?->active || ($quotation->customer && ! $quotation->customer->active) || $quotation->items->contains(fn ($item) => ! $item->product?->active)) {
+                return redirect()->route('sales.quotations')->with('error', 'A quotation product, customer, or store is no longer active. Update it before checkout.');
+            }
+            $importQuotation = [
+                'id' => $quotation->id,
+                'number' => $quotation->number,
+                'customer_id' => $quotation->customer_id,
+                'bike' => $quotation->bike?->number,
+                'store_id' => $quotation->store_id,
+                'internal_note' => $quotation->internal_note,
+                'customer_note' => $quotation->customer_note,
+                'discount' => (float) $quotation->discount,
+                'tax' => (float) $quotation->tax,
+                'items' => $quotation->items->map(fn ($item) => [
+                    'product_id' => $item->product_id,
+                    'stock_batch_id' => $item->stock_batch_id,
+                    'description' => $item->description,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'discount' => (float) $item->discount,
+                ])->values(),
+                'charges' => $quotation->charges->map(fn ($charge) => [
+                    'type' => $charge->type,
+                    'description' => $charge->description,
+                    'amount' => (float) $charge->amount,
+                ])->values(),
+            ];
+        }
+
+        return view('sales.parts-sales', [
+            'customers' => Customer::where('active', true)->orderBy('name')->get(['id', 'name', 'phone']),
+            'stores' => Store::where('active', true)->orderByDesc('is_default')->get(['id', 'name']),
+            'accounts' => Account::where('active', true)->get(['id', 'name']),
+            'categories' => $categories,
+            'products' => $products,
+            'productOptions' => $productOptions,
+            'importQuotation' => $importQuotation,
+        ]);
     }
 
     public function partsStore(Request $request, WorkshopService $service)
@@ -78,18 +167,50 @@ class SalesBillingController extends Controller
             'payment_method' => ['nullable', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR', 'Credit/Due'])],
             'account_id' => 'nullable|exists:accounts,id',
             'invoice_type' => 'nullable|string|in:Parts Sale,Quotation',
-            'items' => 'required|array|min:1|max:100',
+            'source_quotation_id' => 'nullable|integer|exists:invoices,id',
+            'internal_note' => 'nullable|string|max:2000',
+            'customer_note' => 'nullable|string|max:2000',
+            'items' => 'nullable|array|max:100',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.stock_batch_id' => 'nullable|exists:stock_batches,id',
+            'items.*.description' => 'nullable|string|max:255',
             'items.*.quantity' => 'required|numeric|min:0.01',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.discount' => 'nullable|numeric|min:0',
+            'charges' => 'nullable|array|max:100',
+            'charges.*.type' => ['required', Rule::in(['service', 'labor', 'washing', 'other'])],
+            'charges.*.description' => 'required|string|max:255',
+            'charges.*.amount' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
             'action' => 'nullable|string',
         ]);
 
         $invType = $v['invoice_type'] ?? 'Parts Sale';
+        if (empty($v['items']) && empty($v['charges'])) {
+            throw ValidationException::withMessages(['items' => 'Add at least one product or charge.']);
+        }
+        if (! empty($v['source_quotation_id']) && $invType !== 'Parts Sale') {
+            throw ValidationException::withMessages(['source_quotation_id' => 'Open this quotation as a sale in POS.']);
+        }
+        if (($v['customer_mode'] ?? null) === 'new' && blank($v['customer_name'] ?? null)) {
+            throw ValidationException::withMessages(['customer_name' => 'Enter a name for the new customer.']);
+        }
+        if (($v['customer_mode'] ?? null) === 'new' && blank($v['customer_phone'] ?? null)) {
+            throw ValidationException::withMessages(['customer_phone' => 'Enter a phone number for the new customer.']);
+        }
         $invoice = DB::transaction(function () use ($v, $invType, $service, $request) {
-            $items = collect($v['items']);
+            $sourceQuotation = null;
+            if (! empty($v['source_quotation_id'])) {
+                $sourceQuotation = Invoice::query()->where('invoice_type', 'Quotation')
+                    ->lockForUpdate()->find($v['source_quotation_id']);
+                if (! $sourceQuotation || $sourceQuotation->status !== 'Draft' || $sourceQuotation->is_accident_quotation) {
+                    throw ValidationException::withMessages(['source_quotation_id' => 'This quotation is no longer available for checkout.']);
+                }
+                if ((int) $sourceQuotation->store_id !== (int) $v['store_id']) {
+                    throw ValidationException::withMessages(['store_id' => 'Use the quotation store for checkout.']);
+                }
+            }
+            $items = collect($v['items'] ?? []);
+            $charges = collect($v['charges'] ?? []);
             $products = Product::whereIn('id', $items->pluck('product_id')->unique())->lockForUpdate()->get()->keyBy('id');
 
             if ($products->count() !== $items->pluck('product_id')->unique()->count()) {
@@ -98,7 +219,15 @@ class SalesBillingController extends Controller
 
             Store::lockForUpdate()->findOrFail($v['store_id']);
             $usesDiscount = (float) ($v['discount'] ?? 0) > 0 || $items->contains(fn ($item) => (float) ($item['discount'] ?? 0) > 0);
-            $usesLowerPrice = $items->contains(fn ($item) => (float) $item['unit_price'] < (float) $products[$item['product_id']]->selling_price);
+            $batchPrices = StockBatch::whereIn('id', $items->pluck('stock_batch_id')->filter()->unique())->get()->keyBy('id');
+            $usesLowerPrice = $items->contains(function ($item) use ($products, $batchPrices) {
+                $batch = $batchPrices->get($item['stock_batch_id'] ?? null);
+                $listedPrice = $batch && (int) $batch->product_id === (int) $item['product_id']
+                    ? (float) $batch->selling_price
+                    : (float) $products[$item['product_id']]->selling_price;
+
+                return (float) $item['unit_price'] < $listedPrice;
+            });
             if (($usesDiscount || $usesLowerPrice) && ! $request->user()->canAccess('sales.apply_discount')) {
                 abort(403, 'You do not have permission to apply discounts or reduce selling prices.');
             }
@@ -109,7 +238,9 @@ class SalesBillingController extends Controller
                 }
             }
 
-            $subtotal = (float) $items->sum(fn ($item) => ((float) $item['quantity'] * (float) $item['unit_price']) - (float) ($item['discount'] ?? 0));
+            $partsSubtotal = (float) $items->sum(fn ($item) => ((float) $item['quantity'] * (float) $item['unit_price']) - (float) ($item['discount'] ?? 0));
+            $chargeTotals = $charges->groupBy('type')->map(fn ($rows) => (float) $rows->sum('amount'));
+            $subtotal = round($partsSubtotal + (float) $charges->sum('amount'), 2);
             $total = $subtotal - (float) ($v['discount'] ?? 0) + (float) ($v['tax'] ?? 0);
             if ($total < 0) {
                 throw ValidationException::withMessages(['discount' => 'Discount cannot exceed the sale amount.']);
@@ -135,19 +266,27 @@ class SalesBillingController extends Controller
             }
 
             $invoice = Invoice::create([
-                'number' => 'INV-'.now()->format('ymd').'-'.Str::upper(Str::random(10)),
+                'number' => InvoiceNumber::next($invType),
                 'invoice_type' => $invType,
                 'status' => $invType === 'Quotation' ? 'Draft' : ($paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid')),
                 'customer_id' => $customerId,
+                'bike_id' => $sourceQuotation && (int) $sourceQuotation->customer_id === (int) $customerId ? $sourceQuotation->bike_id : null,
                 'store_id' => $v['store_id'],
+                'source_quotation_id' => $sourceQuotation?->id,
                 'subtotal' => $subtotal,
                 'discount' => $v['discount'] ?? 0,
                 'tax' => $v['tax'] ?? 0,
-                'parts_amount' => $total,
-                'payment_method' => $v['payment_method'] ?? null,
+                'parts_amount' => $partsSubtotal,
+                'service_amount' => $chargeTotals->get('service', 0),
+                'labor_amount' => $chargeTotals->get('labor', 0),
+                'washing_amount' => $chargeTotals->get('washing', 0),
+                'other_amount' => $chargeTotals->get('other', 0),
+                'payment_method' => $invType === 'Quotation' ? null : ($v['payment_method'] ?? null),
+                'internal_note' => $v['internal_note'] ?? null,
+                'customer_note' => $v['customer_note'] ?? null,
                 'total' => $total,
                 'paid_amount' => $paid,
-                'due_amount' => $total - $paid,
+                'due_amount' => $invType === 'Quotation' ? 0 : $total - $paid,
                 'public_token' => Str::random(48),
                 'link_expires_at' => now()->addDays(90),
                 'created_by' => auth()->id(),
@@ -171,6 +310,7 @@ class SalesBillingController extends Controller
                 $lineTotal = ((float) $item['quantity'] * (float) $item['unit_price']) - (float) ($item['discount'] ?? 0);
                 $invoice->items()->create([
                     'product_id' => $product->id,
+                    'description' => trim((string) ($item['description'] ?? '')) ?: null,
                     'store_id' => $v['store_id'],
                     'stock_batch_id' => $batchId,
                     'quantity' => $item['quantity'],
@@ -186,11 +326,22 @@ class SalesBillingController extends Controller
                 }
             }
 
+            foreach ($charges as $index => $charge) {
+                $invoice->charges()->create([
+                    'type' => $charge['type'],
+                    'description' => trim($charge['description']),
+                    'amount' => $charge['amount'],
+                    'sort_order' => $index + 1,
+                ]);
+            }
+
             if ($paid > 0 && $invType !== 'Quotation') {
                 $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(8)), 'amount' => $paid, 'method' => $v['payment_method'], 'paid_at' => now(), 'account_id' => $v['account_id'], 'balance_after' => $total - $paid, 'status' => 'Completed', 'created_by' => auth()->id()]);
                 $accountService = app(AccountService::class);
                 $accountService->receiveInvoicePayment($invoice, $payment);
             }
+
+            $sourceQuotation?->update(['status' => 'Converted']);
 
             return $invoice;
         });
@@ -211,21 +362,71 @@ class SalesBillingController extends Controller
         return view('sales.invoices', ['invoices' => $invoices, 'stats' => ['total' => Invoice::count(), 'today' => Invoice::whereDate('created_at', today())->count(), 'paid' => Invoice::where('status', 'Paid')->count(), 'due' => Invoice::where('due_amount', '>', 0)->count(), 'cancelled' => Invoice::where('status', 'Cancelled')->count()]]);
     }
 
+    public function quotations(Request $request)
+    {
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'type' => ['nullable', Rule::in(['accident', 'normal'])],
+            'status' => ['nullable', Rule::in(['Draft', 'Converted', 'Cancelled'])],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $quotations = Invoice::query()
+            ->where('invoice_type', 'Quotation')
+            ->when($filters['type'] ?? null, fn (Builder $query, string $type) => $query->where('is_accident_quotation', $type === 'accident'))
+            ->with(['customer:id,name,phone', 'bike:id,number,model', 'store:id,name', 'convertedInvoice:id,source_quotation_id,number'])
+            ->withCount(['items', 'charges'])
+            ->when($filters['q'] ?? null, function (Builder $query, string $term) {
+                $query->where(function (Builder $query) use ($term) {
+                    $query->where('number', 'like', "%{$term}%")
+                        ->orWhereHas('customer', fn (Builder $customer) => $customer
+                            ->where('name', 'like', "%{$term}%")
+                            ->orWhere('phone', 'like', "%{$term}%"))
+                        ->orWhereHas('bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%"));
+                });
+            })
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status))
+            ->when($filters['from'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '>=', $date))
+            ->when($filters['to'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '<=', $date))
+            ->latest()
+            ->paginate(20)
+            ->withQueryString();
+
+        return view('sales.quotations', compact('quotations'));
+    }
+
     public function invoiceShow(Invoice $invoice)
     {
-        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'payments.account'])]);
+        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'charges', 'payments.account'])]);
+    }
+
+    public function invoicePdf(Invoice $invoice)
+    {
+        abort_unless(auth()->user()->canAccess('sales.view_invoices') || (auth()->user()->canAccess('sales.parts_sales') && (int) $invoice->created_by === (int) auth()->id()), 403);
+        $filename = ($invoice->invoice_type === 'Quotation' ? 'Quotation-' : 'Bill-')
+            .preg_replace('/[^A-Za-z0-9_-]/', '-', $invoice->number).'.pdf';
+
+        return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
+            ->setPaper('a4')->download($filename);
     }
 
     public function cancelInvoice(Request $request, Invoice $invoice, WorkshopService $service)
     {
         $data = $request->validate(['reason' => ['required', 'min:5', 'max:500']]);
+        if ($invoice->invoice_type === 'Quotation' && $invoice->status === 'Converted') {
+            return back()->with('error', 'A converted quotation cannot be cancelled. Cancel the resulting invoice if needed.');
+        }
         if ($invoice->status === 'Cancelled') {
-            return back()->with('error', 'Invoice is already cancelled.');
+            return back()->with('error', $invoice->invoice_type === 'Quotation' ? 'Quotation is already cancelled.' : 'Invoice is already cancelled.');
         }
         DB::transaction(function () use ($invoice, $data, $service) {
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
             if ($invoice->status === 'Cancelled') {
                 return;
+            }
+            if ($invoice->invoice_type === 'Quotation' && $invoice->status === 'Converted') {
+                throw ValidationException::withMessages(['reason' => 'This quotation has already been converted to an invoice.']);
             }
             if ($invoice->payments()->where('status', 'Completed')->where('method', 'Salary Deduction')->exists()) {
                 throw ValidationException::withMessages(['reason' => 'Reopen the staff salary recovery before cancelling this invoice.']);
@@ -243,7 +444,7 @@ class SalesBillingController extends Controller
             $invoice->jobCard?->update(['status' => 'Completed']);
         });
 
-        return back()->with('success', 'Invoice cancelled with stock and ledger reversals.');
+        return back()->with('success', $invoice->invoice_type === 'Quotation' ? 'Quotation cancelled.' : 'Invoice cancelled with stock and ledger reversals.');
     }
 
     public function payments(Request $request)
@@ -322,9 +523,9 @@ class SalesBillingController extends Controller
 
     public function sendBillSms(Invoice $invoice)
     {
-        $this->queueBillSms($invoice);
+        $result = app(\App\Services\Sms\WorkshopSmsService::class)->send('billed', $invoice, true);
 
-        return back()->with('success', 'Bill SMS was added to the SMS queue.');
+        return back()->with($result['success'] ? 'success' : 'error', $result['success'] ? 'Bill SMS accepted by the provider.' : $result['error']);
     }
 
     private function paymentPageData(Request $request, bool $customerMode): array
@@ -373,21 +574,4 @@ class SalesBillingController extends Controller
         $accountService->reallocateInvoiceReceipts($payment->invoice);
     }
 
-    private function queueBillSms(Invoice $invoice): void
-    {
-        $invoice->loadMissing('customer');
-        if ($invoice->customer && $invoice->customer->phone) {
-            $smsService = app(TextitSmsService::class);
-            $smsService->send($invoice->customer->phone, "Fasmir Motors bill {$invoice->number}: Rs. ".number_format((float) $invoice->total, 2).'. '.route('invoices.public', $invoice->public_token), [
-                'module' => 'Billing',
-                'message_type' => 'Bill SMS',
-                'recipient_name' => $invoice->customer->name,
-                'recipient_type' => 'customer',
-                'reference_no' => $invoice->number,
-                'related_type' => $invoice->getMorphClass(),
-                'related_id' => $invoice->id,
-            ]);
-        }
-        $invoice->update(['sms_sent_at' => now()]);
-    }
 }

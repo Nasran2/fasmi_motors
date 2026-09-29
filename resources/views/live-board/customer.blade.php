@@ -16,8 +16,7 @@
         .bike-customer { font-size: 1.25rem; font-weight: 600; color: #cbd5e1; }
         .status-badge { padding: 0.5rem 1.5rem; border-radius: 2rem; font-size: 1.25rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
 
-        .status-in-progress { background: rgba(237, 20, 43, 0.2); color: #ff4d4d; border: 1px solid rgba(237, 20, 43, 0.5); }
-        .status-ready { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); }
+        .status-badge { background: var(--status-background); color: var(--status-color); border: 1px solid var(--status-border); }
         
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
@@ -68,6 +67,30 @@
 
         let autoScrollers = {};
 
+        const statusColors = {
+            'New Intake': '#60a5fa',
+            'Received': '#38bdf8',
+            'Assigned': '#c4b5fd',
+            'Diagnosis': '#e879f9',
+            'Waiting for Parts': '#fb923c',
+            'In Progress': '#f87171',
+            'Washing / Final Check': '#22d3ee',
+            'Repair Ready': '#a3e635',
+            'Ready for Delivery': '#4ade80',
+            'On Hold': '#facc15',
+            'Pending Payment': '#f472b6',
+            'Billed': '#2dd4bf',
+            'Completed': '#86efac',
+            'Delivered': '#93c5fd',
+            'Cancelled': '#94a3b8',
+        };
+        const boardStatusLabels = {
+            new_intake: 'New Intake', diagnosis: 'Diagnosis',
+            waiting_parts: 'Waiting for Parts', in_repair: 'In Progress',
+            washing: 'Washing / Final Check', ready: 'Ready for Delivery',
+            on_hold: 'On Hold', pending_payment: 'Pending Payment',
+        };
+
         function escapeBoardText(value) {
             const element = document.createElement('span');
             element.textContent = String(value ?? '');
@@ -109,7 +132,8 @@
                     // Combine similar statuses
                     let isReady = ['ready', 'pending_payment'].includes(card.database_status) || ['ready', 'pending_payment'].includes(card.status);
                     
-                    const statusLabel = card.database_status || card.status.replaceAll('_', ' ');
+                    const statusLabel = card.database_status || boardStatusLabels[card.status] || card.status.replaceAll('_', ' ');
+                    const statusColor = statusColors[statusLabel] || '#cbd5e1';
                     
                     const html = `
                         <div class="bike-card">
@@ -117,7 +141,7 @@
                                 <div class="bike-number">${escapeBoardText(card.bike_number)}</div>
                                 <div class="bike-customer">${escapeBoardText(card.customer)}</div>
                             </div>
-                            <div class="status-badge ${isReady ? 'status-ready' : 'status-in-progress'}">${escapeBoardText(statusLabel)}</div>
+                            <div class="status-badge" style="--status-color:${statusColor};--status-background:${statusColor}26;--status-border:${statusColor}80;">${escapeBoardText(statusLabel)}</div>
                         </div>
                     `;
 

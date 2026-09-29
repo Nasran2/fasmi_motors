@@ -23,6 +23,7 @@ use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SalesBillingController;
+use App\Http\Controllers\AccidentQuotationController;
 use App\Http\Controllers\ServiceReminderController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\SmsCenterController;
@@ -54,6 +55,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('bikes', [CustomerBikeController::class, 'bikeStore'])->name('customers.bikes.store');
     Route::get('bikes/{bike}', [CustomerBikeController::class, 'bikeShow'])->name('customers.bikes.show');
     Route::get('customer-dues', [CustomerBikeController::class, 'dues'])->name('customers.dues');
+    Route::post('customer-dues/sms/preview', [\App\Http\Controllers\CustomerDueSmsController::class, 'preview'])->name('customers.dues.sms.preview');
+    Route::post('customer-dues/sms/send', [\App\Http\Controllers\CustomerDueSmsController::class, 'send'])->name('customers.dues.sms.send');
     Route::post('customer-dues/{invoice}/payment', [CustomerBikeController::class, 'receivePayment'])->name('customers.dues.payment');
     Route::get('service-history', [CustomerBikeController::class, 'serviceHistory'])->name('customers.service-history');
     Route::get('bike-ownership', [CustomerBikeController::class, 'ownership'])->name('customers.ownership');
@@ -84,6 +87,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('products/import', [ProductController::class, 'importForm'])->name('products.import');
     Route::post('products/import', [ProductController::class, 'importStore'])->name('products.import.store');
     Route::post('products/{product}/stock', [ProductController::class, 'stock'])->name('products.stock');
+    Route::get('products/pos-pins', [ProductController::class, 'posPins'])->name('products.pos-pins.index');
+    Route::put('products/pos-pins/order', [ProductController::class, 'reorderPosPins'])->name('products.pos-pins.order');
+    Route::post('products/{product}/pos-pin', [ProductController::class, 'togglePosPin'])->name('products.pos-pin.toggle');
     Route::get('products-export', [ProductController::class, 'export'])->name('products.excel.export');
     Route::post('products-import', [ProductController::class, 'import'])->name('products.excel.import');
     Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'show']);
@@ -104,8 +110,12 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('sales/job-billing/{job}', [SalesBillingController::class, 'billJob'])->name('sales.job-billing.store');
     Route::get('sales/parts', [SalesBillingController::class, 'partsSales'])->name('sales.parts');
     Route::post('sales/parts', [SalesBillingController::class, 'partsStore'])->name('sales.parts.store');
+    Route::get('sales/quotations', [SalesBillingController::class, 'quotations'])->name('sales.quotations');
+    Route::get('sales/accident-quotations/create', [AccidentQuotationController::class, 'create'])->name('sales.accident-quotations.create');
+    Route::post('sales/accident-quotations', [AccidentQuotationController::class, 'store'])->name('sales.accident-quotations.store');
     Route::get('sales/invoices', [SalesBillingController::class, 'invoices'])->name('sales.invoices');
     Route::get('sales/invoices/{invoice}', [SalesBillingController::class, 'invoiceShow'])->name('sales.invoices.show');
+    Route::get('sales/invoices/{invoice}/pdf', [SalesBillingController::class, 'invoicePdf'])->name('sales.invoices.pdf');
     Route::delete('sales/invoices/{invoice}', [SalesBillingController::class, 'cancelInvoice'])->name('sales.invoices.cancel');
     Route::get('sales/payments', [SalesBillingController::class, 'payments'])->name('sales.payments');
     Route::post('sales/payments', [SalesBillingController::class, 'paymentStore'])->name('sales.payments.store');
@@ -330,5 +340,6 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
 });
 
 Route::get('invoice/{token}', PublicInvoiceController::class)->name('invoices.public');
+Route::get('invoice/{token}/pdf', [PublicInvoiceController::class, 'pdf'])->name('invoices.public.pdf');
 
 require __DIR__.'/settings.php';

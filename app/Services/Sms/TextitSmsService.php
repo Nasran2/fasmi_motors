@@ -52,7 +52,7 @@ class TextitSmsService
             'provider' => 'textit',
             'retry_count' => $options['retry_count'] ?? 0,
             'sent_by' => $options['sent_by'] ?? auth()->id(),
-            'sent_at' => now(),
+            'sent_at' => null,
         ];
 
         // Check if SMS is enabled
@@ -94,7 +94,7 @@ class TextitSmsService
             $http = Http::timeout(20);
 
             if (strtoupper($this->settings->api_method) === 'POST') {
-                $response = $http->post($apiUrl, $params);
+                $response = $http->asForm()->post($apiUrl, $params);
             } else {
                 $response = $http->get($apiUrl, $params);
             }
@@ -106,14 +106,15 @@ class TextitSmsService
 
             $logData['api_response'] = $body;
 
-            if ($responseStatus === $this->settings->success_keyword) {
+            if ($response->successful() && $responseStatus === $this->settings->success_keyword) {
                 $logData['status'] = 'sent';
+                $logData['sent_at'] = now();
                 $logData['provider_message_id'] = $responsePayload;
                 $log = SmsLog::create($logData);
 
                 return ['success' => true, 'status' => 'sent', 'message_id' => $responsePayload, 'log_id' => $log->id];
             } else {
-                $friendly = $this->friendlyError($responsePayload);
+                $friendly = $response->successful() ? $this->friendlyError($responsePayload) : 'SMS provider returned HTTP '.$response->status().'.';
                 $logData['status'] = 'failed';
                 $logData['failure_reason'] = $friendly;
                 $log = SmsLog::create($logData);
@@ -121,10 +122,10 @@ class TextitSmsService
                 return ['success' => false, 'status' => 'failed', 'error' => $friendly, 'log_id' => $log->id];
             }
         } catch (\Throwable $e) {
-            Log::error('Textit SMS error: '.$e->getMessage());
+            Log::error('Textit SMS connection failed.', ['exception' => $e::class]);
             $logData['status'] = 'failed';
-            $logData['api_response'] = $e->getMessage();
-            $logData['failure_reason'] = 'Gateway connection failed: '.$e->getMessage();
+            $logData['api_response'] = 'CONNECTION_FAILED';
+            $logData['failure_reason'] = 'Gateway connection failed. Check connectivity and gateway configuration.';
             $log = SmsLog::create($logData);
 
             return ['success' => false, 'status' => 'failed', 'error' => 'SMS gateway connection failed.', 'log_id' => $log->id];

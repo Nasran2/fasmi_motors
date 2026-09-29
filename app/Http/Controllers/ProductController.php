@@ -23,6 +23,52 @@ use Throwable;
 
 class ProductController extends Controller
 {
+    public function togglePosPin(Product $product)
+    {
+        DB::transaction(function () use ($product) {
+            $product = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
+            if ($product->pos_pinned) {
+                $product->update(['pos_pinned' => false, 'pos_pin_order' => null]);
+            } else {
+                $nextOrder = (int) Product::where('pos_pinned', true)->max('pos_pin_order') + 1;
+                $product->update(['pos_pinned' => true, 'pos_pin_order' => $nextOrder]);
+            }
+        });
+
+        return back()->with('success', 'POS pin updated.');
+    }
+
+    public function posPins()
+    {
+        return response()->json([
+            'product_ids' => Product::where('active', true)->where('pos_pinned', true)
+                ->orderBy('pos_pin_order')->orderBy('name')->pluck('id'),
+        ]);
+    }
+
+    public function reorderPosPins(Request $request)
+    {
+        $data = $request->validate([
+            'product_ids' => ['required', 'array'],
+            'product_ids.*' => ['required', 'integer', 'distinct'],
+        ]);
+
+        DB::transaction(function () use ($data) {
+            $pinnedIds = Product::where('active', true)->where('pos_pinned', true)
+                ->lockForUpdate()->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $submittedIds = array_map('intval', $data['product_ids']);
+            if (count($submittedIds) !== count($pinnedIds) || array_diff($submittedIds, $pinnedIds)) {
+                throw ValidationException::withMessages(['product_ids' => 'Pinned products changed. Reopen the pin manager and try again.']);
+            }
+
+            foreach ($submittedIds as $position => $id) {
+                Product::whereKey($id)->update(['pos_pin_order' => $position + 1]);
+            }
+        });
+
+        return response()->json(['success' => true]);
+    }
+
     public function index(Request $request)
     {
         $products = Product::query()

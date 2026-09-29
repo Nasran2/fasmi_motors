@@ -114,11 +114,12 @@ class TechnicianController extends Controller
             $from = today()->startOfMonth();
             $to = today()->endOfMonth();
         }
-        $records = TechnicianAttendance::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))
+        $query = TechnicianAttendance::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))
             ->when($request->status, fn (Builder $q, $status) => $q->where('status', $status))
-            ->whereBetween('date', [$from, $to])->orderByDesc('date')->paginate(31)->withQueryString();
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()]);
+        $records = (clone $query)->orderByDesc('date')->paginate(31)->withQueryString();
 
-        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave'];
+        $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave', 'Auto Closed', 'Worked on Leave Day'];
         $batch = $request->filled('batch') ? AttendanceImportBatch::where('imported_by', auth()->id())->find($request->batch) : null;
         $recentBatches = AttendanceImportBatch::with('importer')->latest()->limit(8)->get();
 
@@ -127,11 +128,11 @@ class TechnicianController extends Controller
             'previewBatch' => $batch, 'recentBatches' => $recentBatches,
             'salarySettings' => SalarySetting::firstOrCreate([])->refresh(), 'otSlabs' => OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get(),
             'stats' => [
-                'present' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', $presentStatuses)->count(),
-                'absent' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
-                'late' => TechnicianAttendance::whereBetween('date', [$from, $to])->where('late_minutes', '>', 0)->count(),
-                'leave' => TechnicianAttendance::whereBetween('date', [$from, $to])->whereIn('status', ['Leave', 'Paid Leave'])->count(),
-                'ot' => TechnicianAttendance::whereBetween('date', [$from, $to])->sum('ot_hours'),
+                'present' => (clone $query)->whereIn('status', $presentStatuses)->count(),
+                'absent' => (clone $query)->whereIn('status', ['Absent', 'No Pay Leave'])->count(),
+                'late' => (clone $query)->where('late_minutes', '>', 0)->count(),
+                'leave' => (clone $query)->whereIn('status', ['Leave', 'Paid Leave'])->count(),
+                'ot' => (clone $query)->sum('ot_hours'),
             ],
         ]);
     }
@@ -319,7 +320,11 @@ class TechnicianController extends Controller
                     $rowInput = $submittedRows->get($rowId);
                     $item['date'] = $rowInput['date'] ?? $item['date'];
                     $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
-                    $item['check_out'] = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
+                    $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
+                    if ($checkout !== $item['check_out']) {
+                        $item['auto_filled_checkout'] = false;
+                    }
+                    $item['check_out'] = $checkout;
                     if (! empty($rowInput['technician_id'])) {
                         $item['technician_id'] = (int) $rowInput['technician_id'];
                         $item['will_create_technician'] = false;
@@ -517,14 +522,16 @@ class TechnicianController extends Controller
     public function salaries(Request $request)
     {
         $sheets = TechnicianSalarySheet::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))->latest('period_start')->paginate(15)->withQueryString();
+        $month = TechnicianSalarySheet::whereBetween('period_end', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()])
+            ->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id));
 
         return view('technicians.salaries', ['sheets' => $sheets, 'technicians' => $this->technicians(), 'accounts' => Account::where('active', true)->get(), 'stats' => [
-            'payable' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('net_payable'),
-            'paid' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('paid_amount'),
-            'balance' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('balance_amount'),
-            'employee_epf' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('epf_employee'),
-            'company' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum(DB::raw('epf_company+etf_company')),
-            'overpaid' => TechnicianSalarySheet::whereMonth('period_start', now()->month)->sum('overpaid_amount'),
+            'payable' => (clone $month)->sum('net_payable'),
+            'paid' => (clone $month)->sum('paid_amount'),
+            'balance' => (clone $month)->sum('balance_amount'),
+            'employee_epf' => (clone $month)->sum('epf_employee'),
+            'company' => (clone $month)->sum(DB::raw('epf_company+etf_company')),
+            'overpaid' => (clone $month)->sum('overpaid_amount'),
         ]]);
     }
 
@@ -722,14 +729,14 @@ class TechnicianController extends Controller
 
     public function advances(Request $request)
     {
-        return view('technicians.advances', ['advances' => TechnicianAdvance::with(['technician', 'account'])->latest('payment_date')->paginate(15), 'technicians' => $this->technicians(), 'accounts' => Account::where('active', true)->get(), 'stats' => ['today' => TechnicianAdvance::whereDate('payment_date', today())->where('status', '!=', 'Cancelled')->sum('amount'), 'month' => TechnicianAdvance::whereMonth('payment_date', now()->month)->where('status', '!=', 'Cancelled')->sum('amount'), 'pending' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount'), 'balance' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount')]]);
+        return view('technicians.advances', ['advances' => TechnicianAdvance::with(['technician', 'account'])->latest('payment_date')->paginate(15), 'technicians' => $this->technicians(), 'accounts' => Account::where('active', true)->get(), 'stats' => ['today' => TechnicianAdvance::whereDate('payment_date', today())->where('status', '!=', 'Cancelled')->sum('amount'), 'month' => TechnicianAdvance::whereBetween('payment_date', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()])->where('status', '!=', 'Cancelled')->sum('amount'), 'pending' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount'), 'balance' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount')]]);
     }
 
     public function advanceStore(Request $request, WorkshopService $service)
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'payment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', 'max:50'], 'deduct_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000']]);
         DB::transaction(function () use ($data) {
-            $advance = TechnicianAdvance::create($data + ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'deduct_month' => $data['deduct_month'].'-01', 'created_by' => auth()->id()]);
+            $advance = TechnicianAdvance::create(array_merge($data, ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'deduct_month' => $data['deduct_month'].'-01', 'created_by' => auth()->id()]));
 
             app(AccountService::class)->outgoing('main', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], $data['payment_date'], 'salary_advance');
         });
@@ -741,15 +748,17 @@ class TechnicianController extends Controller
     {
         $records = TechnicianCommission::with(['technician', 'jobCard.intake.bike.customer', 'invoice'])->latest('earned_date')->paginate(15);
 
-        return view('technicians.commissions', ['records' => $records, 'technicians' => $this->technicians(), 'jobs' => JobCard::with('invoice')->whereNotNull('main_technician_id')->latest()->limit(100)->get(), 'stats' => ['total' => TechnicianCommission::whereMonth('earned_date', now()->month)->sum('amount'), 'paid' => TechnicianCommission::where('status', 'Paid')->sum('amount'), 'pending' => TechnicianCommission::where('status', 'Pending')->sum('amount'), 'highest' => TechnicianCommission::selectRaw('technician_id,sum(amount) total')->whereMonth('earned_date', now()->month)->groupBy('technician_id')->orderByDesc('total')->with('technician')->first()]]);
+        $month = TechnicianCommission::whereBetween('earned_date', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()]);
+
+        return view('technicians.commissions', ['records' => $records, 'technicians' => $this->technicians(), 'jobs' => JobCard::with('invoice')->whereNotNull('main_technician_id')->latest()->limit(100)->get(), 'stats' => ['total' => (clone $month)->sum('amount'), 'paid' => TechnicianCommission::where('status', 'Paid')->sum('amount'), 'pending' => TechnicianCommission::where('status', 'Pending')->sum('amount'), 'highest' => (clone $month)->selectRaw('technician_id,sum(amount) total')->groupBy('technician_id')->orderByDesc('total')->with('technician')->first()]]);
     }
 
     public function commissionStore(Request $request)
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'job_card_id' => ['nullable', 'exists:job_cards,id'], 'commission_type' => ['required', 'max:100'], 'base_amount' => ['required', 'numeric', 'min:0'], 'percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'amount' => ['nullable', 'numeric', 'min:0'], 'earned_date' => ['required', 'date'], 'note' => ['nullable', 'max:1000']]);
         $job = ! empty($data['job_card_id']) ? JobCard::with('invoice')->find($data['job_card_id']) : null;
-        $amount = (float) ($data['amount'] ?? 0) ?: (float) $data['base_amount'] * (float) $data['percentage'] / 100;
-        TechnicianCommission::create($data + ['invoice_id' => $job?->invoice?->id, 'amount' => $amount, 'created_by' => auth()->id()]);
+        $amount = isset($data['amount']) ? (float) $data['amount'] : (float) $data['base_amount'] * (float) $data['percentage'] / 100;
+        TechnicianCommission::create(array_merge($data, ['invoice_id' => $job?->invoice?->id, 'amount' => round($amount, 2), 'created_by' => auth()->id()]));
 
         return back()->with('success', 'Commission record added.');
     }
@@ -787,9 +796,12 @@ class TechnicianController extends Controller
 
     public function contributions(Request $request)
     {
-        $records = TechnicianContribution::with('technician')->latest('month')->paginate(20);
+        $query = TechnicianContribution::with('technician')
+            ->whereHas('salarySheet', fn ($q) => $q->whereIn('status', ['Finalized', 'Partially Paid', 'Paid']));
+        $records = (clone $query)->latest('month')->paginate(20);
+        $month = (clone $query)->whereBetween('month', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()]);
 
-        return view('technicians.contributions', ['records' => $records, 'technicians' => $this->technicians(), 'stats' => ['employee' => TechnicianContribution::whereMonth('month', now()->month)->sum('employee_epf_amount'), 'company' => TechnicianContribution::whereMonth('month', now()->month)->sum('company_epf_amount'), 'etf' => TechnicianContribution::whereMonth('month', now()->month)->sum('company_etf_amount'), 'total' => TechnicianContribution::whereMonth('month', now()->month)->sum(DB::raw('employee_epf_amount+company_epf_amount+company_etf_amount'))]]);
+        return view('technicians.contributions', ['records' => $records, 'technicians' => $this->technicians(), 'stats' => ['employee' => (clone $month)->sum('employee_epf_amount'), 'company' => (clone $month)->sum('company_epf_amount'), 'etf' => (clone $month)->sum('company_etf_amount'), 'total' => (clone $month)->sum(DB::raw('employee_epf_amount+company_epf_amount+company_etf_amount'))]]);
     }
 
     public function history(Request $request, SalaryCycleService $salaryCycle)

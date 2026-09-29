@@ -105,5 +105,6 @@ test('card-paid job bill splits service income and bank receipt correctly', func
         ->and((float) $bank->transactions()->sum('credit'))->toBe(1000.0)
         ->and($job->fresh()->status)->toBe('Billed')
         ->and($job->invoice?->invoice_type)->toBe('Job Card Bill')
+        ->and($job->invoice?->number)->toMatch('/^INV-\d{8}-0001$/')
         ->and(ServiceReminder::where('job_card_id', $job->id)->where('status', 'Pending')->exists())->toBeTrue();
 });

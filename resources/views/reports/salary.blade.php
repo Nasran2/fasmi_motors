@@ -1,6 +1,7 @@
 <x-layouts::app title="Salary Report">
   <div class="space-y-6">
-    @include('reports._filter', [
+    @component('reports._filter', [
+      'from' => $from, 'to' => $to, 'range' => $range,
       'title' => 'Salary Report',
       'subtitle' => 'View technician salary, advances, deductions, and net payments',
     ])
@@ -8,6 +9,7 @@
     @slot('filters')
       <div><label class="label">Technician</label><select name="technician"><option value="">All</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected(request("technician")==$t->id)>{{ $t->name }}</option>@endforeach</select></div>
     @endslot
+    @endcomponent
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
       @foreach($stats ?? [] as $label => $value)

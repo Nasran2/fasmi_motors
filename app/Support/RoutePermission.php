@@ -60,6 +60,10 @@ final class RoutePermission
 
     public static function allows(User $user, string $routeName, ?string $workspaceSection = null, array $parameters = [], array $query = []): bool
     {
+        if ($routeName === 'sales.invoices.pdf') {
+            return $user->canAccess('sales.view_invoices') || $user->canAccess('sales.parts_sales');
+        }
+
         $permission = self::for($routeName, $workspaceSection, $parameters, $query);
 
         if ($permission === null) {

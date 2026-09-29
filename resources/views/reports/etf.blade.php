@@ -1,6 +1,7 @@
 <x-layouts::app title="ETF Report">
   <div class="space-y-6">
-    @include('reports._filter', [
+    @component('reports._filter', [
+      'from' => $from, 'to' => $to, 'range' => $range,
       'title' => 'ETF Report',
       'subtitle' => 'View company ETF contribution',
     ])
@@ -16,6 +17,7 @@
         </select>
       </div>
     @endslot
+    @endcomponent
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
       @foreach($stats ?? [] as $label => $value)

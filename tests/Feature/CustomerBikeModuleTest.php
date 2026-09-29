@@ -49,3 +49,35 @@ test('due payment and ownership change update balances and preserve bike history
         ->and(BikeOwnershipChange::where('bike_id', $bike->id)->exists())->toBeTrue()
         ->and($bike->intakes()->where('id', $intake->id)->exists())->toBeTrue();
 });
+
+test('ownership change can create a new customer as the new owner', function () {
+    $user = User::factory()->create();
+    $owner = Customer::create(['name' => 'Original Owner', 'phone' => '0774000000']);
+    $bike = Bike::create(['customer_id' => $owner->id, 'number' => 'WP NEW OWNER', 'model' => 'Honda Dio']);
+
+    $this->actingAs($user)->post(route('customers.ownership.store'), [
+        'bike_id' => $bike->id, 'owner_mode' => 'new',
+        'new_name' => 'New Customer', 'new_phone' => '0775000000', 'new_address' => 'Warakapola',
+        'changed_at' => today()->toDateString(), 'due_handling' => 'keep_old',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $customer = Customer::where('phone', '0775000000')->firstOrFail();
+    expect($bike->fresh()->customer_id)->toBe($customer->id)
+        ->and($customer->address)->toBe('Warakapola')
+        ->and(BikeOwnershipChange::where('bike_id', $bike->id)->first()->new_customer_id)->toBe($customer->id);
+});
+
+test('invalid new owner details do not create a customer or change ownership', function () {
+    $user = User::factory()->create();
+    $owner = Customer::create(['name' => 'Original Owner', 'phone' => '0774000000']);
+    $bike = Bike::create(['customer_id' => $owner->id, 'number' => 'WP INVALID OWNER', 'model' => 'Honda Dio']);
+
+    $this->actingAs($user)->post(route('customers.ownership.store'), [
+        'bike_id' => $bike->id, 'owner_mode' => 'new', 'new_name' => 'Missing Phone',
+        'changed_at' => today()->toDateString(), 'due_handling' => 'keep_old',
+    ])->assertSessionHasErrors('new_phone');
+
+    expect($bike->fresh()->customer_id)->toBe($owner->id)
+        ->and(Customer::where('name', 'Missing Phone')->exists())->toBeFalse()
+        ->and(BikeOwnershipChange::where('bike_id', $bike->id)->exists())->toBeFalse();
+});

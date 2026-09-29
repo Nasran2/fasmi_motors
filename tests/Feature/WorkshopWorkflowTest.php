@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Store;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->user = User::factory()->create(['email_verified_at' => now()]);
@@ -45,6 +46,34 @@ test('billing splits paid income between workshop and spare parts ledgers', func
     expect(Invoice::first()->due_amount)->toEqual(0)
         ->and(Account::where('code', 'SPARE')->first()->transactions()->sum('credit'))->toEqual(10000)
         ->and(Account::where('code', 'MAIN')->first()->transactions()->sum('credit'))->toEqual(2000);
+});
+
+test('job bill summary shows previous customer due after total', function () {
+    $this->post(route('intakes.store'), [
+        'bike_number' => 'WP DUE 1000', 'bike_model' => 'Yamaha FZ', 'phone' => '0771234568',
+        'customer_name' => 'Due Customer', 'complaint' => 'Due display check',
+    ]);
+    $intake = BikeIntake::with('bike.customer')->firstOrFail();
+    $this->post(route('jobs.store'), ['bike_intake_id' => $intake->id, 'priority' => 'Normal']);
+    $job = JobCard::firstOrFail();
+
+    Invoice::create([
+        'number' => 'INV-OLD-DUE',
+        'invoice_type' => 'Opening Due',
+        'customer_id' => $intake->bike->customer_id,
+        'subtotal' => 1250,
+        'total' => 1250,
+        'paid_amount' => 0,
+        'due_amount' => 1250,
+        'status' => 'Unpaid',
+        'public_token' => Str::random(48),
+        'created_by' => $this->user->id,
+    ]);
+
+    $this->get(route('jobs.show', $job))
+        ->assertOk()
+        ->assertSeeText('Old Due')
+        ->assertSeeText('Rs. 1,250.00');
 });
 
 test('same account transfers are rejected', function () {
