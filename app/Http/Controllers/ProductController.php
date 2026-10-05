@@ -551,9 +551,40 @@ class ProductController extends Controller
 
     public function adjustmentStore(Request $request, WorkshopService $service)
     {
-        $data = $request->validate(['store_id' => ['required', 'exists:stores,id'], 'product_id' => ['required', 'exists:products,id'], 'quantity' => ['required', 'numeric', 'gt:0'], 'direction' => ['required', Rule::in(['increase', 'decrease'])], 'note' => ['required', 'max:500']]);
-        $increase = ($data['direction'] ?? 'increase') === 'increase';
-        $service->adjustStock((int) $data['store_id'], (int) $data['product_id'], (float) $data['quantity'] * ($increase ? 1 : -1), $increase ? 'adjustment_in' : 'adjustment_out', null, $data['note']);
+        $data = $request->validate([
+            'store_id' => ['required', 'exists:stores,id'],
+            'direction' => ['required', \Illuminate\Validation\Rule::in(['increase', 'decrease', 'override'])],
+            'note' => ['nullable', 'max:500'],
+            'products' => ['required', 'array', 'min:1'],
+            'products.*.id' => ['required', 'exists:products,id'],
+            'products.*.quantity' => ['required', 'numeric', 'min:0'],
+        ]);
+        
+        $direction = $data['direction'] ?? 'increase';
+        $storeId = (int) $data['store_id'];
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($data, $direction, $storeId, $service) {
+            foreach ($data['products'] as $item) {
+                $quantity = (float) $item['quantity'];
+                $productId = (int) $item['id'];
+
+                if ($direction === 'override') {
+                    $currentStock = \App\Models\StoreStock::where('store_id', $storeId)->where('product_id', $productId)->value('quantity') ?? 0;
+                    $diff = $quantity - $currentStock;
+                    
+                    if ($diff != 0) {
+                        $increase = $diff > 0;
+                        $service->adjustStock($storeId, $productId, abs($diff) * ($increase ? 1 : -1), $increase ? 'adjustment_in' : 'adjustment_out', null, $data['note']);
+                    }
+                } else {
+                    if ($quantity <= 0) {
+                        continue; // Skip zero adjustments
+                    }
+                    $increase = $direction === 'increase';
+                    $service->adjustStock($storeId, $productId, $quantity * ($increase ? 1 : -1), $increase ? 'adjustment_in' : 'adjustment_out', null, $data['note']);
+                }
+            }
+        });
 
         return back()->with('success', 'Stock adjustment saved.');
     }

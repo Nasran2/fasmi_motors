@@ -35,7 +35,7 @@
         @php($layoutNotifications = app(\App\Services\WorkshopNotificationService::class)->summary(auth()->user()))
         <header class="workshop-topbar [grid-area:header] sticky top-0 z-30 hidden h-[68px] items-center gap-4 border-b border-slate-200 bg-white/95 px-5 shadow-sm backdrop-blur lg:flex print:hidden">
             <button type="button" aria-label="Menu" class="grid size-10 shrink-0 place-items-center rounded-lg text-[#0b2447] hover:bg-slate-100"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-            <form action="{{ route('search') }}" class="relative w-full max-w-xl"><svg class="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input name="q" minlength="2" required placeholder="Search by bike no, customer, job card..." class="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 !pl-10 pr-4 text-sm outline-none focus:border-red-400 focus:bg-white focus:ring-4 focus:ring-red-50"></form>
+            
             <div class="ml-auto flex items-center gap-3">
                 <x-workshop-notifications :summary="$layoutNotifications" />
                 <span class="grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer" onclick="window.print()" title="Print">

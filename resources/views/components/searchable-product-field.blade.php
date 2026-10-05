@@ -1,4 +1,4 @@
-@props(['products', 'name' => 'product_id', 'id', 'label' => 'Product *', 'placeholder' => 'Type product name, SKU or barcode…'])
+@props(['products', 'name' => 'product_id', 'id', 'label' => 'Product *', 'placeholder' => 'Type product name, SKU, barcode or rack no…'])
 @php
     $selectedId = old($name);
     $selected = $products->firstWhere('id', (int) $selectedId);
@@ -6,7 +6,8 @@
         $totalStock = $product->stocks ? $product->stocks->sum('quantity') : 0;
         $minStock = (float) ($product->minimum_stock ?? 0);
         $mark = $totalStock <= 0 ? '🔴 ' : ($totalStock <= $minStock ? '🟡 ' : '');
-        return $mark . $product->name.' — '.$product->code.(($product->barcode && $product->barcode !== $product->code) ? ' — '.$product->barcode : '');
+        $rack = $product->rack_number ? ' [Rack: '.$product->rack_number.']' : '';
+        return $mark . $product->name.' — '.$product->code.(($product->barcode && $product->barcode !== $product->code) ? ' — '.$product->barcode : '').$rack;
     };
 @endphp
 <div {{ $attributes->class('searchable-product-field') }} id="{{ $id }}">

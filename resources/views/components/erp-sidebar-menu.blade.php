@@ -52,7 +52,7 @@
         <label for="sidebar-menu-search" class="sr-only">Search menu</label>
         <div class="relative">
             <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-            <input id="sidebar-menu-search" data-menu-search type="search" placeholder="Search menu..." autocomplete="off" class="h-10 w-full rounded-xl border border-white/10 bg-white/[.055] pl-9 pr-3 text-xs font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-red-500/50 focus:bg-white/[.08] focus:ring-4 focus:ring-red-500/5">
+            <input id="sidebar-menu-search" data-menu-search type="search" placeholder="Search menu..." autocomplete="off" class="h-10 w-full rounded-xl border border-white/10 bg-white/[.055] !pl-9 pr-3 text-xs font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-red-500/50 focus:bg-white/[.08] focus:ring-4 focus:ring-red-500/5">
         </div>
     </div>
 
