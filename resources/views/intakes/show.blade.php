@@ -65,6 +65,12 @@
                             <dd class="font-semibold text-slate-900">{{ $intake->bike->customer->name ?: 'Walk-in' }}</dd>
                             <dd class="text-xs text-slate-500 mt-0.5">{{ $intake->bike->customer->phone }}</dd>
                         </div>
+                        @if($intake->bike->chassis_number)
+                        <div>
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Chassis Number</dt>
+                            <dd class="break-words font-mono font-semibold text-slate-900">{{ $intake->bike->chassis_number }}</dd>
+                        </div>
+                        @endif
                         <div>
                             <dt class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Current Mileage</dt>
                             <dd class="font-semibold text-slate-900">{{ number_format($intake->current_mileage ?? 0) }} <span class="text-xs font-normal text-slate-500">KM</span></dd>

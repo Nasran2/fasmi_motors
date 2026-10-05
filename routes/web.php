@@ -37,6 +37,7 @@ Route::redirect('/', '/login')->name('home');
 Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('search', GlobalSearchController::class)->name('search');
+    Route::post('notifications/clear', [\App\Http\Controllers\WorkshopNotificationController::class, 'clear'])->name('notifications.clear');
     Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
     Route::get('workshop/live-board', [LiveBoardController::class, 'fullscreen'])->name('live-board.fullscreen');
     Route::get('workshop/live-board/customer', [LiveBoardController::class, 'customer'])->name('live-board.customer');

@@ -14,7 +14,9 @@
   ];
   $isLocked = in_array($job->status, ['Completed', 'Billed', 'Delivered']);
 @endphp
-<div class="space-y-5"><div class="flex flex-wrap items-end justify-between gap-3"><div><h1 class="page-title">{{ $job->number }} · {{ $job->intake->bike->number }}</h1><p class="page-subtitle">{{ $job->intake->bike->model }} · {{ $job->intake->bike->customer->name ?: 'Walk-in customer' }} · {{ $job->intake->bike->customer->phone }}</p></div><span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusColors[$job->status] ?? 'bg-slate-100 text-slate-700' }}">{{ $job->status }}</span></div><x-flash/>
+<div class="space-y-5">
+<x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
+<x-flash/>
 <div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
     @foreach($statuses as $s)
         <option @selected($job->status===$s)>{{ $s }}</option>
@@ -107,16 +109,16 @@
                 <span class="font-extrabold text-red-600 text-sm">{{ $job->intake->bike->number }}</span>
                 <span class="block text-slate-600 font-bold mt-0.5">{{ $job->intake->bike->brand }} {{ $job->intake->bike->model }} ({{ $job->intake->bike->year ?: 'N/A' }})</span>
             </div>
-            @if($job->intake->bike->chassis_no)
+            @if($job->intake->bike->chassis_number)
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Chassis Number</span>
-                <span class="font-mono text-slate-700">{{ $job->intake->bike->chassis_no }}</span>
+                <span class="font-mono text-slate-700">{{ $job->intake->bike->chassis_number }}</span>
             </div>
             @endif
-            @if($job->intake->bike->engine_no)
+            @if($job->intake->bike->engine_number)
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Engine Number</span>
-                <span class="font-mono text-slate-700">{{ $job->intake->bike->engine_no }}</span>
+                <span class="font-mono text-slate-700">{{ $job->intake->bike->engine_number }}</span>
             </div>
             @endif
         </div>

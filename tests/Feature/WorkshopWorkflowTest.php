@@ -5,6 +5,7 @@ use App\Models\BikeIntake;
 use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Store;
+use App\Models\Technician;
 use App\Models\User;
 use Illuminate\Support\Str;
 
@@ -32,6 +33,54 @@ test('a bike can be received and converted to a job card', function () {
 
     expect(JobCard::firstOrFail()->status)->toBe('Received');
 });
+
+test('intakes save chassis numbers and carry them through bike lookup and job cards', function () {
+    $data = [
+        'bike_number' => 'WP CH 1000', 'bike_model' => 'Honda Dio', 'phone' => '0771234569',
+        'customer_name' => 'Chassis Customer', 'complaint' => 'Engine noise', 'chassis_number' => 'FRAME-123456789',
+    ];
+    $this->get(route('intakes.create'))->assertOk()->assertSee('name="chassis_number"', false);
+    $this->post(route('intakes.store'), $data)->assertRedirect()->assertSessionHasNoErrors();
+    $intake = BikeIntake::with('bike')->firstOrFail();
+    expect($intake->bike->chassis_number)->toBe('FRAME-123456789');
+    $this->getJson(route('intakes.lookup', ['query' => 'WP CH 1000']))
+        ->assertOk()->assertJsonPath('bikes.0.chassis_number', 'FRAME-123456789');
+    $this->get(route('intakes.show', $intake))->assertOk()->assertSeeText('FRAME-123456789');
+    $this->get(route('intakes.edit', $intake))->assertOk()->assertSee('value="FRAME-123456789"', false);
+
+    $technician = Technician::create(['name' => 'Chamara', 'phone' => '0700000001', 'active' => true]);
+    $this->post(route('jobs.store'), [
+        'bike_intake_id' => $intake->id, 'main_technician_id' => $technician->id, 'priority' => 'Normal',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    $job = JobCard::firstOrFail();
+    $this->get(route('jobs.show', $job))->assertOk()->assertSeeText('FRAME-123456789')
+        ->assertSeeInOrder(['Job card overview', 'WP CH 1000', 'Main Technician', 'Chamara', 'Work details']);
+
+    $this->put(route('intakes.update', $intake), array_merge($data, ['chassis_number' => 'FRAME-CORRECTED']))
+        ->assertSessionHasNoErrors();
+    expect($intake->bike->fresh()->chassis_number)->toBe('FRAME-CORRECTED');
+    $this->put(route('intakes.update', $intake), array_merge($data, ['chassis_number' => '']))
+        ->assertSessionHasNoErrors();
+    expect($intake->bike->fresh()->chassis_number)->toBeNull();
+});
+
+test('a repeat intake without a chassis number preserves the recorded number', function () {
+    $data = ['bike_number' => 'WP CH 2000', 'bike_model' => 'Yamaha FZ', 'phone' => '0770000002', 'complaint' => 'Full service'];
+    $this->post(route('intakes.store'), $data + ['chassis_number' => 'FRAME-EXISTING'])->assertSessionHasNoErrors();
+    $intake = BikeIntake::firstOrFail();
+    $this->post(route('intakes.store'), $data + ['chassis_number' => ''])->assertSessionHasNoErrors();
+    expect($intake->bike->fresh()->chassis_number)->toBe('FRAME-EXISTING');
+    $this->put(route('intakes.update', $intake), $data)->assertSessionHasNoErrors();
+    expect($intake->bike->fresh()->chassis_number)->toBe('FRAME-EXISTING');
+});
+
+test('intakes reject invalid chassis numbers', function ($chassis) {
+    $this->post(route('intakes.store'), [
+        'bike_number' => 'WP CH 3000', 'bike_model' => 'Honda Dio', 'phone' => '0770000003',
+        'complaint' => 'Engine noise', 'chassis_number' => $chassis,
+    ])->assertSessionHasErrors('chassis_number');
+    expect(BikeIntake::count())->toBe(0);
+})->with([str_repeat('X', 101), [['invalid']]]);
 
 test('billing splits paid income between workshop and spare parts ledgers', function () {
     $this->post(route('intakes.store'), [

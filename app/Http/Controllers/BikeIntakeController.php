@@ -58,12 +58,12 @@ class BikeIntakeController extends Controller
 
     public function store(Request $r)
     {
-        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'phone' => 'required|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'opening_balance' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
+        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'chassis_number' => ['nullable', 'string', 'max:100'], 'phone' => 'required|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'opening_balance' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
         $intake = DB::transaction(function () use ($r, $v) {
             $bike = Bike::with('customer')->where('number', strtoupper($v['bike_number']))->first();
             if ($bike) {
                 $bike->customer->update(['name' => $v['customer_name'] ?? $bike->customer->name, 'phone' => $v['phone']]);
-                $bike->update(['model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+                $bike->update(['model' => $v['bike_model'], 'chassis_number' => $v['chassis_number'] ?? $bike->chassis_number, 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             } else {
                 $customer = Customer::where('phone', $v['phone'])->first();
                 if ($customer) {
@@ -71,7 +71,7 @@ class BikeIntakeController extends Controller
                 } else {
                     $customer = Customer::create(['name' => $v['customer_name'] ?? null, 'phone' => $v['phone'], 'address' => $r->address, 'nic' => $r->nic]);
                 }
-                $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+                $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'chassis_number' => $v['chassis_number'] ?? null, 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             }
             
             if ($r->opening_balance > 0) {
@@ -111,13 +111,13 @@ class BikeIntakeController extends Controller
 
     public function update(Request $r, BikeIntake $intake)
     {
-        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'phone' => 'required|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
+        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'chassis_number' => ['nullable', 'string', 'max:100'], 'phone' => 'required|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
         
         DB::transaction(function () use ($r, $v, $intake) {
             $bike = Bike::with('customer')->where('number', strtoupper($v['bike_number']))->first();
             if ($bike) {
                 $bike->customer->update(['name' => $v['customer_name'] ?? $bike->customer->name, 'phone' => $v['phone']]);
-                $bike->update(['model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+                $bike->update(['model' => $v['bike_model'], 'chassis_number' => array_key_exists('chassis_number', $v) ? $v['chassis_number'] : $bike->chassis_number, 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             } else {
                 $customer = Customer::where('phone', $v['phone'])->first();
                 if ($customer) {
@@ -125,7 +125,7 @@ class BikeIntakeController extends Controller
                 } else {
                     $customer = Customer::create(['name' => $v['customer_name'] ?? null, 'phone' => $v['phone'], 'address' => $r->address, 'nic' => $r->nic]);
                 }
-                $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
+                $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'chassis_number' => $v['chassis_number'] ?? null, 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             }
 
             $intake->update(['bike_id' => $bike->id, 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date]);

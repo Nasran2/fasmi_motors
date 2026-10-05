@@ -28,6 +28,7 @@
                         <label class="md:col-span-2"><span class="label">Address</span><input id="address" name="address" value="{{ old('address') }}" class="field" placeholder="Customer address"></label>
                         <label><span class="label">Brand</span><input name="brand" value="{{ old('brand') }}" class="field" placeholder="Yamaha, Honda, Bajaj..."></label>
                         <label><span class="label">Color</span><input name="color" value="{{ old('color') }}" class="field" placeholder="Bike color"></label>
+                        <label><span class="label">Chassis number</span><input id="chassis_number" name="chassis_number" value="{{ old('chassis_number') }}" class="field" maxlength="100" placeholder="Enter chassis / frame number">@error('chassis_number')<span class="mt-1 block text-xs text-red-600">{{ $message }}</span>@enderror</label>
                         <label><span class="label">NIC</span><input id="nic" name="nic" value="{{ old('nic') }}" class="field" placeholder="National ID"></label>
                         <label><span class="label">Current mileage</span><input type="number" name="current_mileage" value="{{ old('current_mileage') }}" class="field" placeholder="Current KM"></label>
                         <label><span class="label">Opening balance (Old due)</span><input type="number" step=".01" name="opening_balance" value="{{ old('opening_balance') }}" class="field" placeholder="0.00"></label>
@@ -130,6 +131,7 @@
             if (type === 'bike') {
                 document.getElementById('bike_number').value = item.number || '';
                 document.getElementById('bike_model').value = item.model || '';
+                document.getElementById('chassis_number').value = item.chassis_number || '';
                 if (item.customer) {
                     document.getElementById('phone').value = item.customer.phone || '';
                     document.getElementById('customer_name').value = item.customer.name || '';
