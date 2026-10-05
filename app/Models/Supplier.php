@@ -41,6 +41,6 @@ class Supplier extends Model
     public function getBalanceAttribute(): float
     {
         return (float) $this->opening_due - (float) $this->opening_advance
-            + (float) $this->purchases()->where('status', 'Completed')->sum(DB::raw('total_amount - returned_amount - paid_amount'));
+            + (float) $this->purchases()->where('status', 'Completed')->sum(DB::raw('total_amount - returned_amount - paid_amount - hold_amount'));
     }
 }

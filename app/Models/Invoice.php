@@ -9,8 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
-/** @property Carbon|null $link_expires_at
- *  @property-read JobCard $jobCard
+/** @property float|string $hold_amount
+ * @property Carbon|null $link_expires_at
+ * @property-read JobCard $jobCard
  */
 class Invoice extends Model
 {
@@ -28,11 +29,13 @@ class Invoice extends Model
         return $this->belongsTo(JobCard::class);
     }
 
+    /** @return HasMany<Payment, $this> */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
     }
 
+    /** @return BelongsTo<Customer, $this> */
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

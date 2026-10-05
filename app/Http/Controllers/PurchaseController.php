@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\Cheque;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
@@ -12,6 +13,7 @@ use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
 use App\Services\AccountService;
+use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -53,10 +55,13 @@ class PurchaseController extends Controller
 
     public function store(Request $request, WorkshopService $service)
     {
+        $settlement = app(SettlementService::class);
+        $rows = $settlement->rows($request->all(), true);
+        $request->merge(['paid_amount' => $settlement->total($rows)]);
         $data = $request->validate([
             'supplier_id' => ['required', 'exists:suppliers,id'], 'invoice_number' => ['required', 'max:100', Rule::unique('purchases', 'invoice_number')->where('supplier_id', $request->input('supplier_id'))],
             'purchase_date' => ['required', 'date'], 'due_date' => ['nullable', 'date', 'after_or_equal:purchase_date'],
-            'store_id' => ['required', 'exists:stores,id'], 'payment_method' => ['nullable', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card'])],
+            'store_id' => ['required', 'exists:stores,id'], 'payment_method' => ['nullable', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Party Cheque'])],
             'account_id' => ['nullable', 'exists:accounts,id'], 'paid_amount' => ['required', 'numeric', 'min:0'],
             'discount' => ['nullable', 'numeric', 'min:0'], 'tax' => ['nullable', 'numeric', 'min:0'], 'other_cost' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'max:1000'], 'update_prices' => ['nullable', 'boolean'],
@@ -65,11 +70,7 @@ class PurchaseController extends Controller
             'items.*.cost_price' => ['required', 'numeric', 'min:0'], 'items.*.selling_price' => ['required', 'numeric', 'min:0'],
             'items.*.discount' => ['nullable', 'numeric', 'min:0'],
         ]);
-        if ((float) $data['paid_amount'] > 0 && (empty($data['account_id']) || empty($data['payment_method']))) {
-            throw ValidationException::withMessages(['paid_amount' => 'Select a payment method and paid-from account.']);
-        }
-
-        $purchase = DB::transaction(function () use ($data, $request, $service) {
+        $purchase = DB::transaction(function () use ($data, $request, $service, $rows, $settlement) {
             $products = Product::whereIn('id', collect($data['items'])->pluck('product_id'))->lockForUpdate()->get()->keyBy('id');
             $subtotal = collect($data['items'])->sum(fn (array $item) => (float) $item['quantity'] * (float) $item['cost_price'] - (float) ($item['discount'] ?? 0));
             $total = max(0, $subtotal - (float) ($data['discount'] ?? 0) + (float) ($data['tax'] ?? 0) + (float) ($data['other_cost'] ?? 0));
@@ -82,9 +83,9 @@ class PurchaseController extends Controller
                 'supplier_id' => $data['supplier_id'], 'store_id' => $data['store_id'], 'purchase_date' => $data['purchase_date'],
                 'due_date' => $paid < $total ? ($data['due_date'] ?? now()->addDays(30)->toDateString()) : null,
                 'subtotal' => $subtotal, 'discount' => $data['discount'] ?? 0, 'tax' => $data['tax'] ?? 0, 'other_cost' => $data['other_cost'] ?? 0,
-                'total_amount' => $total, 'paid_amount' => $paid, 'due_amount' => $total - $paid,
+                'total_amount' => $total, 'paid_amount' => 0, 'due_amount' => $total,
                 'payment_status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partial' : 'Due'),
-                'payment_method' => $data['payment_method'] ?? null, 'note' => $data['note'] ?? null, 'created_by' => auth()->id(),
+                'payment_method' => count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? null), 'note' => $data['note'] ?? null, 'created_by' => auth()->id(),
             ]);
             foreach ($data['items'] as $item) {
                 $lineTotal = (float) $item['quantity'] * (float) $item['cost_price'] - (float) ($item['discount'] ?? 0);
@@ -114,13 +115,11 @@ class PurchaseController extends Controller
                 $service->adjustStock((int) $data['store_id'], (int) $item['product_id'], (float) $item['quantity'], 'purchase', $purchase, "Purchase {$purchase->number}", $batch->id, $item['cost_price'], $item['selling_price']);
 
             }
-            if ($paid > 0) {
-                $account = Account::findOrFail($data['account_id']);
-                $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $data['supplier_id'], 'purchase_id' => $purchase->id, 'account_id' => $account->id, 'payment_date' => $data['purchase_date'], 'amount' => $paid, 'balance_after' => Supplier::findOrFail($data['supplier_id'])->balance, 'payment_method' => $data['payment_method'], 'status' => 'Completed', 'note' => 'Initial purchase payment', 'created_by' => auth()->id()]);
-
-                $accountService = app(AccountService::class);
-                $accountService->outgoing('spare_parts', $paid, "Payment for purchase {$purchase->number}", $payment, $data['payment_method'], $data['purchase_date'], 'purchase');
+            foreach ($rows as $row) {
+                $settlement->pay($purchase, $row, $data['purchase_date']);
             }
+            $purchase->refresh();
+            $settlement->saveStatus($purchase);
 
             return $purchase;
         });
@@ -137,7 +136,7 @@ class PurchaseController extends Controller
 
     public function show(Purchase $purchase)
     {
-        return view('purchases.show', ['purchase' => $purchase->load(['supplier', 'store', 'items.product', 'payments.account', 'returns.item.product'])]);
+        return view('purchases.show', ['purchase' => $purchase->load(['supplier', 'store', 'items.product', 'payments.account', 'payments.cheque.forwardedSupplier', 'returns.item.product'])]);
     }
 
     public function cancel(Request $request, Purchase $purchase, WorkshopService $service)
@@ -151,7 +150,15 @@ class PurchaseController extends Controller
             if ($purchase->status !== 'Completed') {
                 return;
             }
-            $purchase->load(['items', 'payments.account', 'returns']);
+            $purchase->load(['items', 'payments.account', 'payments.cheque.forwardedSupplier', 'returns']);
+            $linkedCheques = Cheque::whereHas('supplierPayments', fn ($q) => $q->where('purchase_id', $purchase->id))->whereIn('status', ['Pending', 'Deposited', 'Cleared'])->get();
+            if ($linkedCheques->contains(fn ($c) => (bool) $c->forwarded_supplier_id)) {
+                throw ValidationException::withMessages(['reason' => 'Resolve the forwarded customer cheque before cancelling this document.']);
+            }
+            foreach ($linkedCheques->whereIn('status', ['Pending', 'Deposited']) as $cheque) {
+                app(SettlementService::class)->resolve($cheque, 'Cancelled', null, $data['reason']);
+            }
+            $purchase->refresh()->load('payments');
             foreach ($purchase->items as $item) {
                 $remaining = (float) $item->quantity - (float) $item->returned_quantity;
                 if ($remaining > 0) {
@@ -239,6 +246,9 @@ class PurchaseController extends Controller
             if ($purchase->status !== 'Completed') {
                 throw ValidationException::withMessages(['purchase_id' => 'Cancelled purchases cannot be returned.']);
             }
+            if ($return->refund_type === 'Supplier credit' && (float) $purchase->hold_amount > 0 && (float) $return->return_value > (float) $purchase->due_amount) {
+                throw ValidationException::withMessages(['refund_type' => 'Resolve the held cheques before applying credit against their amounts.']);
+            }
             if ($return->refund_type !== 'Replacement') {
                 if ($return->refund_type === 'Cash refund') {
                     if ((float) $return->return_value > (float) $purchase->paid_amount) {
@@ -248,8 +258,8 @@ class PurchaseController extends Controller
                     $purchase->save();
                 }
                 $purchase->increment('returned_amount', (float) $return->return_value);
-                $purchase->due_amount = max(0, (float) $purchase->total_amount - (float) $purchase->returned_amount - (float) $purchase->paid_amount);
-                $purchase->payment_status = $purchase->due_amount <= 0 ? 'Paid' : ((float) $purchase->paid_amount > 0 ? 'Partial' : 'Due');
+                $purchase->due_amount = max(0, (float) $purchase->total_amount - (float) $purchase->returned_amount - (float) $purchase->paid_amount - (float) $purchase->hold_amount);
+                app(SettlementService::class)->saveStatus($purchase);
                 $purchase->save();
             }
             if ($return->refund_type === 'Cash refund') {
@@ -302,43 +312,53 @@ class PurchaseController extends Controller
 
     public function payments(Request $request)
     {
-        $payments = SupplierPayment::with(['supplier', 'purchase', 'account'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('supplier', fn (Builder $s) => $s->where('name', 'like', "%{$term}%"))->orWhereHas('purchase', fn (Builder $p) => $p->where('invoice_number', 'like', "%{$term}%"))))->when($request->method, fn (Builder $q, string $method) => $q->where('payment_method', $method))->when($request->account_id, fn (Builder $q, string $id) => $q->where('account_id', $id))->latest('payment_date')->paginate(15)->withQueryString();
+        $payments = SupplierPayment::with(['supplier', 'purchase', 'account', 'cheque.forwardedSupplier'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('supplier', fn (Builder $s) => $s->where('name', 'like', "%{$term}%"))->orWhereHas('purchase', fn (Builder $p) => $p->where('invoice_number', 'like', "%{$term}%"))))->when($request->method, fn (Builder $q, string $method) => $q->where('payment_method', $method))->when($request->account_id, fn (Builder $q, string $id) => $q->where('account_id', $id))->latest('payment_date')->paginate(15)->withQueryString();
 
-        return view('purchases.payments', ['payments' => $payments, 'suppliers' => Supplier::where('active', true)->orderBy('name')->get(), 'purchases' => Purchase::where('status', 'Completed')->where('due_amount', '>', 0)->with('supplier')->orderBy('due_date')->get(), 'accounts' => Account::where('active', true)->get(), 'stats' => ['today' => SupplierPayment::where('status', 'Completed')->whereDate('payment_date', today())->sum('amount'), 'month' => SupplierPayment::where('status', 'Completed')->whereBetween('payment_date', [now()->startOfMonth(), now()->endOfMonth()])->sum('amount'), 'due' => Purchase::where('status', 'Completed')->sum('due_amount'), 'cheques' => SupplierPayment::where('status', 'Completed')->where('payment_method', 'Cheque')->count()]]);
+        return view('purchases.payments', ['partyCheques' => Cheque::where('cheque_type', 'Received')->where('status', 'Pending')->whereNull('forwarded_supplier_id')->whereHas('payments', fn ($q) => $q->where('status', 'Hold'))->get(), 'payments' => $payments, 'suppliers' => Supplier::where('active', true)->orderBy('name')->get(), 'purchases' => Purchase::where('status', 'Completed')->where('due_amount', '>', 0)->with('supplier')->orderBy('due_date')->get(), 'accounts' => Account::where('active', true)->get(), 'stats' => ['today' => SupplierPayment::where('status', 'Completed')->whereDate('payment_date', today())->sum('amount'), 'month' => SupplierPayment::where('status', 'Completed')->whereBetween('payment_date', [now()->startOfMonth(), now()->endOfMonth()])->sum('amount'), 'due' => Purchase::where('status', 'Completed')->sum('due_amount'), 'cheques' => SupplierPayment::where('status', 'Completed')->where('payment_method', 'Cheque')->count()]]);
     }
 
     public function paymentStore(Request $request, WorkshopService $service)
     {
-        $data = $request->validate(['supplier_id' => ['required', 'exists:suppliers,id'], 'purchase_id' => ['nullable', 'exists:purchases,id'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'gt:0'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card'])], 'reference' => ['nullable', 'max:150'], 'note' => ['nullable', 'max:1000']]);
-        DB::transaction(function () use ($data) {
+        $data = $request->validate(['supplier_id' => 'required|exists:suppliers,id', 'purchase_id' => 'nullable|exists:purchases,id', 'payment_date' => 'required|date']);
+        $settlement = app(SettlementService::class);
+        $rows = $settlement->rows($request->all(), true);
+        if (! $rows) {
+            throw ValidationException::withMessages(['payments' => 'Enter a payment amount.']);
+        }
+        DB::transaction(function () use ($data, $rows, $settlement) {
             $supplier = Supplier::lockForUpdate()->findOrFail($data['supplier_id']);
-            $amountLeft = (float) $data['amount'];
             $targets = Purchase::where('supplier_id', $supplier->id)->where('status', 'Completed')->where('due_amount', '>', 0)->when($data['purchase_id'] ?? null, fn ($q, $id) => $q->whereKey($id))->orderBy('due_date')->lockForUpdate()->get();
-            if (! empty($data['purchase_id']) && $targets->isEmpty()) {
-                throw ValidationException::withMessages(['purchase_id' => 'Select an unpaid active purchase belonging to this supplier.']);
+            $opening = empty($data['purchase_id']) ? max(0, (float) $supplier->opening_due - (float) $supplier->opening_advance) : 0;
+            if ($settlement->total($rows) > (float) $targets->sum('due_amount') + $opening) {
+                throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the selected supplier due.']);
             }
-            if ($amountLeft > (float) $targets->sum('due_amount') + max(0, (float) $supplier->opening_due - (float) $supplier->opening_advance)) {
-                throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the current supplier due.']);
-            }
-            foreach ($targets as $purchase) {
-                $applied = min($amountLeft, (float) $purchase->due_amount);
-                $purchase->increment('paid_amount', $applied);
-                $purchase->decrement('due_amount', $applied);
-                $purchase->refresh();
-                $purchase->update(['payment_status' => (float) $purchase->due_amount <= 0 ? 'Paid' : 'Partial']);
-                $this->recordSupplierPayment($data, $supplier, $applied, $purchase->id);
-                $amountLeft -= $applied;
-                if ($amountLeft <= 0) {
-                    break;
+            foreach ($rows as $row) {
+                $remaining = (float) $row['amount'];
+                $available = (float) $targets->sum(fn ($p) => (float) $p->fresh()->due_amount);
+                if (in_array($row['method'], ['Cheque', 'Party Cheque']) && $remaining > $available) {
+                    throw ValidationException::withMessages(['payments' => 'Cheque payments must be allocated to purchase invoices.']);
                 }
-            }
-            if ($amountLeft > 0) {
-                $supplier->update(['opening_due' => max(0, (float) $supplier->opening_due - $amountLeft)]);
-                $this->recordSupplierPayment($data, $supplier, $amountLeft, null);
+                $first = $targets->first(fn ($p) => (float) $p->fresh()->due_amount > 0);
+                $cheque = $first ? $settlement->prepareCheque($first, $row) : null;
+                foreach ($targets as $purchase) {
+                    $purchase->refresh();
+                    $applied = min($remaining, (float) $purchase->due_amount);
+                    if ($applied > 0) {
+                        $settlement->pay($purchase, array_replace($row, ['amount' => $applied]), $data['payment_date'], $cheque);
+                    }
+                    $remaining = round($remaining - $applied, 2);
+                    if ($remaining <= 0) {
+                        break;
+                    }
+                }
+                if ($remaining > 0) {
+                    $supplier->update(['opening_due' => max(0, (float) $supplier->opening_due - $remaining)]);
+                    $this->recordSupplierPayment(array_merge($row, $data, ['payment_method' => $row['method']]), $supplier, $remaining, null);
+                }
             }
         });
 
-        return back()->with('success', 'Supplier payment saved; due and account ledger updated.');
+        return back()->with('success', 'Supplier payments saved. Cheques remain on hold until passed.');
     }
 
     private function recordSupplierPayment(array $data, Supplier $supplier, float $amount, ?int $purchaseId): void
@@ -358,6 +378,6 @@ class PurchaseController extends Controller
     {
         $products = Product::withSum('stocks', 'quantity')->with(['stockBatches' => fn ($q) => $q->where('status', 'active')])->where('active', true)->orderBy('name')->get();
 
-        return ['suppliers' => Supplier::where('active', true)->orderBy('name')->get(), 'stores' => Store::where('active', true)->orderByDesc('is_default')->get(), 'accounts' => Account::where('active', true)->get(), 'products' => $products, 'productOptions' => $products->map(fn (Product $p) => ['id' => $p->id, 'label' => $p->name.' — '.$p->code.($p->barcode ? ' — '.$p->barcode : ''), 'sku' => $p->code, 'barcode' => $p->barcode, 'stock' => (float) ($p->stocks_sum_quantity ?? 0), 'cost' => (float) $p->cost_price, 'selling' => (float) $p->selling_price, 'batches' => $p->stockBatches->map(fn ($b) => ['cost' => (float) $b->cost_price, 'selling' => (float) $b->selling_price, 'store_id' => $b->store_id])])->values()];
+        return ['partyCheques' => Cheque::where('cheque_type', 'Received')->where('status', 'Pending')->whereNull('forwarded_supplier_id')->whereHas('payments', fn ($q) => $q->where('status', 'Hold'))->get(), 'suppliers' => Supplier::where('active', true)->orderBy('name')->get(), 'stores' => Store::where('active', true)->orderByDesc('is_default')->get(), 'accounts' => Account::where('active', true)->get(), 'products' => $products, 'productOptions' => $products->map(fn (Product $p) => ['id' => $p->id, 'label' => $p->name.' — '.$p->code.($p->barcode ? ' — '.$p->barcode : ''), 'sku' => $p->code, 'barcode' => $p->barcode, 'stock' => (float) ($p->stocks_sum_quantity ?? 0), 'cost' => (float) $p->cost_price, 'selling' => (float) $p->selling_price, 'batches' => $p->stockBatches->map(fn ($b) => ['cost' => (float) $b->cost_price, 'selling' => (float) $b->selling_price, 'store_id' => $b->store_id])])->values()];
     }
 }

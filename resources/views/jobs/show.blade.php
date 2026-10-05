@@ -60,6 +60,7 @@
             <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold">Rs. {{ number_format($job->invoice->hold_amount,2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
             @endif
         </dl>
@@ -75,12 +76,7 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
             @csrf<x-submission-token/>
-            <input type="number" step=".01" min="0" max="{{ $job->total }}" name="paid_amount" value="0" class="field" placeholder="Paid amount">
-            <select name="payment_method" class="field">
-                @foreach(['Cash','Card','Bank Transfer','Cheque','QR','Credit/Due'] as $m)
-                <option>{{ $m }}</option>
-                @endforeach
-            </select>
+            <x-split-payments :accounts="$accounts" />
             <button class="btn-primary w-full">Generate invoice</button>
         </form>
         @endif
@@ -278,7 +274,7 @@
 </div>
 
 {{-- Price Edit Modal --}}
-<dialog id="part-edit-modal" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="part-edit-modal" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
     <div class="p-6 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
             <h2 class="text-base font-black text-slate-900" style="color: #0f172a !important;">Edit Part Details</h2>
@@ -512,7 +508,7 @@ function saveEditedName() {
 </script>
 
 {{-- Due Payment Dialog --}}
-<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
     <form method="POST" id="due-payment-form" class="p-6">
         @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -526,34 +522,7 @@ function saveEditedName() {
             <p class="text-xs font-bold text-red-500">Outstanding Due</p>
             <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
         </div>
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <label class="block">
-                <span class="label" style="color: #475569 !important;">Payment Amount *</span>
-                <input type="number" step="0.01" min="0.01" name="amount" id="due-payment-amount" class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
-            </label>
-            <label class="block">
-                <span class="label" style="color: #475569 !important;">Payment Method *</span>
-                <select name="method" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
-                    <option>Cash</option>
-                    <option>Card</option>
-                    <option>Bank Transfer</option>
-                    <option>Cheque</option>
-                    <option>QR</option>
-                </select>
-            </label>
-            <label class="sm:col-span-2 block">
-                <span class="label" style="color: #475569 !important;">Deposit Account *</span>
-                <select name="account_id" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
-                    @foreach($accounts as $account)
-                    <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
-                    @endforeach
-                </select>
-            </label>
-            <label class="sm:col-span-2 block">
-                <span class="label" style="color: #475569 !important;">Note</span>
-                <textarea name="note" rows="2" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;"></textarea>
-            </label>
-        </div>
+        <div class="mt-4"><x-split-payments :accounts="$accounts" /></div>
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
             <button class="btn-primary">Save Payment</button>
@@ -571,8 +540,8 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
     document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
     
     const amountInput = document.getElementById('due-payment-amount');
-    amountInput.value = parseFloat(dueAmount).toFixed(2);
-    amountInput.max = parseFloat(dueAmount);
+    if (amountInput) amountInput.value = parseFloat(dueAmount).toFixed(2);
+    if (amountInput) amountInput.max = parseFloat(dueAmount);
     
     dialog.showModal();
 }
@@ -600,7 +569,7 @@ function openUnlockModal() {
         </form>
     </div>
 </dialog>
-<dialog id="unlock-job-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="unlock-job-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
     <form method="POST" action="{{ route('jobs.unlock', $job) }}" class="p-6">
         @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -634,7 +603,7 @@ function openUnlockModal() {
     </form>
 </dialog>
 {{-- Edit Name Dialog --}}
-<dialog id="edit-name-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="edit-name-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
     <div class="p-6">
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
             <div>
@@ -655,4 +624,38 @@ function openUnlockModal() {
         </div>
     </div>
 </dialog>
+
+@if(session('print_invoice'))
+<dialog id="print-invoice-dialog" class="backdrop:bg-slate-900/60 backdrop:backdrop-blur-sm bg-transparent w-full max-w-sm mx-auto p-0 rounded-3xl shadow-2xl overflow-hidden transition-all open:animate-in open:fade-in open:zoom-in-95">
+    <div class="bg-white">
+        <div class="p-6 text-center">
+            <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="size-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h3 class="text-xl font-black text-slate-800 mb-2">Invoice Generated!</h3>
+            <p class="text-sm font-bold text-slate-500 mb-6">Print or view the bill now?</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <button onclick="openPrint('80mm')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print 80mm</button>
+                <button onclick="openPrint('a5')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print A5</button>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('print-invoice-dialog').close()" type="button" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition text-sm"><span class="block text-[9px]">Esc</span>Close</button>
+                <button onclick="openPrint('a4')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm"><span class="block text-[9px]">Alt+P</span>Print A4</button>
+                <a href="{{ route('invoices.public.pdf', session('print_invoice')) }}" target="_blank" onclick="document.getElementById('print-invoice-dialog').close()" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition text-sm flex flex-col items-center justify-center"><span class="block text-[9px]">Alt+D</span>PDF</a>
+            </div>
+        </div>
+    </div>
+</dialog>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('print-invoice-dialog').showModal();
+    });
+    function openPrint(format) {
+        const token = "{{ session('print_invoice') }}";
+        const url = `{{ url('invoice') }}/${token}?print=1&format=${format}`;
+        window.open(url, '_blank');
+        document.getElementById('print-invoice-dialog').close();
+    }
+</script>
+@endif
 </div></x-layouts::app>

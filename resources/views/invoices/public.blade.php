@@ -9,6 +9,7 @@
             $text = trim(preg_replace('/\s+/u', ' ', (string) $value) ?? '');
             return '"'.str_replace(['\\', '"', '<', '>'], ['\\\\', '\\"', '\\3C ', '\\3E '], $text).'"';
         };
+        $format = request()->query('format', 'a4');
     @endphp
     <style>
         @page { size: A4; margin: 16mm 17mm 30mm; }
@@ -107,6 +108,65 @@
             }
         }
         @endunless
+        @if($format === '80mm')
+        @page { size: 72mm auto; margin: 0; }
+        body { background: #fff; color: #000; font-family: monospace, sans-serif; font-size: 12px; line-height: 1.3; }
+        .toolbar, .top-rule { display: none !important; }
+        .sheet { width: 100%; max-width: 72mm; min-height: auto; margin: 0 auto; padding: 4mm; background: transparent; box-shadow: none; display: block; }
+        table { width: 100%; border-collapse: collapse; }
+        .header { display: block; text-align: center; }
+        .header tbody, .header tr { display: block; }
+        .header td { display: block; width: 100%; text-align: center; }
+        .brand-logo { max-height: 40px; margin: 0 auto 5px; }
+        .brand-name { font-size: 18px; font-weight: bold; margin: 0; }
+        .brand-subtitle { font-size: 12px; margin: 2px 0 0; }
+        .business-contact { font-size: 11px; margin-top: 5px; }
+        .document-cell { text-align: center !important; margin-top: 10px; border-top: 1px dashed #000; padding-top: 10px; }
+        .document-type { font-size: 14px; font-weight: bold; }
+        .document-number { font-size: 15px; font-weight: bold; margin-bottom: 5px; }
+        .meta { width: 100%; font-size: 11px; margin: 0 auto; }
+        .meta td { text-align: center !important; padding: 1px 0; display: inline-block; width: auto; color: #000 !important; font-weight: normal !important; }
+        .meta td:first-child:after { content: ': '; }
+        .meta tr { display: block; }
+        .divider { height: 1px; border-bottom: 1px dashed #000; background: transparent; margin: 10px 0; }
+        .party { display: block; margin-top: 5px; }
+        .party tbody, .party tr { display: block; }
+        .party td { display: block; width: 100%; padding: 0 !important; text-align: left; margin-bottom: 5px; }
+        .eyebrow { display: inline-block; margin: 0 5px 0 0; font-size: 11px; color: #000 !important; }
+        .party-name { display: inline; font-size: 12px; font-weight: bold; }
+        .detail-line { display: inline; font-size: 11px; margin-left: 5px; color: #000 !important; }
+        .items { margin-top: 10px; }
+        .items th { display: none; }
+        .items td { padding: 4px 0; border-bottom: 1px dashed #ccc; font-size: 12px; vertical-align: top; background: transparent !important; }
+        .items tr { display: flex; flex-wrap: wrap; page-break-inside: avoid; }
+        .items td:first-child { width: 100%; font-weight: bold; padding-bottom: 2px; border-bottom: none; }
+        .item-detail { font-weight: normal; font-size: 11px; }
+        .items td.num { text-align: right; }
+        .items td:nth-child(2) { width: 20%; text-align: left; }
+        .items td:nth-child(3) { width: 40%; text-align: center; }
+        .items td:nth-child(4) { width: 40%; }
+        .summary-wrap { margin-top: 10px; }
+        .summary { width: 100%; font-size: 12px; }
+        .summary td { padding: 3px 0; color: #000 !important; }
+        .summary .grand td { font-size: 14px; font-weight: bold; background: transparent !important; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; color: #000 !important; }
+        .note-box, .terms { font-size: 11px; text-align: center; margin-top: 15px; background: transparent !important; border: none !important; padding: 0 !important; }
+        .note-title { font-weight: bold; margin-bottom: 3px; font-size: 12px; }
+        .signature, .document-footer-screen, .document-footer-print { display: none !important; }
+        @elseif($format === 'a5')
+        @page { size: A5; margin: 10mm; }
+        .sheet { width: 148mm; min-height: 210mm; padding: 25px 30px; }
+        .top-rule { margin: -25px -30px 20px; height: 4px; }
+        .toolbar { max-width: 148mm; }
+        body { font-size: 9px; }
+        .brand-name { font-size: 16px; }
+        .brand-subtitle { font-size: 8px; }
+        .business-contact { font-size: 8px; }
+        .document-number { font-size: 13px; }
+        .meta, .summary, .party, .items th, .items td { font-size: 8px; }
+        .party-name, .summary .grand td { font-size: 10px; }
+        .note-box, .terms { font-size: 8px; padding: 8px; }
+        .note-title { font-size: 9px; }
+        @endif
         @media screen and (max-width: 820px) { .sheet { width: 100%; min-height: 0; padding: 28px 24px; } .top-rule { margin: -28px -24px 24px; } .toolbar { margin: 12px; flex-wrap: wrap; } .document-number { font-size: 13px; } }
     </style>
 </head>
@@ -133,7 +193,11 @@
             <div class="document-number">{{ $invoice->number }}</div>
             <table class="meta">
                 <tr><td>Date</td><td>{{ $invoice->created_at->format('d M Y') }}</td></tr>
-                @if(!$isQuotation)<tr><td>Status</td><td>{{ $invoice->status }}</td></tr>@endif
+                @if(!$isQuotation)
+                    @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
+                        <tr><td>Status</td><td>{{ $invoice->status }}</td></tr>
+                    @endif
+                @endif
                 @if($business['business_registration_no'] ?? null)<tr><td>BRN</td><td>{{ $business['business_registration_no'] }}</td></tr>@endif
                 @if($business['tax_registration_no'] ?? null)<tr><td>TIN</td><td>{{ $business['tax_registration_no'] }}</td></tr>@endif
             </table>
@@ -153,7 +217,7 @@
         <thead><tr><th style="width:49%">Description</th><th class="num" style="width:13%">Qty</th><th class="num" style="width:19%">Unit price</th><th class="num" style="width:19%">Amount</th></tr></thead>
         <tbody>
             @forelse($lines as $line)
-                <tr><td><div class="item-name">{{ $line['name'] }}</div>@if($line['detail'])<div class="item-detail">{{ $line['detail'] }}</div>@endif</td><td class="num">{{ number_format($line['qty'], $line['qty'] == floor($line['qty']) ? 0 : 2) }}</td><td class="num">{{ number_format($line['rate'], 2) }}</td><td class="num">{{ number_format($line['total'], 2) }}</td></tr>
+                <tr><td><div class="item-name">{{ $line['name'] }}</div></td><td class="num">{{ number_format($line['qty'], $line['qty'] == floor($line['qty']) ? 0 : 2) }}</td><td class="num">{{ number_format($line['rate'], 2) }}</td><td class="num">{{ number_format($line['total'], 2) }}</td></tr>
             @empty
                 <tr><td colspan="4" class="muted">No line items recorded.</td></tr>
             @endforelse
@@ -164,7 +228,13 @@
         @if((float) $invoice->discount > 0)<tr><td>Discount</td><td>- Rs. {{ number_format((float) $invoice->discount, 2) }}</td></tr>@endif
         @if((float) $invoice->tax > 0)<tr><td>Tax</td><td>+ Rs. {{ number_format((float) $invoice->tax, 2) }}</td></tr>@endif
         <tr class="grand"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
-        @unless($isQuotation)<tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr><tr class="balance"><td>Balance due</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>@endunless
+        @unless($isQuotation)
+            @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
+                <tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr>
+                @if((float) $invoice->hold_amount > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $invoice->hold_amount, 2) }}</td></tr>@endif
+                <tr class="balance"><td>Balance due</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
+            @endif
+        @endunless
     </table></div>
     @if($wording['introText'])<div class="note-box">@if($wording['introHeading'])<p class="note-title">{{ $wording['introHeading'] }}</p>@endif<p>{{ $wording['introText'] }}</p></div>@endif
     @if($wording['customerNote'])<div class="note-box">@if($wording['customerNoteHeading'])<p class="note-title">{{ $wording['customerNoteHeading'] }}</p>@endif<p>{{ $wording['customerNote'] }}</p></div>@endif
@@ -172,6 +242,20 @@
     @if($business['invoice_signature_text'] ?? null)<div class="signature">{{ $business['invoice_signature_text'] }}</div>@endif
     <div class="document-footer-screen">@include('invoices.partials.footer')</div>
 </main>
-@unless($pdfMode)<script>window.addEventListener('load', () => { if (new URLSearchParams(window.location.search).has('print')) window.print(); });</script>@endunless
+@unless($pdfMode)
+<script>
+    window.addEventListener('load', () => { 
+        if (new URLSearchParams(window.location.search).has('print')) {
+            setTimeout(() => window.print(), 500);
+        }
+    });
+    window.addEventListener('afterprint', () => {
+        if (new URLSearchParams(window.location.search).has('print')) {
+            window.close();
+            setTimeout(() => window.history.back(), 500);
+        }
+    });
+</script>
+@endunless
 </body>
 </html>

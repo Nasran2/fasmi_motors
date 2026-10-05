@@ -381,6 +381,7 @@ class SalaryCalculationService
                         throw ValidationException::withMessages(['month' => 'The staff repair invoice due changed. Regenerate this draft.']);
                     }
                     $invoice->update(['paid_amount' => round((float) $invoice->paid_amount + $amount, 2), 'due_amount' => round((float) $invoice->due_amount - $amount, 2), 'status' => $amount >= (float) $invoice->due_amount ? 'Paid' : 'Partially Paid']);
+                    app(SettlementService::class)->saveStatus($invoice);
                     // Salary offsets settle the receivable without another cash receipt.
                     $invoice->payments()->create(['number' => 'OFFSET-'.Str::upper(Str::random(12)), 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => 'Salary Deduction', 'reference' => "salary:{$sheet->id}:plan:{$plan->id}", 'paid_at' => now(), 'status' => 'Completed', 'created_by' => $userId]);
                 }
@@ -413,6 +414,7 @@ class SalaryCalculationService
                     if ($payment) {
                         $invoice = Invoice::lockForUpdate()->findOrFail($payment->invoice_id);
                         $invoice->update(['paid_amount' => max(0, round((float) $invoice->paid_amount - (float) $payment->amount, 2)), 'due_amount' => round((float) $invoice->due_amount + (float) $payment->amount, 2), 'status' => (float) $invoice->paid_amount > (float) $payment->amount ? 'Partially Paid' : 'Unpaid']);
+                        app(SettlementService::class)->saveStatus($invoice);
                         $payment->update(['status' => 'Cancelled', 'cancel_reason' => $reason, 'cancelled_by' => $userId, 'cancelled_at' => now()]);
                     }
                     $plan->update([

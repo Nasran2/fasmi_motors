@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Accounts;
 
 use App\Models\Account;
-use App\Models\AccountTransaction;
 use App\Models\Cheque;
 use App\Services\AccountService;
+use App\Services\SettlementService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ChequeController extends BaseAccountController
 {
@@ -26,6 +28,9 @@ class ChequeController extends BaseAccountController
     public function store(Request $request)
     {
         $v = $request->validate(['cheque_type' => 'required|in:Received,Issued', 'party_name' => 'required|string|max:120', 'related_reference' => 'nullable|string|max:120', 'cheque_number' => 'required|string|max:80', 'bank_name' => 'required|string|max:120', 'branch' => 'nullable|string|max:120', 'cheque_date' => 'required|date', 'amount' => 'required|numeric|gt:0', 'status' => 'required|in:Pending,Deposited,Cleared', 'realized_date' => 'nullable|required_if:status,Cleared|date', 'bank_account_id' => 'nullable|exists:accounts,id', 'note' => 'nullable|string|max:1000']);
+        if ($v['status'] === 'Cleared' && (Carbon::parse($v['cheque_date'])->startOfDay()->isFuture() || Carbon::parse($v['realized_date'])->lt(Carbon::parse($v['cheque_date'])))) {
+            throw ValidationException::withMessages(['cheque_date' => 'A cheque can only pass on or after its cheque date.']);
+        }
         DB::transaction(function () use ($v) {
             $cheque = Cheque::create($v + ['created_by' => auth()->id(), 'updated_by' => auth()->id()]);
             if ($cheque->status === 'Cleared') {
@@ -39,16 +44,7 @@ class ChequeController extends BaseAccountController
     public function updateStatus(Request $request, Cheque $cheque, AccountService $service)
     {
         $v = $request->validate(['status' => 'required|in:Pending,Deposited,Cleared,Returned,Cancelled', 'realized_date' => 'nullable|required_if:status,Cleared|date', 'reason' => 'nullable|required_if:status,Returned|required_if:status,Cancelled|string|min:5|max:500']);
-        DB::transaction(function () use ($v, $cheque, $service) {
-            $cheque = Cheque::lockForUpdate()->findOrFail($cheque->id);
-            $was = $cheque->status;
-            abort_if($was === 'Cleared' && in_array($v['status'], ['Pending', 'Deposited'], true), 422, 'Reverse or return a cleared cheque before recording a new settlement.');
-            if ($v['status'] === 'Cleared' && $was !== 'Cleared') {
-                $this->postLedger($cheque, $service, $v['realized_date'] ?? today());
-            }if (in_array($v['status'], ['Returned', 'Cancelled']) && $was === 'Cleared') {
-                AccountTransaction::where('reference_type', $cheque->getMorphClass())->where('reference_id', $cheque->id)->where('status', 'active')->get()->each(fn ($t) => $service->reverseTransaction($t, $v['reason']));
-            }$cheque->update(['status' => $v['status'], 'realized_date' => $v['realized_date'] ?? $cheque->realized_date, 'status_reason' => $v['reason'] ?? null, 'updated_by' => auth()->id()]);
-        });
+        app(SettlementService::class)->resolve($cheque, $v['status'], $v['realized_date'] ?? null, $v['reason'] ?? null);
 
         return back()->with('success', 'Cheque status and bank ledger updated.');
     }

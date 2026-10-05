@@ -6,6 +6,30 @@ window.spreadsheetSafeText = (value) => {
 
 window.csvCell = (value) => `"${window.spreadsheetSafeText(value).replace(/"/g, '""')}"`;
 
+// Delegate so newly added payment, product and expense rows behave the same.
+const pendingNumericSelections = new WeakMap();
+const selectNumericValue = (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.disabled || input.readOnly) return;
+    if (input.type !== 'number' && !(input.type === 'text' && input.inputMode === 'decimal')) return;
+    if (event.type === 'click' && event.button !== 0) return;
+    input.select();
+    const request = { value: input.value };
+    pendingNumericSelections.set(input, request);
+    // Finish after browser focus defaults and reactive input updates have settled.
+    requestAnimationFrame(() => {
+        if (pendingNumericSelections.get(input) !== request) return;
+        pendingNumericSelections.delete(input);
+        if (document.activeElement === input && input.value === request.value && !input.disabled && !input.readOnly) input.select();
+    });
+};
+
+document.addEventListener('focusin', selectNumericValue);
+// A pointer click can collapse the selection made on focus; select again afterwards.
+document.addEventListener('click', selectNumericValue);
+// Never reselect after the user has already started typing, even if the value is still zero.
+document.addEventListener('input', (event) => pendingNumericSelections.delete(event.target));
+
 window.workshopNotify = (message) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'workshop-dialog';

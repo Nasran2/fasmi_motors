@@ -13,11 +13,10 @@ use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Technician;
-use App\Services\AccountService;
+use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -197,26 +196,25 @@ class CustomerBikeController extends Controller
 
         return view('customers.dues', [
             'invoices' => $query->paginate(15)->withQueryString(), 'accounts' => Account::where('active', true)->get(),
-            'stats' => ['total' => Invoice::where('due_amount', '>', 0)->sum('due_amount'), 'customers' => Invoice::where('due_amount', '>', 0)->distinct()->count(DB::raw('coalesce(customer_id, job_card_id)')), 'overdue' => Invoice::where('due_amount', '>', 0)->whereDate('due_date', '<', today())->sum('due_amount'), 'collections' => Payment::whereDate('paid_at', today())->sum('amount')],
+            'stats' => ['total' => Invoice::where('due_amount', '>', 0)->sum('due_amount'), 'customers' => Invoice::where('due_amount', '>', 0)->distinct()->count(DB::raw('coalesce(customer_id, job_card_id)')), 'overdue' => Invoice::where('due_amount', '>', 0)->whereDate('due_date', '<', today())->sum('due_amount'), 'collections' => Payment::where('status', 'Completed')->whereDate('paid_at', today())->sum('amount')],
         ]);
     }
 
     public function receivePayment(Request $request, Invoice $invoice, WorkshopService $service)
     {
-        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0', 'lte:'.$invoice->due_amount], 'method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR'])], 'account_id' => ['required', 'exists:accounts,id'], 'note' => ['nullable', 'max:500']]);
-        DB::transaction(function () use ($data, $invoice) {
+        $settlement = app(SettlementService::class);
+        $rows = $settlement->rows($request->all());
+        DB::transaction(function () use ($rows, $invoice, $settlement) {
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
-            $amount = round((float) $data['amount'], 2);
-            if ($invoice->status === 'Cancelled' || $amount > (float) $invoice->due_amount) {
-                throw ValidationException::withMessages(['amount' => 'Payment exceeds the current invoice due.']);
+            if (! $rows || $invoice->status === 'Cancelled' || $settlement->total($rows) > (float) $invoice->due_amount) {
+                throw ValidationException::withMessages(['amount' => 'Enter payments within the current invoice due.']);
             }
-            $remaining = round((float) $invoice->due_amount - $amount, 2);
-            $invoice->update(['paid_amount' => round((float) $invoice->paid_amount + $amount, 2), 'due_amount' => $remaining, 'status' => $remaining <= 0 ? 'Paid' : 'Partially Paid']);
-            $payment = $invoice->payments()->create(['number' => 'RCPT-'.Str::upper(Str::random(12)), 'account_id' => $data['account_id'], 'amount' => $amount, 'balance_after' => $remaining, 'status' => 'Completed', 'method' => $data['method'], 'note' => $data['note'] ?? null, 'paid_at' => now(), 'created_by' => auth()->id()]);
-            app(AccountService::class)->receiveInvoicePayment($invoice, $payment);
+            foreach ($rows as $row) {
+                $settlement->receive($invoice, $row);
+            }
         });
 
-        return back()->with('success', 'Payment received and account ledger updated.');
+        return back()->with('success', 'Payments received. Cheques are on hold until passed.');
     }
 
     public function serviceHistory(Request $request)
@@ -294,7 +292,8 @@ class CustomerBikeController extends Controller
                     $invoice->update(['customer_id' => $bike->customer_id]);
                 } else {
                     $invoice->payments()->create(['amount' => $invoice->due_amount, 'method' => 'Manual Clearance', 'reference' => $data['reason'], 'paid_at' => now(), 'created_by' => auth()->id()]);
-                    $invoice->update(['paid_amount' => $invoice->total, 'due_amount' => 0, 'status' => 'Paid', 'customer_id' => $bike->customer_id]);
+                    $invoice->update(['paid_amount' => (float) $invoice->paid_amount + (float) $invoice->due_amount, 'due_amount' => 0, 'customer_id' => $bike->customer_id]);
+                    app(SettlementService::class)->saveStatus($invoice);
                 }
             }
             BikeOwnershipChange::create(['bike_id' => $bike->id, 'old_customer_id' => $bike->customer_id, 'new_customer_id' => $data['new_customer_id'], 'changed_at' => $data['changed_at'], 'due_handling' => $data['due_handling'], 'due_amount' => $dueAmount, 'reason' => $data['reason'] ?? null, 'changed_by' => auth()->id()]);

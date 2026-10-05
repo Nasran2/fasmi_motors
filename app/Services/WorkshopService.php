@@ -39,9 +39,9 @@ class WorkshopService
         );
     }
 
-    public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null): Invoice
+    public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null, ?array $payments = null): Invoice
     {
-        return DB::transaction(function () use ($job, $paid, $method, $accountId) {
+        return DB::transaction(function () use ($job, $paid, $method, $accountId, $payments) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             if ($job->invoice) {
                 throw ValidationException::withMessages(['invoice' => 'This job card is already billed.']);
@@ -58,17 +58,21 @@ class WorkshopService
                 'subtotal' => $total + (float) $job->discount - (float) $job->tax, 'discount' => $job->discount, 'tax' => $job->tax,
                 'parts_amount' => $job->parts_total, 'service_amount' => $job->service_total, 'labor_amount' => $job->labor_total,
                 'washing_amount' => $job->washing_total, 'other_amount' => $job->other_total, 'payment_method' => $method,
-                'total' => $total, 'paid_amount' => $paid, 'due_amount' => $total - $paid,
+                'total' => $total, 'paid_amount' => 0, 'due_amount' => $total,
                 'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'), 'due_date' => $paid < $total ? today()->addDays(30) : null,
                 'public_token' => Str::random(48), 'link_expires_at' => now()->addDays(90), 'created_by' => auth()->id(),
             ]);
-            $payment = null;
-            if ($paid > 0) {
-                $payment = $invoice->payments()->create(['number' => 'RCPT-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'account_id' => $accountId, 'amount' => $paid, 'balance_after' => $invoice->due_amount, 'method' => $method, 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
+            $settlement = app(SettlementService::class);
+            $rows = $payments ?? $settlement->rows(['paid_amount' => $paid, 'payment_method' => $method, 'account_id' => $accountId ?? Account::systemAccount('main')->id]);
+            if ($settlement->total($rows) > $total) {
+                throw ValidationException::withMessages(['paid_amount' => 'Payments exceed the invoice total.']);
             }
-            if ($payment) {
-                app(AccountService::class)->receiveInvoicePayment($invoice, $payment);
+            foreach ($rows as $row) {
+                $settlement->receive($invoice, $row);
             }
+            $invoice->refresh();
+            $invoice->payment_method = count($rows) > 1 ? 'Mixed' : $method;
+            $settlement->saveStatus($invoice);
             $job->update(['status' => 'Billed']);
             app(ServiceReminderService::class)->createForJob($job);
 

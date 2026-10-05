@@ -189,17 +189,17 @@ class AccountService
         }
     }
 
-    public function outgoing(string $type, float $amount, string $description, Model $reference, string $method, CarbonInterface|string|null $date = null, ?string $category = null): void
+    public function outgoing(string $type, float $amount, string $description, Model $reference, string $method, CarbonInterface|string|null $date = null, ?string $category = null, bool $postBank = true): void
     {
-        DB::transaction(function () use ($type, $amount, $description, $reference, $method, $date, $category) {
+        DB::transaction(function () use ($type, $amount, $description, $reference, $method, $date, $category, $postBank) {
             $this->recordTransaction($type, 'expense', $amount, $description, $reference, $method, null, null, $date, $category);
-            if ($method !== 'Cash') {
+            if ($postBank && $method !== 'Cash') {
                 $this->recordTransaction('bank', 'expense', $amount, $description, $reference, $method, null, null, $date, $category);
             }
         });
     }
 
-    public function receiveInvoicePayment(Invoice $invoice, Payment $payment): void
+    public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): void
     {
         $total = (int) round((float) $invoice->total * 100);
         $parts = min($total, (int) round((float) $invoice->parts_amount * 100));
@@ -207,11 +207,11 @@ class AccountService
         $share = $total > 0 ? (int) round($amount * $parts / $total) : 0;
         foreach (['spare_parts' => $share, 'main' => $amount - $share] as $type => $cents) {
             if ($cents > 0) {
-                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, $payment->paid_at, $type === 'main' ? 'service' : 'parts');
+                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at), $type === 'main' ? 'service' : 'parts');
             }
         }
-        if ($payment->method !== 'Cash') {
-            $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, $payment->paid_at);
+        if ($postBank && $payment->method !== 'Cash') {
+            $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at));
         }
         $this->reallocateInvoiceReceipts($invoice);
     }

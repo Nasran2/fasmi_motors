@@ -326,10 +326,17 @@ public function addMultipleParts(\Illuminate\Http\Request $r, \App\Models\JobCar
     }
     public function invoice(Request $r, JobCard $job, WorkshopService $service)
     {
-        $v = $r->validate(['paid_amount' => 'required|numeric|min:0', 'payment_method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR,Credit/Due']);
-        $invoice = $service->invoice($job, (float) $v['paid_amount'], $v['payment_method']);
+        $settlement = app(\App\Services\SettlementService::class);
+        $input = $r->all();
+        $input['account_id'] ??= \App\Models\Account::systemAccount('main')->id;
+        $rows = $settlement->rows($input);
+        $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows);
 
-        return redirect()->route('invoices.public', $invoice->public_token)->with('success', 'Invoice generated.');
+        return redirect()->route('jobs.show', $job)->with([
+            'success' => 'Invoice generated.',
+            'print_invoice' => $invoice->public_token,
+            'invoice_id' => $invoice->id
+        ]);
     }
 
     public function unlock(Request $r, JobCard $job)
@@ -367,10 +374,10 @@ private function syncInvoice(JobCard $job)
             $total = $job->total;
             $subtotal = (float) $job->parts_total + (float) $job->service_total + (float) $job->labor_total + (float) $job->washing_total + (float) $job->other_total;
             $paid = (float) $invoice->paid_amount;
-            if ($total < $paid) {
+            if ($total < $paid + (float) $invoice->hold_amount) {
                 throw ValidationException::withMessages(['total' => 'Cancel or refund payments before reducing the invoice below its settled amount.']);
             }
-            $due = max(0, $total - $paid);
+            $due = max(0, $total - $paid - (float) $invoice->hold_amount);
 
             $invoice->update([
                 'subtotal' => $subtotal,
@@ -385,6 +392,7 @@ private function syncInvoice(JobCard $job)
                 'due_amount' => $due,
                 'status' => $paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid'),
             ]);
+            app(\App\Services\SettlementService::class)->saveStatus($invoice);
             app(\App\Services\AccountService::class)->reallocateInvoiceReceipts($invoice);
         }
     }

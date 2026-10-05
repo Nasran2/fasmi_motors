@@ -409,10 +409,14 @@
                     </div>
                     <h3 class="text-xl font-black text-slate-800 mb-2" x-text="lastDocumentType === 'Quotation' ? 'Quotation Saved!' : 'Sale Completed!'"></h3>
                     <p class="text-sm font-bold text-slate-500 mb-6" x-text="lastDocumentType === 'Quotation' ? 'Print or view the quotation now?' : 'Print or view the bill now?'"></p>
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <button @click="openDocument('80mm')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print 80mm</button>
+                        <button @click="openDocument('a5')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print A5</button>
+                    </div>
                     <div class="flex gap-3">
-                        <button @click="closeDocument" type="button" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"><span class="block text-[9px]">Esc</span>Close</button>
-                        <button @click="openDocument" type="button" title="Print document (Alt+P)" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition"><span class="block text-[9px]">Alt+P</span>Print</button>
-                        <button @click="downloadDocument" type="button" title="Download PDF (Alt+D)" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition"><span class="block text-[9px]">Alt+D</span>PDF</button>
+                        <button @click="closeDocument" type="button" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition text-sm"><span class="block text-[9px]">Esc</span>Close</button>
+                        <button @click="openDocument('a4')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm"><span class="block text-[9px]">Alt+P</span>Print A4</button>
+                        <button @click="downloadDocument" type="button" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition text-sm"><span class="block text-[9px]">Alt+D</span>PDF</button>
                     </div>
                 </div>
             </div>
@@ -467,130 +471,108 @@
         </dialog>
 
         <!-- Payment Modal -->
-        <dialog id="payment-modal" class="m-auto rounded-3xl p-0 shadow-2xl backdrop:bg-slate-900/60 open:animate-in open:fade-in border-0 w-full max-w-2xl">
-            <div class="bg-white flex flex-col relative overflow-hidden rounded-3xl">
-                <div class="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-indigo-600 to-indigo-400"></div>
-                
-                <!-- Header -->
-                <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-white">
-                    <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
-                        <svg class="size-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Checkout POS Sale
-                    </h2>
-                    <button @click="document.getElementById('payment-modal').close()" class="size-8 grid place-items-center rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition">
-                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                    </button>
+        @php
+            $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
+            $bankAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('bank'))?->id ?? $accounts->firstWhere('type', 'bank')?->id ?? $cashAccountId;
+        @endphp
+        <dialog id="payment-modal" aria-labelledby="checkout-title" class="pos-payment-modal m-auto w-[calc(100%-2rem)] max-w-3xl max-h-[90dvh] rounded-2xl border-0 p-0 shadow-2xl backdrop:bg-slate-900/60 overflow-hidden">
+            <div class="flex max-h-[90dvh] flex-col bg-white text-slate-800">
+                <div class="shrink-0 border-t-4 border-indigo-500 border-b border-slate-100 px-5 py-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 id="checkout-title" class="text-lg font-black text-slate-900">Checkout POS Sale</h2>
+                        <button type="button" aria-label="Close checkout" @click="document.getElementById('payment-modal').close()" class="size-11 grid place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
                 </div>
-                
-                <div class="grid sm:grid-cols-12 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-slate-50/30">
-                    <!-- Left: Details Column (cols-6) -->
-                    <div class="p-6 space-y-4 sm:col-span-6 flex flex-col justify-between">
-                        <div class="space-y-4">
-                            <div class="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex justify-between items-center">
-                                <span class="text-xs font-black uppercase tracking-wider text-slate-500">Total Payable</span>
-                                <span class="text-2xl font-black text-indigo-600 tracking-tight" x-text="'Rs. ' + formatNumber(cart.total)"></span>
+
+                <div class="min-h-0 overflow-y-auto">
+                    <div class="grid gap-0 sm:grid-cols-2">
+                        <div class="space-y-4 p-5 sm:p-6">
+                            <div class="flex items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-4">
+                                <span class="text-xs font-black uppercase text-slate-500">Total Payable</span>
+                                <span class="text-2xl font-black text-indigo-600" x-text="'Rs. ' + formatNumber(cart.total)"></span>
                             </div>
-                            
-                            <div>
-                                <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Payment Method</label>
-                                <select x-model="paymentMethod" class="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition">
+                            <label class="block"><span class="label uppercase">Payment Method</span>
+                                <select x-model="paymentMethod" @change="accountId=defaultPaymentAccount(paymentMethod); activePaymentIndex=null" class="field">
                                     @if(session('shop_mode', 'workshop') === 'helmet')
-                                        <option>Cash</option>
-                                        <option>Cheque</option>
-                                        <option>Credit/Due</option>
+                                        <option>Cash</option><option>Cheque</option><option>Credit/Due</option>
                                     @else
-                                        <option>Cash</option>
-                                        <option>Card</option>
-                                        <option>Bank Transfer</option>
-                                        <option>Cheque</option>
-                                        <option>Credit/Due</option>
+                                        <option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Cheque</option><option>Credit/Due</option>
                                     @endif
                                 </select>
-                            </div>
-
-                            @if(session('shop_mode', 'workshop') !== 'helmet')
-                            <div x-show="paymentMethod !== 'Credit/Due'">
-                                @if($accounts->count() === 1)
-                                    <input type="hidden" x-model="accountId">
-                                    <div class="bg-slate-100 rounded-xl p-3 border border-slate-200">
-                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Account</span>
-                                        <span class="text-xs font-bold text-slate-700 mt-0.5 block">{{ $accounts->first()->name }}</span>
-                                    </div>
-                                @else
-                                <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Account <kbd class="text-[9px] normal-case">Alt+O</kbd></label>
-                                    <select id="pos-account-select" x-model="accountId" class="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition" title="Select account (Alt+O)">
-                                        <option value="">Select Account...</option>
-                                        @foreach($accounts as $account)
-                                            <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                            </div>
-                            @else
-                                <!-- Hidden account selector for helmet shop to simplify UI -->
-                                <input type="hidden" x-model="accountId">
-                            @endif
-
-                            <div class="flex justify-between items-center bg-yellow-50/50 border border-yellow-100 rounded-xl p-3" x-show="cart.discount > 0">
-                                <span class="text-xs font-black uppercase tracking-wider text-yellow-600">Discount Applied</span>
-                                <span class="text-sm font-black text-yellow-700" x-text="'- Rs. ' + formatNumber(cart.discount)"></span>
-                            </div>
-                            
-                            <div x-show="paymentMethod !== 'Credit/Due'">
-                                <label class="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5 block">Paid Amount <kbd class="text-[9px] normal-case">Alt+P</kbd></label>
-                                <div class="relative">
-                                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rs.</span>
-                                    <input id="checkout-paid-amount" type="number" min="0" x-model.number="paidAmount" class="noinput w-full h-12 bg-white border-2 border-slate-200 rounded-xl !pl-14 pr-4 text-lg font-black text-slate-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition" title="Paid amount (Alt+P)">
+                            </label>
+                            <label class="block" x-show="paymentMethod !== 'Credit/Due'"><span class="label uppercase">Account <kbd class="text-[9px] normal-case">Alt+O</kbd></span>
+                                <select id="pos-account-select" x-model="accountId" class="field" title="Select account (Alt+O)">
+                                    <option value="">Select account</option>
+                                    @foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach
+                                </select>
+                            </label>
+                            <label class="block" x-show="paymentMethod !== 'Credit/Due'"><span class="label uppercase">Payment Amount <kbd class="text-[9px] normal-case">Alt+P</kbd></span>
+                                <div class="relative"><span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">Rs.</span>
+                                    <input id="checkout-paid-amount" type="number" min="0" step=".01" inputmode="decimal" x-model.number="paidAmount" @focus="activePaymentIndex=null" class="field !pl-14 text-xl font-black" title="Paid amount (Alt+P)">
                                 </div>
+                            </label>
+                            <div x-show="paymentMethod==='Cash'" class="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+                                <span class="text-xs font-black uppercase text-slate-500">Change Due</span>
+                                <span class="text-xl font-black text-emerald-600" x-text="'Rs. ' + formatNumber(Math.max(0, Number(paidAmount) + extraPayments.reduce((n,r)=>n+Number(r.amount||0),0) - cart.total))"></span>
                             </div>
+                            <div x-show="cart.discount > 0" class="flex justify-between text-xs font-bold text-amber-700"><span>Discount Applied</span><span x-text="'- Rs. ' + formatNumber(cart.discount)"></span></div>
                         </div>
-
-                        <div class="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex justify-between items-center mt-6" x-show="paymentMethod !== 'Credit/Due'">
-                            <span class="text-xs font-black uppercase tracking-wider text-slate-500">Change Due</span>
-                            <span class="text-xl font-black text-emerald-600" x-text="'Rs. ' + formatNumber(Math.max(0, paidAmount - cart.total))"></span>
+                        <div x-show="paymentMethod !== 'Credit/Due' || extraPayments.length" class="border-t border-slate-100 bg-slate-50/40 p-5 sm:border-t-0 sm:border-l sm:p-6">
+                            <div class="mb-3 flex items-center justify-between gap-2"><span class="text-xs font-black uppercase text-slate-500">Quick Cash / Numpad</span><span class="text-[10px] font-bold text-indigo-600" x-text="'Payment ' + (activePaymentIndex===null ? 1 : activePaymentIndex+2)"></span></div>
+                            <div class="mb-3 grid grid-cols-4 gap-2">
+                                @foreach([500, 1000, 2000, 5000] as $shortcutIndex => $shortcutVal)
+                                    <button @click="setPaymentAmount({{ $shortcutVal }})" type="button" title="Set cash amount (Alt+{{ $shortcutIndex + 1 }})" class="min-h-14 rounded-xl border border-slate-200 bg-white px-1 py-2 text-[11px] font-black text-slate-700 hover:border-indigo-300 active:bg-indigo-100"><kbd class="block text-[9px] text-slate-400">Alt+{{ $shortcutIndex + 1 }}</kbd>Rs. {{ $shortcutVal }}</button>
+                                @endforeach
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                @foreach([1,2,3,4,5,6,7,8,9] as $numKey)<button @click="pressKey('{{ $numKey }}')" type="button" class="min-h-14 rounded-xl border border-slate-200 bg-white text-xl font-black text-slate-800 shadow-sm hover:bg-indigo-50 active:bg-indigo-100">{{ $numKey }}</button>@endforeach
+                                <button @click="pressKey('C')" type="button" aria-label="Clear payment amount" class="min-h-14 rounded-xl bg-red-50 font-black text-red-600 active:bg-red-100">C</button>
+                                <button @click="pressKey('0')" type="button" class="min-h-14 rounded-xl border border-slate-200 bg-white text-xl font-black shadow-sm active:bg-indigo-100">0</button>
+                                <button @click="pressKey('B')" type="button" aria-label="Backspace" class="min-h-14 rounded-xl bg-slate-100 text-xl font-black text-slate-600 active:bg-slate-200">⌫</button>
+                            </div>
                         </div>
                     </div>
-
-                    <!-- Right: Numpad Column (cols-6) -->
-                    <div class="p-6 sm:col-span-6 flex flex-col justify-between" x-show="paymentMethod !== 'Credit/Due'">
-                        <div>
-                            <span class="text-xs font-black uppercase tracking-wider text-slate-500 mb-3 block">Quick Cash / Numpad</span>
-                            
-                            <!-- Quick Cash Shortcuts -->
-                            <div class="grid grid-cols-4 gap-2 mb-3">
-                                @foreach([500, 1000, 2000, 5000] as $shortcutIndex => $shortcutVal)
-                                    <button @click="paidAmount = {{ $shortcutVal }}" type="button" title="Set cash amount (Alt+{{ $shortcutIndex + 1 }})" class="py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-indigo-300 transition text-[11px] font-black text-slate-700 active:scale-95">
-                                        <span class="block text-[9px] text-slate-400">Alt+{{ $shortcutIndex + 1 }}</span>Rs. {{ $shortcutVal }}
-                                    </button>
-                                @endforeach
-                            </div>
-
-                            <!-- Numeric Pad -->
-                            <div class="grid grid-cols-3 gap-2">
-                                @foreach([1, 2, 3, 4, 5, 6, 7, 8, 9] as $numKey)
-                                    <button @click="pressKey('{{ $numKey }}')" type="button" class="h-12 rounded-xl border border-slate-100 bg-white shadow-sm hover:bg-slate-50 hover:border-indigo-100 transition text-lg font-black text-slate-800 active:scale-95">
-                                        {{ $numKey }}
-                                    </button>
-                                @endforeach
-                                <button @click="pressKey('C')" type="button" class="h-12 rounded-xl bg-red-50 hover:bg-red-100 transition text-sm font-black text-red-600 active:scale-95">
-                                    C
-                                </button>
-                                <button @click="pressKey('0')" type="button" class="h-12 rounded-xl border border-slate-100 bg-white shadow-sm hover:bg-slate-50 hover:border-indigo-100 transition text-lg font-black text-slate-800 active:scale-95">
-                                    0
-                                </button>
-                                <button @click="pressKey('B')" type="button" class="h-12 rounded-xl bg-slate-100 hover:bg-slate-200 transition text-base font-black text-slate-600 active:scale-95 flex items-center justify-center">
-                                    <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM18 9l-6 6M12 9l6 6"/></svg>
-                                </button>
-                            </div>
+                    <div x-cloak x-show="paymentMethod==='Cheque'" class="payment-entry mx-5 mb-4 rounded-xl border border-amber-100 bg-amber-50/70 p-3 space-y-2 sm:mx-6">
+                        <p class="text-xs font-bold text-amber-800">Cheque amount stays on hold until passed.</p>
+                        <div class="payment-fields">
+                            <label><span class="label">Cheque Date *</span><input type="date" x-model="chequeDate" class="field"></label>
+                            <label><span class="label">Cheque Number *</span><input x-model="chequeNumber" maxlength="80" class="field"></label>
+                            <label><span class="label">Bank *</span><input x-model="chequeBank" maxlength="120" class="field"></label>
                         </div>
+                    </div>
+                    <div class="border-t border-slate-100 px-5 py-4 space-y-3 sm:px-6">
+                        <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-bold">Split Payments</h3><button type="button" class="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm active:bg-indigo-50" @click="extraPayments.push({method:'Cheque',amount:0,account_id:defaultPaymentAccount('Cheque'),cheque_date:'',cheque_number:'',bank_name:''})">＋ Add Payment</button></div>
+                        <template x-for="(row,index) in extraPayments" :key="index">
+                            <div class="payment-entry rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3">
+                                <div class="flex items-center justify-between text-xs"><span class="font-bold text-slate-500" x-text="'Payment ' + (index + 2)"></span><button type="button" class="min-h-11 px-2 font-bold text-red-600" @click="extraPayments.splice(index,1); activePaymentIndex=null">Remove</button></div>
+                                <div class="payment-fields">
+                                    <label><span class="label">Method</span><select class="field" x-model="row.method" @change="row.account_id=defaultPaymentAccount(row.method)">@foreach(['Cash','Card','Bank Transfer','Cheque','QR'] as $method)<option>{{ $method }}</option>@endforeach</select></label>
+                                    <label><span class="label">Amount</span><input type="number" min="0" step=".01" class="field" inputmode="decimal" x-model.number="row.amount" @focus="activePaymentIndex=index"></label>
+                                    <label><span class="label">Account</span><select class="field" x-model="row.account_id"><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
+                                </div>
+                                <div x-show="row.method==='Cheque'" class="border-t border-slate-200 pt-3 space-y-2">
+                                    <div class="payment-fields">
+                                        <label><span class="label">Cheque Date *</span><input class="field" type="date" x-model="row.cheque_date"></label>
+                                        <label><span class="label">Cheque Number *</span><input class="field" x-model="row.cheque_number" maxlength="80"></label>
+                                        <label><span class="label">Bank *</span><input class="field" x-model="row.bank_name" maxlength="120"></label>
+                                    </div>
+                                    <p class="text-xs text-amber-700">On hold until the cheque is marked passed.</p>
+                                </div>
+                            </div>
+                        </template>
                     </div>
                 </div>
 
-                <div class="p-6 bg-white border-t border-slate-100 flex gap-3">
-                    <button type="button" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-500/20 transition disabled:opacity-50" @click="submitSale('Parts Sale')" :disabled="isSubmitting" title="Confirm sale (Alt+Enter)">
-                        <span class="block text-[9px]">Alt+Enter</span>
-                        <span x-show="!isSubmitting">Confirm Sale</span>
-                        <span x-show="isSubmitting">Processing...</span>
+                <div class="shrink-0 border-t border-slate-200 bg-white px-5 py-4 space-y-3">
+                    <div class="grid grid-cols-3 gap-2 text-xs font-bold">
+                        <div class="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700"><span class="block mb-1">Paid</span><span x-text="'Rs. ' + formatNumber(checkoutPayments().filter(r=>r.method!=='Cheque').reduce((n,r)=>n+Number(r.amount),0))"></span></div>
+                        <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700"><span class="block mb-1">Cheque Hold</span><span x-text="'Rs. ' + formatNumber(checkoutPayments().filter(r=>r.method==='Cheque').reduce((n,r)=>n+Number(r.amount),0))"></span></div>
+                        <div class="rounded-lg bg-red-50 px-3 py-2 text-red-600"><span class="block mb-1">Due</span><span x-text="'Rs. ' + formatNumber(Math.max(0,cart.total-checkoutPayments().reduce((n,r)=>n+Number(r.amount),0)))"></span></div>
+                    </div>
+                    <button type="button" class="min-h-14 w-full rounded-xl bg-red-600 py-3 font-bold text-white shadow-lg shadow-red-500/15 hover:bg-red-700 disabled:opacity-50" @click="submitSale('Parts Sale')" :disabled="isSubmitting" title="Confirm sale (Alt+Enter)">
+                        <span x-show="!isSubmitting">Confirm Sale</span><span x-show="isSubmitting">Processing...</span><kbd class="ml-2 text-[10px] font-normal opacity-75">Alt+Enter</kbd>
                     </button>
                 </div>
             </div>
@@ -731,6 +713,8 @@
                 paymentMethod: 'Cash',
                 accountId: '',
                 paidAmount: 0,
+                activePaymentIndex: null,
+                chequeDate: '', chequeNumber: '', chequeBank: '', extraPayments: [],
                 isSubmitting: false,
                 submissionToken: crypto.randomUUID(),
 
@@ -899,7 +883,7 @@
                     if (modal) {
                         if (modal.id === 'payment-modal' && /^Digit[1-4]$/.test(event.code)) {
                             event.preventDefault();
-                            this.paidAmount = [500, 1000, 2000, 5000][Number(event.code.slice(-1)) - 1];
+                            this.setPaymentAmount([500, 1000, 2000, 5000][Number(event.code.slice(-1)) - 1]);
                         } else if (key === 'enter' && modal.id === 'payment-modal') {
                             event.preventDefault();
                             this.submitSale();
@@ -1333,6 +1317,12 @@
                     return true;
                 },
 
+                defaultPaymentAccount(method) {
+                    return ['Cheque', 'Card', 'Bank Transfer', 'QR'].includes(method)
+                        ? {{ Illuminate\Support\Js::from($bankAccountId) }}
+                        : {{ Illuminate\Support\Js::from($cashAccountId) }};
+                },
+
                 openPayment(method = 'Cash') {
                     if (this.isSubmitting) return;
                     if (!this.hasCartLines()) {
@@ -1340,17 +1330,13 @@
                         return;
                     }
                     if (!this.checkSaleStock()) return;
+                    this.extraPayments = [];
+                    this.activePaymentIndex = null;
+                    this.chequeDate = ''; this.chequeNumber = ''; this.chequeBank = '';
                     this.paymentMethod = method;
                     this.paidAmount = this.cart.total;
                     
-                    // Auto-select the first account if there's only one
-                    const accountsList = {{ Illuminate\Support\Js::from($accounts->map(fn($a) => ['id' => $a->id, 'name' => $a->name])) }};
-                    if (accountsList.length === 1) {
-                        this.accountId = accountsList[0].id;
-                    } else if (accountsList.length > 1) {
-                        const defaultAcc = accountsList.find(a => a.name.toLowerCase().includes('main'));
-                        this.accountId = defaultAcc ? defaultAcc.id : accountsList[0].id;
-                    }
+                    this.accountId = this.defaultPaymentAccount(method);
 
                     document.getElementById('payment-modal').showModal();
 
@@ -1364,24 +1350,27 @@
                     }, 50);
                 },
 
+                setPaymentAmount(amount) {
+                    const row = this.activePaymentIndex === null ? null : this.extraPayments[this.activePaymentIndex];
+                    if (row) row.amount = amount;
+                    else this.paidAmount = amount;
+                },
+
                 pressKey(val) {
-                    if (val === 'C') {
-                        this.paidAmount = 0;
-                    } else if (val === 'B') {
-                        let str = this.paidAmount.toString();
-                        if (str.length > 1) {
-                            this.paidAmount = parseFloat(str.substring(0, str.length - 1)) || 0;
-                        } else {
-                            this.paidAmount = 0;
-                        }
-                    } else {
-                        let str = this.paidAmount.toString();
-                        if (this.paidAmount === 0 || str === '0') {
-                            this.paidAmount = parseFloat(val) || 0;
-                        } else {
-                            this.paidAmount = parseFloat(str + val) || 0;
-                        }
-                    }
+                    const row = this.activePaymentIndex === null ? null : this.extraPayments[this.activePaymentIndex];
+                    const amount = Number(row ? row.amount : this.paidAmount) || 0;
+                    const str = amount.toString();
+                    this.setPaymentAmount(val === 'C' ? 0 : val === 'B'
+                        ? parseFloat(str.slice(0, -1)) || 0
+                        : parseFloat((amount === 0 ? '' : str) + val) || 0);
+                },
+
+                checkoutPayments() {
+                    const rows = this.paymentMethod === 'Credit/Due' ? [] : [{method:this.paymentMethod,amount:Number(this.paidAmount),account_id:this.accountId,cheque_date:this.chequeDate,cheque_number:this.chequeNumber,bank_name:this.chequeBank}];
+                    rows.push(...this.extraPayments.map(r=>({...r,amount:Number(r.amount)})));
+                    const excess = rows.reduce((n,r)=>n+r.amount,0)-this.cart.total;
+                    if (excess>0 && rows[0]?.method==='Cash') rows[0].amount=Math.max(0,rows[0].amount-excess);
+                    return rows.filter(r=>r.amount!==0);
                 },
 
                 async submitSale(type = 'Parts Sale') {
@@ -1396,23 +1385,19 @@
                         return;
                     }
                     if (type !== 'Quotation' && !this.checkSaleStock()) return;
-                    if (type !== 'Quotation' && this.paymentMethod !== 'Credit/Due' && (Number(this.paidAmount) < 0 || !Number.isFinite(Number(this.paidAmount)))) {
-                        workshopNotify('Enter a valid paid amount.');
-                        return;
+                    const payments = type === 'Quotation' ? [] : this.checkoutPayments();
+                    if (payments.some(r=>!Number.isFinite(r.amount)||r.amount<=0||!r.account_id)) {
+                        workshopNotify('Enter valid amounts and choose an account for each payment.'); return;
                     }
-                    if (type !== 'Quotation' && this.paymentMethod !== 'Credit/Due' && Number(this.paidAmount) < this.cart.total && !this.cart.customerId) {
-                        workshopNotify('Select a customer for a partially paid sale.');
-                        return;
+                    if (payments.some(r=>r.method==='Cheque'&&(!r.cheque_date||!r.cheque_number.trim()||!r.bank_name.trim()))) {
+                        workshopNotify('Enter the date, number and bank for every cheque.'); return;
                     }
-                    if (type !== 'Quotation' && this.paymentMethod === 'Credit/Due' && !this.cart.customerId) {
-                        workshopNotify('Select a customer for a credit sale.');
-                        return;
+                    const covered=payments.reduce((n,r)=>n+r.amount,0);
+                    if (covered>this.cart.total+0.001) { workshopNotify('Payment amounts exceed the total.'); return; }
+                    if (type !== 'Quotation' && (covered<this.cart.total || payments.some(r=>r.method==='Cheque')) && !this.cart.customerId) {
+                        workshopNotify('Select a customer for cheque or due payments.'); return;
                     }
-                    if (type !== 'Quotation' && this.paymentMethod !== 'Credit/Due' && !this.accountId && this.cart.total > 0) {
-                        workshopNotify('Select the account receiving payment.');
-                        return;
-                    }
-                    
+
                     this.isSubmitting = true;
                     
                     const payload = {
@@ -1426,6 +1411,7 @@
                         store_id: this.storeId,
                         discount: this.cart.discount,
                         tax: this.cart.tax,
+                        payments: payments,
                         paid_amount: type === 'Quotation' || this.paymentMethod === 'Credit/Due' ? 0 : Math.min(Number(this.paidAmount), this.cart.total),
                         payment_method: type === 'Quotation' ? null : this.paymentMethod,
                         account_id: type === 'Quotation' || this.paymentMethod === 'Credit/Due' ? null : this.accountId,
@@ -1477,9 +1463,9 @@
                     this.closeDialog('print-bill-modal');
                 },
 
-                openDocument() {
+                openDocument(format = 'a4') {
                     if (!this.lastInvoiceToken) return;
-                    const url = @js(route('invoices.public', ['token' => '__TOKEN__'])).replace('__TOKEN__', encodeURIComponent(this.lastInvoiceToken)) + '?print=1';
+                    const url = @js(route('invoices.public', ['token' => '__TOKEN__'])).replace('__TOKEN__', encodeURIComponent(this.lastInvoiceToken)) + '?print=1&format=' + format;
                     const opened = window.open(url, '_blank');
                     if (!opened) window.location.href = url;
                     else { opened.opener = null; this.closeDocument(); }

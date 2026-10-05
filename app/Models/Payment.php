@@ -9,6 +9,11 @@ class Payment extends Model
 {
     protected $guarded = [];
 
+    public function cheque(): BelongsTo
+    {
+        return $this->belongsTo(Cheque::class);
+    }
+
     protected function casts(): array
     {
         return ['paid_at' => 'datetime', 'cancelled_at' => 'datetime'];

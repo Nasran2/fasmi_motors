@@ -40,6 +40,7 @@
         </form>
     </div>
     <x-flash/>
+    <x-cheque-alerts :cheques="$chequeAlerts" />
 
     <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         @foreach($cards as $card)

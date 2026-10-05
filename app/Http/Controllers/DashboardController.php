@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\BikeIntake;
+use App\Models\Cheque;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\JobCard;
@@ -132,10 +133,11 @@ class DashboardController extends Controller
             ->orderBy('stocks_sum_quantity')->limit(5)->get();
 
         $attendance = Technician::where('active', true)->with(['attendance' => fn ($query) => $query->whereDate('date', $today)])->orderBy('name')->limit(6)->get();
-        $collectionToday = (float) Payment::whereBetween('paid_at', [$startDate, $endDate])->sum('amount');
+        $collectionToday = (float) Payment::where('status', 'Completed')->whereBetween('paid_at', [$startDate, $endDate])->sum('amount');
         $expensesToday = (float) Expense::whereBetween('expense_date', [$startDate, $endDate])->sum('amount');
 
         return view('dashboard', [
+            'chequeAlerts' => Cheque::with('forwardedSupplier')->whereIn('status', ['Pending', 'Deposited'])->whereDate('cheque_date', '<=', today()->addDays(2))->orderBy('cheque_date')->get(),
             'cards' => $cards,
             'salesSeries' => $salesSeries,
             'salesPoints' => $salesPoints,
@@ -234,6 +236,7 @@ class DashboardController extends Controller
         $recentSales = Invoice::where('status', '!=', 'Cancelled')->with('customer')->latest()->limit(7)->get();
 
         return view('dashboard-helmet', [
+            'chequeAlerts' => Cheque::with('forwardedSupplier')->whereIn('status', ['Pending', 'Deposited'])->whereDate('cheque_date', '<=', today()->addDays(2))->orderBy('cheque_date')->get(),
             'cards' => $cards,
             'salesSeries' => $salesSeries,
             'salesPoints' => $salesPoints,

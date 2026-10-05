@@ -488,3 +488,14 @@ input[readonly]:not([data-flux-control]) {
         border-radius: 0 !important;
     }
 }
+
+/* Payment fields adapt to the form's width, including narrow payment sidebars. */
+.payment-entry { container-type: inline-size; }
+.payment-fields { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
+.payment-fields > label { min-width: 0; }
+@container (min-width: 30rem) {
+    .payment-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.pos-payment-modal :is(button, input, select) { touch-action: manipulation; }
+.pos-payment-modal .field { min-height: 48px; }
