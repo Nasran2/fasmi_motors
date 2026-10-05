@@ -79,11 +79,23 @@ class ProductController extends Controller
                 ->orWhere('code', 'like', '%'.$request->q.'%')
                 ->orWhere('barcode', 'like', '%'.$request->q.'%')
                 ->orWhere('rack_number', 'like', '%'.$request->q.'%')))
-            ->when($request->filled('category'), fn ($q) => $q->where('category_id', $request->category))
+            ->when($request->filled('rack_number'), fn ($q) => $q->where('rack_number', 'like', '%'.$request->rack_number.'%'))
             ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
             ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))
-            ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'))
-            ->latest()->paginate(10)->withQueryString();
+            ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'));
+
+        $sortBy = $request->input('sort_by', 'name');
+        $sortDir = $request->input('sort_dir', 'asc');
+        
+        $validSortColumns = ['name', 'code', 'rack_number', 'brand', 'stocks_sum_quantity', 'cost_price', 'selling_price'];
+        if (!in_array($sortBy, $validSortColumns)) {
+            $sortBy = 'name';
+        }
+        if (!in_array($sortDir, ['asc', 'desc'])) {
+            $sortDir = 'asc';
+        }
+
+        $products = $products->orderBy($sortBy, $sortDir)->paginate(10)->withQueryString();
 
         return view('products.index', [
             'products' => $products,
@@ -143,7 +155,57 @@ class ProductController extends Controller
             ? redirect()->route('products.create')->with('success', "{$product->name} saved. Add another product.")
             : redirect()->route('products.index')->with('success', "{$product->name} was added to inventory.");
     }
+    public function edit(Product $product)
+    {
+        return view('products.edit', [
+            'product' => $product,
+            'categories' => ProductCategory::orderBy('name')->get(),
+            'brands' => ProductBrand::orderBy('name')->get(),
+            'units' => ProductUnit::orderBy('name')->get(),
+            'suppliers' => Supplier::orderBy('name')->get(),
+        ]);
+    }
 
+    public function update(Request $request, Product $product)
+    {
+        $data = $request->validate([
+            'code' => ['required', 'max:50', \Illuminate\Validation\Rule::unique('products')->ignore($product->id)],
+            'barcode' => ['nullable', 'max:100', \Illuminate\Validation\Rule::unique('products')->ignore($product->id)],
+            'name' => ['required', 'max:150'], 'category_id' => ['required', 'exists:product_categories,id'],
+            'brand' => ['required', 'max:100'], 'unit' => ['required', 'max:30'], 'supplier_id' => ['nullable', 'exists:suppliers,id'],
+            'cost_price' => ['required', 'numeric', 'min:0'], 'selling_price' => ['required', 'numeric', 'min:0'],
+            'rack_number' => ['nullable', 'max:100'],
+            'minimum_stock' => ['required', 'numeric', 'min:0'], 'reorder_level' => ['nullable', 'numeric', 'min:0'],
+            'model_compatibility' => ['nullable', 'max:255'], 'image' => ['nullable', 'image', 'max:2048'],
+        ]);
+
+        if ($request->boolean('remove_image') && $product->image_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($product->image_path);
+            $data['image_path'] = null;
+        }
+
+        unset($data['image']);
+        if ($request->hasFile('image')) {
+            if ($product->image_path) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($product->image_path);
+            }
+            $data['image_path'] = $request->file('image')->store('products', 'public');
+        }
+
+        $product->update($data);
+
+        return redirect()->route('products.index')->with('success', "{$product->name} was updated.");
+    }
+
+    public function destroy(Product $product)
+    {
+        if ($product->image_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($product->image_path);
+        }
+        $product->delete();
+
+        return back()->with('success', "{$product->name} was deleted.");
+    }
     public function importForm()
     {
         return view('products.import', [
@@ -571,13 +633,47 @@ class ProductController extends Controller
 
     public function show(Product $product)
     {
-        $product->load(['category', 'brand', 'unit', 'supplier', 'stocks.store', 'stockBatches.store', 'stockBatches.supplier', 'stockBatches' => fn ($q) => $q->where('status', 'active')]);
+        $product->load(['category', 'supplier', 'stocks.store', 'stockBatches.store', 'stockBatches.supplier', 'stockBatches' => fn ($q) => $q->where('status', 'active')]);
 
         return view('products.show', compact('product'));
     }
     public function export()
     {
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ProductExport, 'products.xlsx');
+    }
+
+    public function exportPdf(\Illuminate\Http\Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', '300');
+
+        $query = Product::query()
+            ->with(['category', 'supplier'])
+            ->withSum('stocks', 'quantity')
+            ->when($request->filled('q'), fn ($q) => $q->where(fn ($x) => $x
+                ->where('name', 'like', '%'.$request->q.'%')
+                ->orWhere('code', 'like', '%'.$request->q.'%')
+                ->orWhere('barcode', 'like', '%'.$request->q.'%')
+                ->orWhere('rack_number', 'like', '%'.$request->q.'%')))
+            ->when($request->filled('rack_number'), fn ($q) => $q->where('rack_number', 'like', '%'.$request->rack_number.'%'))
+            ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
+            ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))
+            ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'));
+
+        if ($request->sort === 'qty_asc') {
+            $products = $query->get()->sortBy('stocks_sum_quantity');
+        } elseif ($request->sort === 'qty_desc') {
+            $products = $query->get()->sortByDesc('stocks_sum_quantity');
+        } elseif ($request->sort === 'rack_number') {
+            $products = $query->orderBy('rack_number', 'asc')->get();
+        } else {
+            $products = $query->orderBy('name', 'asc')->get();
+        }
+
+        $columns = $request->input('columns', []);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('products.pdf', compact('products', 'columns'))->setPaper('a4', 'landscape');
+        return $pdf->stream('products-list.pdf');
     }
 
     public function import(\Illuminate\Http\Request $request)

@@ -1,10 +1,58 @@
 <x-layouts::app title="Products & Stock">
 <div class="space-y-5">
     <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Inventory</p><h1 class="page-title">Spare Parts & Stock</h1><p class="page-subtitle">Manage real product quantities, pricing and store availability.</p></div><div class="flex gap-2"><a href="{{ route('products.transfers') }}" class="btn-secondary">⇄ Stock Transfer</a><div class="flex items-center gap-2">
-    <a href="{{ route('products.excel.export') }}" class="btn-secondary">Export</a>
+    <a href="{{ route('products.excel.export') }}" class="btn-secondary">Export Excel</a>
+    <button onclick="document.getElementById('export-pdf-dialog').showModal()" class="btn-secondary">Export PDF</button>
     <button onclick="document.getElementById('import-dialog').showModal()" class="btn-secondary">Import</button>
     <a href="{{ route('products.create') }}" class="btn-primary">＋ Add Product</a>
-</div></div>
+</div></div></div>
+<dialog id="export-pdf-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+    <div class="p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="text-base font-black text-slate-900">Export PDF Options</h2>
+            <button type="button" class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('export-pdf-dialog').close()">✕</button>
+        </div>
+        <form method="GET" action="{{ route('products.pdf.export') }}" target="_blank">
+            @foreach(request()->except(['columns', 'sort']) as $key => $value)
+                @if(is_array($value))
+                    @foreach($value as $v)
+                        <input type="hidden" name="{{ $key }}[]" value="{{ $v }}">
+                    @endforeach
+                @else
+                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                @endif
+            @endforeach
+            <div class="space-y-4">
+                <div>
+                    <label class="label mb-2 block text-sm font-bold text-slate-700">Columns to include:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="name" checked class="form-checkbox text-blue-600"> Product Name</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="code" checked class="form-checkbox text-blue-600"> SKU/Barcode</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="rack_number" checked class="form-checkbox text-blue-600"> Rack No</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="brand" checked class="form-checkbox text-blue-600"> Brand</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="qty" checked class="form-checkbox text-blue-600"> Qty</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="cost" checked class="form-checkbox text-blue-600"> Cost</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="sell" checked class="form-checkbox text-blue-600"> Sell</label>
+                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="status" checked class="form-checkbox text-blue-600"> Status</label>
+                    </div>
+                </div>
+                <div>
+                    <label class="label block text-sm font-bold mb-1 text-slate-700">Sort by:</label>
+                    <select name="sort" class="w-full text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
+                        <option value="name">Name (A-Z)</option>
+                        <option value="qty_asc">Quantity (Low to High)</option>
+                        <option value="qty_desc">Quantity (High to Low)</option>
+                        <option value="rack_number">Rack Number</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="btn-secondary text-xs" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('export-pdf-dialog').close()">Cancel</button>
+                    <button type="submit" class="btn-primary text-xs" onclick="document.getElementById('export-pdf-dialog').close()">Generate PDF</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
 <dialog id="import-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <div class="p-6 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -35,18 +83,53 @@
     <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_310px]">
         <div class="space-y-4">
             <form class="panel grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                <label><span class="label">Category</span><select name="category" class="field"><option value="">All categories</option>@foreach($categories as $category)<option value="{{ $category->id }}" @selected(request('category')==$category->id)>{{ $category->name }}</option>@endforeach</select></label>
+                <label><span class="label">Rack No</span><input type="text" name="rack_number" value="{{ request('rack_number') }}" class="field" placeholder="E.g. A1"></label>
                 <label><span class="label">Brand</span><select name="brand" class="field"><option value="">All brands</option>@foreach($brands as $brand)<option @selected(request('brand')===$brand->name)>{{ $brand->name }}</option>@endforeach</select></label>
                 <label><span class="label">Status</span><select name="status" class="field"><option value="">All statuses</option><option value="low" @selected(request('status')==='low')>Low / out of stock</option></select></label>
                 <label class="xl:col-span-2"><span class="label">Search products</span><div class="flex gap-2"><input name="q" value="{{ request('q') }}" class="field" placeholder="Name, SKU or barcode"><button class="btn-secondary">Search</button></div></label>
             </form>
-            <div class="table-wrap"><table class="data-table"><thead><tr><th>Product</th><th>SKU / Barcode</th><th>Category</th><th>Brand</th><th>Qty</th><th>Cost</th><th>Sell</th><th>Status</th></tr></thead><tbody>
+            @php
+                $sortLink = function($column, $label) {
+                    $currentSort = request('sort_by', 'name');
+                    $currentDir = request('sort_dir', 'asc');
+                    $isSorted = $currentSort === $column;
+                    $newDir = $isSorted && $currentDir === 'asc' ? 'desc' : 'asc';
+                    $url = request()->fullUrlWithQuery(['sort_by' => $column, 'sort_dir' => $newDir]);
+                    $icon = $isSorted ? ($currentDir === 'asc' ? '↑' : '↓') : '';
+                    return "<a href=\"{$url}\" class=\"flex items-center gap-1 hover:text-blue-600\">{$label} <span class=\"text-blue-500\">{$icon}</span></a>";
+                };
+            @endphp
+            <div class="table-wrap"><table class="data-table"><thead><tr>
+                <th>{!! $sortLink('name', 'Product') !!}</th>
+                <th>{!! $sortLink('code', 'SKU / Barcode') !!}</th>
+                <th>{!! $sortLink('rack_number', 'Rack No') !!}</th>
+                <th>{!! $sortLink('brand', 'Brand') !!}</th>
+                <th>{!! $sortLink('stocks_sum_quantity', 'Qty') !!}</th>
+                <th>{!! $sortLink('cost_price', 'Cost') !!}</th>
+                <th>{!! $sortLink('selling_price', 'Sell') !!}</th>
+                <th>Status</th>
+                <th class="w-20 text-right">Actions</th>
+            </tr></thead><tbody>
                 @forelse($products as $product) @php($qty=(float)($product->stocks_sum_quantity ?? 0))
                 <tr><td><div class="flex items-center gap-3">@if($product->image_path)<img src="{{ asset('storage/'.$product->image_path) }}" class="size-10 rounded-xl object-cover">@else<span class="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-500">▣</span>@endif<div class="min-w-0"><a href="{{ route('products.show', $product) }}" class="font-bold text-slate-900 hover:text-blue-600 hover:underline">{{ $product->name }}</a><p class="text-xs text-slate-400">{{ $product->unit }}</p></div>
                     @if(auth()->user()->canAccess('product.edit'))
                         <form method="POST" action="{{ route('products.pos-pin.toggle', $product) }}" class="ml-auto shrink-0">@csrf<x-submission-token/><button type="submit" class="grid size-9 place-items-center rounded-lg transition focus:outline-none focus:ring-2 focus:ring-amber-400 {{ $product->pos_pinned ? 'bg-amber-50 text-amber-500 hover:bg-amber-100' : 'text-slate-300 hover:bg-amber-50 hover:text-amber-500' }}" title="{{ $product->pos_pinned ? 'Remove from POS pins' : 'Pin to front of POS' }}" aria-label="{{ $product->pos_pinned ? 'Unpin ' : 'Pin ' }}{{ $product->name }} in POS" aria-pressed="{{ $product->pos_pinned ? 'true' : 'false' }}"><svg class="size-5" viewBox="0 0 24 24" fill="{{ $product->pos_pinned ? 'currentColor' : 'none' }}" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 2 3.1 6.3 7 .9-5 4.9 1.2 6.9L12 17.8 5.7 21l1.2-6.9-5-4.9 7-.9L12 2Z"/></svg></button></form>
                     @elseif($product->pos_pinned)<span class="ml-auto text-amber-500" title="Pinned in POS" aria-label="Pinned in POS">★</span>@endif
-                </div></td><td><b>{{ $product->code }}</b><br><span class="text-xs text-slate-400">{{ $product->barcode ?: 'No barcode' }}</span></td><td>{{ $product->category?->name ?? '—' }}</td><td>{{ $product->brand ?: '—' }}</td><td class="font-black {{ $qty <= $product->minimum_stock ? 'text-red-600':'text-emerald-600' }}">{{ number_format($qty,2) }}</td><td>Rs. {{ number_format($product->cost_price,2) }}</td><td>Rs. {{ number_format($product->selling_price,2) }}</td><td><span class="rounded-lg px-2.5 py-1 text-xs font-bold {{ $qty<=0?'bg-red-50 text-red-600':($qty<=$product->minimum_stock?'bg-orange-50 text-orange-600':'bg-emerald-50 text-emerald-700') }}">{{ $qty<=0?'Out of stock':($qty<=$product->minimum_stock?'Low stock':'In stock') }}</span></td></tr>
+                </div></td><td><b>{{ $product->code }}</b><br><span class="text-xs text-slate-400">{{ $product->barcode ?: 'No barcode' }}</span></td><td>{{ $product->rack_number ?: '—' }}</td><td>{{ $product->brand ?: '—' }}</td><td class="font-black {{ $qty <= $product->minimum_stock ? 'text-red-600':'text-emerald-600' }}">{{ number_format($qty,2) }}</td><td>Rs. {{ number_format($product->cost_price,2) }}</td><td>Rs. {{ number_format($product->selling_price,2) }}</td><td><span class="rounded-lg px-2.5 py-1 text-xs font-bold {{ $qty<=0?'bg-red-50 text-red-600':($qty<=$product->minimum_stock?'bg-orange-50 text-orange-600':'bg-emerald-50 text-emerald-700') }}">{{ $qty<=0?'Out of stock':($qty<=$product->minimum_stock?'Low stock':'In stock') }}</span></td>
+                <td>
+                    <div class="flex justify-end gap-2">
+                        @if(auth()->user()->canAccess('product.edit'))
+                            <a href="{{ route('products.edit', $product) }}" class="text-slate-400 hover:text-blue-600" title="Edit">✎</a>
+                        @endif
+                        @if(auth()->user()->canAccess('product.delete'))
+                            <form method="POST" action="{{ route('products.destroy', $product) }}" onsubmit="return confirm('Are you sure you want to delete this product?')">
+                                @csrf @method('DELETE')
+                                <button class="text-slate-400 hover:text-red-600" title="Delete">🗑</button>
+                            </form>
+                        @endif
+                    </div>
+                </td>
+                </tr>
                 @empty <tr><td colspan="8" class="py-14 text-center text-slate-500">No products match these filters. Add the first product to begin tracking stock.</td></tr>@endforelse
             </tbody></table><div class="border-t border-slate-100 p-4">{{ $products->links() }}</div></div>
         </div>

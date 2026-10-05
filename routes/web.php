@@ -92,8 +92,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::put('products/pos-pins/order', [ProductController::class, 'reorderPosPins'])->name('products.pos-pins.order');
     Route::post('products/{product}/pos-pin', [ProductController::class, 'togglePosPin'])->name('products.pos-pin.toggle');
     Route::get('products-export', [ProductController::class, 'export'])->name('products.excel.export');
+    Route::get('products-export/pdf', [ProductController::class, 'exportPdf'])->name('products.pdf.export');
     Route::post('products-import', [ProductController::class, 'import'])->name('products.excel.import');
-    Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'show']);
+    Route::resource('products', ProductController::class);
     Route::get('purchases/returns', [PurchaseController::class, 'returns'])->name('purchases.returns');
     Route::post('purchases/returns', [PurchaseController::class, 'returnStore'])->name('purchases.returns.store');
     Route::post('purchases/returns/{return}/approve', [PurchaseController::class, 'approveReturn'])->name('purchases.returns.approve');
