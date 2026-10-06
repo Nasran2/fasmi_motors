@@ -11,7 +11,9 @@ use Illuminate\Support\Collection;
 
 class ProductPdfExport
 {
-    public const PER_PAGE = 20;
+    public const PORTRAIT_PER_PAGE = 50;
+
+    public const LANDSCAPE_PER_PAGE = 30;
 
     public const RECOMMENDED_PAGES = 20;
 
@@ -45,15 +47,26 @@ class ProductPdfExport
         };
     }
 
+    public function perPage(array $columns): int
+    {
+        return count($columns) > 4 ? self::LANDSCAPE_PER_PAGE : self::PORTRAIT_PER_PAGE;
+    }
+
     public function summary(int $total): array
     {
-        return ['total' => $total, 'pages' => (int) ceil($total / self::PER_PAGE), 'perPage' => self::PER_PAGE, 'recommendedPages' => self::RECOMMENDED_PAGES];
+        $columns = array_keys(self::COLUMNS);
+        $perPage = $this->perPage($columns);
+
+        return ['total' => $total, 'pages' => (int) ceil($total / $perPage), 'perPage' => $perPage,
+            'portraitPerPage' => self::PORTRAIT_PER_PAGE, 'landscapePerPage' => self::LANDSCAPE_PER_PAGE,
+            'columns' => $columns, 'recommendedPages' => self::RECOMMENDED_PAGES];
     }
 
     public function render(Collection $products, array $columns, int $from, int $to, int $total): string
     {
         // Draw bounded pages directly: a single large HTML table exhausts Dompdf's cell map.
         $landscape = count($columns) > 4;
+        $perPage = $this->perPage($columns);
         $pdf = Pdf::loadHTML('<!DOCTYPE html><html><body></body></html>')->setPaper('a4', $landscape ? 'landscape' : 'portrait');
         $pdf->setOptions(['isRemoteEnabled' => false, 'isPhpEnabled' => false, 'isFontSubsettingEnabled' => true]);
         $pdf->render();
@@ -64,29 +77,29 @@ class ProductPdfExport
         $bold = $metrics->getFont('DejaVu Sans', 'bold');
         $width = $canvas->get_width();
         $height = $canvas->get_height();
-        $margin = 28;
+        $margin = 22;
         $weights = array_sum(array_map(fn ($column) => self::COLUMNS[$column][1], $columns));
-        $rowHeight = $landscape ? 22 : 32;
-        $pages = (int) ceil($total / self::PER_PAGE);
+        $rowHeight = $landscape ? 16 : 14.5;
+        $pages = (int) ceil($total / $perPage);
         $ink = [0.12, 0.18, 0.28];
         $line = [0.84, 0.87, 0.91];
-        foreach ($products->chunk(self::PER_PAGE)->values() as $index => $rows) {
+        foreach ($products->chunk($perPage)->values() as $index => $rows) {
             if ($index > 0) {
                 $canvas->new_page();
             }
             $page = $from + $index;
-            $first = ($page - 1) * self::PER_PAGE + 1;
+            $first = ($page - 1) * $perPage + 1;
             $last = $first + $rows->count() - 1;
-            $canvas->text($margin, 25, 'Products & Stock', $bold, 16, $ink);
-            $canvas->text($margin, 50, 'Products '.$first.'-'.$last.' of '.$total.' | Export pages '.$from.'-'.$to.' | '.now()->format('d M Y, H:i'), $font, 8, $ink);
-            $canvas->filled_rectangle($margin, 73, $width - 2 * $margin, 25, [0.92, 0.94, 0.97]);
+            $canvas->text($margin, 15, 'Products & Stock', $bold, 14, $ink);
+            $canvas->text($margin, 36, 'Products '.$first.'-'.$last.' of '.$total.' | Export pages '.$from.'-'.$to.' | '.now()->format('d M Y, H:i'), $font, 7.5, $ink);
+            $canvas->filled_rectangle($margin, 52, $width - 2 * $margin, 20, [0.92, 0.94, 0.97]);
             $x = $margin;
             foreach ($columns as $column) {
                 $cellWidth = ($width - 2 * $margin) * self::COLUMNS[$column][1] / $weights;
-                $canvas->text($x + 5, 80, self::COLUMNS[$column][0], $bold, 8, $ink);
+                $canvas->text($x + 4, 57, self::COLUMNS[$column][0], $bold, 7.5, $ink);
                 $x += $cellWidth;
             }
-            $y = 98;
+            $y = 72;
             foreach ($rows as $rowIndex => $product) {
                 if ($rowIndex % 2 === 1) {
                     $canvas->filled_rectangle($margin, $y, $width - 2 * $margin, $rowHeight, [0.97, 0.98, 0.99]);
@@ -94,20 +107,20 @@ class ProductPdfExport
                 $x = $margin;
                 foreach ($columns as $column) {
                     $cellWidth = ($width - 2 * $margin) * self::COLUMNS[$column][1] / $weights;
-                    [$lines, $size] = $this->fitCell($this->value($product, $column), $cellWidth - 10, $rowHeight - 6, $font, $metrics);
+                    [$lines, $size] = $this->fitCell($this->value($product, $column), $cellWidth - 8, $rowHeight - 2, $font, $metrics);
                     foreach ($lines as $lineIndex => $text) {
-                        $textX = $x + 5;
+                        $textX = $x + 4;
                         if (in_array($column, ['cost', 'sell'], true)) {
-                            $textX = $x + $cellWidth - 5 - $metrics->getTextWidth($text, $font, $size);
+                            $textX = $x + $cellWidth - 4 - $metrics->getTextWidth($text, $font, $size);
                         }
-                        $canvas->text($textX, $y + 3 + $lineIndex * ($size + 1), $text, $font, $size, $ink);
+                        $canvas->text($textX, $y + 1 + $lineIndex * ($size + 1), $text, $font, $size, $ink);
                     }
                     $x += $cellWidth;
                 }
                 $y += $rowHeight;
                 $canvas->line($margin, $y, $width - $margin, $y, $line, 0.4);
             }
-            $canvas->text($margin, $height - 25, 'A4 | Page '.$page.' of '.$pages.' | '.self::PER_PAGE.' products per page', $font, 8, $ink);
+            $canvas->text($margin, $height - 20, 'A4 | Page '.$page.' of '.$pages.' | '.$perPage.' products per page', $font, 7.5, $ink);
         }
 
         return $pdf->output();
@@ -131,7 +144,7 @@ class ProductPdfExport
     private function fitCell(string $text, float $width, float $height, string $font, FontMetrics $metrics): array
     {
         $text = preg_replace('/\s+/u', ' ', trim($text)) ?: '-';
-        for ($size = 9; $size >= 2; $size -= 0.5) {
+        for ($size = 8.5; $size >= 2; $size -= 0.5) {
             $lines = [];
             $line = '';
             foreach (preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) as $character) {

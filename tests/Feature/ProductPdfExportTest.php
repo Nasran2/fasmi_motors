@@ -24,7 +24,7 @@ test('product export popup shows the filtered catalog PDF page count', function 
     ($this->seedProducts)(41);
     Product::create(['code' => 'OTHER', 'name' => 'Another brand', 'brand' => 'Other Brand', 'active' => true]);
     $this->get(route('products.index', ['brand' => 'Export Brand', 'page' => 2]))->assertOk()
-        ->assertViewHas('productPdf', ['total' => 41, 'pages' => 3, 'perPage' => 20, 'recommendedPages' => 20])
+        ->assertViewHas('productPdf', ['total' => 41, 'pages' => 2, 'perPage' => 30, 'portraitPerPage' => 50, 'landscapePerPage' => 30, 'columns' => array_keys(ProductPdfExport::COLUMNS), 'recommendedPages' => 20])
         ->assertSeeText('Total PDF Pages')->assertSeeText('From Page')->assertSeeText('To Page')
         ->assertSeeText('You can download any valid range, including all pages.')
         ->assertSeeText('You can still download this range.');
@@ -38,20 +38,20 @@ test('large product catalog only loads the selected range and downloads an A4 PD
     $pdf = $response->getContent();
     expect(substr($pdf, 0, 4))->toBe('%PDF')->and($pdf)->toMatch('/\/Count\s+2\b/')->toMatch('/\/MediaBox\s*\[0\.000\s+0\.000\s+595\.280\s+841\.890\]/');
     $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn ($sql) => str_contains($sql, 'stocks_sum_quantity'));
-    expect($selects->count())->toBe(1)->and($selects->first())->toContain('limit 40 offset 20');
+    expect($selects->count())->toBe(1)->and($selects->first())->toContain('limit 100 offset 50');
     DB::disableQueryLog();
 });
 
 test('PDF range boundaries honor quantity order filters and current shop', function () {
-    ($this->seedProducts)(41);
+    ($this->seedProducts)(121);
     Product::create(['name' => 'Other shop part', 'code' => 'HELMET-PDF', 'brand' => 'Export Brand', 'shop_type' => 'helmet', 'active' => true]);
     $store = Store::create(['name' => 'Export Store', 'active' => true]);
     $first = Product::where('code', 'PDF-0001')->first();
     StoreStock::create(['product_id' => $first->id, 'store_id' => $store->id, 'quantity' => -5]);
     $this->partialMock(ProductPdfExport::class, function ($mock) {
         $mock->shouldReceive('render')->once()->withArgs(function ($products, $columns, $from, $to, $total) {
-            expect($products->pluck('code')->all())->toBe(['PDF-0021', 'PDF-0022', 'PDF-0023', 'PDF-0024', 'PDF-0025', 'PDF-0026', 'PDF-0027', 'PDF-0028', 'PDF-0029', 'PDF-0030', 'PDF-0031', 'PDF-0032', 'PDF-0033', 'PDF-0034', 'PDF-0035', 'PDF-0036', 'PDF-0037', 'PDF-0038', 'PDF-0039', 'PDF-0040']);
-            expect($columns)->toBe(['name', 'qty'])->and($from)->toBe(2)->and($to)->toBe(2)->and($total)->toBe(41);
+            expect($products->pluck('code')->all())->toBe(array_map(fn ($i) => sprintf('PDF-%04d', $i), range(51, 100)));
+            expect($columns)->toBe(['name', 'qty'])->and($from)->toBe(2)->and($to)->toBe(2)->and($total)->toBe(121);
 
             return true;
         })->andReturn('%PDF-test');
@@ -60,7 +60,7 @@ test('PDF range boundaries honor quantity order filters and current shop', funct
 });
 
 test('wide exports use A4 landscape and the final page contains only remaining products', function () {
-    ($this->seedProducts)(41);
+    ($this->seedProducts)(61);
     $pdf = $this->get(route('products.pdf.export', ['columns' => array_keys(ProductPdfExport::COLUMNS), 'from_page' => 3, 'to_page' => 3]))->assertOk()->getContent();
     expect($pdf)->toMatch('/\/Count\s+1\b/')->toMatch('/\/MediaBox\s*\[0\.000\s+0\.000\s+841\.890\s+595\.280\]/');
 });
@@ -74,7 +74,7 @@ test('empty results and invalid page ranges or columns return validation errors'
 });
 
 test('exports over the recommended page count can download the full catalog', function () {
-    ($this->seedProducts)(421);
+    ($this->seedProducts)(1051);
     $response = $this->get(route('products.pdf.export', ['columns' => ['name', 'rack_number'], 'from_page' => 1, 'to_page' => 22]))
         ->assertOk()->assertHeader('Content-Type', 'application/pdf');
     expect($response->headers->get('Content-Disposition'))->toContain('products-pages-1-22.pdf');
@@ -82,10 +82,10 @@ test('exports over the recommended page count can download the full catalog', fu
 });
 
 test('older export links default to a bounded range and rack ordering stays deterministic', function () {
-    ($this->seedProducts)(140);
+    ($this->seedProducts)(340);
     $this->partialMock(ProductPdfExport::class, function ($mock) {
         $mock->shouldReceive('render')->once()->withArgs(function ($products, $columns, $from, $to, $total) {
-            expect($products->count())->toBe(100)->and($from)->toBe(1)->and($to)->toBe(5)->and($total)->toBe(140)->and($products->first()->rack_number)->toBe('A0001')->and($products->last()->rack_number)->toBe('A0100');
+            expect($products->count())->toBe(250)->and($from)->toBe(1)->and($to)->toBe(5)->and($total)->toBe(340)->and($products->first()->rack_number)->toBe('A0001')->and($products->last()->rack_number)->toBe('A0250');
 
             return true;
         })->andReturn('%PDF-test');

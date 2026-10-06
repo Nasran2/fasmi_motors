@@ -681,8 +681,10 @@ class ProductController extends Controller
             'columns' => 'sometimes|required|array|min:1|max:8',
             'columns.*' => ['required', 'string', 'distinct', Rule::in(array_keys(ProductPdfExport::COLUMNS))],
         ]);
+        $columns = array_values(array_intersect(array_keys(ProductPdfExport::COLUMNS), $request->input('columns', ['name', 'code', 'rack_number'])));
+        $perPage = $export->perPage($columns);
         $total = $export->query($request)->count();
-        $pages = (int) ceil($total / ProductPdfExport::PER_PAGE);
+        $pages = (int) ceil($total / $perPage);
         if (! $total) {
             throw ValidationException::withMessages(['products' => 'No products match these filters.']);
         }
@@ -693,8 +695,7 @@ class ProductController extends Controller
         ]);
         $from = (int) $data['from_page'];
         $to = (int) $data['to_page'];
-        $columns = array_values(array_intersect(array_keys(ProductPdfExport::COLUMNS), $request->input('columns', ['name', 'code', 'rack_number'])));
-        $products = $export->sortedQuery($request)->offset(($from - 1) * ProductPdfExport::PER_PAGE)->limit(($to - $from + 1) * ProductPdfExport::PER_PAGE)->get();
+        $products = $export->sortedQuery($request)->offset(($from - 1) * $perPage)->limit(($to - $from + 1) * $perPage)->get();
         if ($products->isEmpty()) {
             throw ValidationException::withMessages(['products' => 'Products changed. Refresh the list and try again.']);
         }
