@@ -19,6 +19,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Setting;
+use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
 use App\Models\Technician;
@@ -63,7 +64,7 @@ class AppServiceProvider extends ServiceProvider
             $model::observe(WorkshopSmsObserver::class);
         }
 
-        foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class, AccountTransaction::class, AccountTransfer::class, DailyClosing::class, Cheque::class] as $model) {
+        foreach ([Bike::class, BikeIntake::class, JobCard::class, Invoice::class, Payment::class, Product::class, StockMovement::class, Purchase::class, PurchaseReturn::class, Supplier::class, SupplierPayment::class, Technician::class, TechnicianAttendance::class, TechnicianSalarySheet::class, TechnicianAdvance::class, TechnicianCommission::class, TechnicianBikeDeduction::class, TechnicianContribution::class, Expense::class, Drawing::class, Setting::class, AccountTransaction::class, AccountTransfer::class, DailyClosing::class, Cheque::class] as $model) {
             $model::created(fn (Model $item) => $this->audit('created', $item, [], $item->getAttributes()));
             $model::updated(fn (Model $item) => $this->audit('updated', $item, $item->getOriginal(), $item->getChanges()));
             $model::deleted(fn (Model $item) => $this->audit('deleted', $item, $item->getOriginal(), []));

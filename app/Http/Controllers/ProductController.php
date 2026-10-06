@@ -13,6 +13,7 @@ use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\Supplier;
 use App\Services\ProductPdfExport;
+use App\Services\StockAdjustmentService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -545,47 +546,52 @@ class ProductController extends Controller
 
     public function adjustments()
     {
-        return view('products.adjustments', ['stores' => Store::where('active', true)->get(), 'products' => Product::orderBy('name')->get(), 'movements' => StockMovement::with(['store', 'product'])->whereIn('type', ['adjustment_in', 'adjustment_out'])->latest()->paginate(10)]);
+        return view('products.adjustments', ['stores' => Store::where('active', true)->get(), 'products' => Product::with('stocks')->orderBy('name')->get(), 'movements' => StockMovement::with(['store', 'product.stocks'])->whereIn('type', ['adjustment_in', 'adjustment_out', 'adjustment_price'])->whereNull('voided_at')->whereHas('product')->whereHas('store')->latest('id')->paginate(10)]);
     }
 
-    public function adjustmentStore(Request $request, WorkshopService $service)
+    public function adjustmentStore(Request $request, StockAdjustmentService $service)
     {
         $data = $request->validate([
-            'store_id' => ['required', 'exists:stores,id'],
+            'store_id' => ['required', Rule::exists('stores', 'id')->where('shop_type', session('shop_mode', 'workshop'))->where('active', true)],
             'direction' => ['required', \Illuminate\Validation\Rule::in(['increase', 'decrease', 'override'])],
-            'note' => ['nullable', 'max:500'],
+            'note' => ['nullable', 'string', 'max:500'],
             'products' => ['required', 'array', 'min:1'],
-            'products.*.id' => ['required', 'exists:products,id'],
+            'products.*.id' => ['required', 'integer', 'distinct', Rule::exists('products', 'id')->where('shop_type', session('shop_mode', 'workshop'))->whereNull('deleted_at')],
             'products.*.quantity' => ['required', 'numeric', 'min:0'],
+            'products.*.cost_price' => ['nullable', 'numeric', 'min:0'],
+            'products.*.selling_price' => ['nullable', 'numeric', 'min:0'],
         ]);
-        
-        $direction = $data['direction'] ?? 'increase';
-        $storeId = (int) $data['store_id'];
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($data, $direction, $storeId, $service) {
+        DB::transaction(function () use ($data, $service) {
             foreach ($data['products'] as $item) {
-                $quantity = (float) $item['quantity'];
-                $productId = (int) $item['id'];
-
-                if ($direction === 'override') {
-                    $currentStock = \App\Models\StoreStock::where('store_id', $storeId)->where('product_id', $productId)->value('quantity') ?? 0;
-                    $diff = $quantity - $currentStock;
-                    
-                    if ($diff != 0) {
-                        $increase = $diff > 0;
-                        $service->adjustStock($storeId, $productId, abs($diff) * ($increase ? 1 : -1), $increase ? 'adjustment_in' : 'adjustment_out', null, $data['note']);
-                    }
-                } else {
-                    if ($quantity <= 0) {
-                        continue; // Skip zero adjustments
-                    }
-                    $increase = $direction === 'increase';
-                    $service->adjustStock($storeId, $productId, $quantity * ($increase ? 1 : -1), $increase ? 'adjustment_in' : 'adjustment_out', null, $data['note']);
-                }
+                $service->create((int) $data['store_id'], $item, $data['direction'], $data['note'] ?? null);
             }
         });
 
-        return back()->with('success', 'Stock adjustment saved.');
+        return back()->with('success', 'Stock adjustment and product prices saved.');
+    }
+
+    public function adjustmentUpdate(Request $request, StockMovement $movement, StockAdjustmentService $service)
+    {
+        $data = $request->validate([
+            'direction' => ['required', Rule::in(['increase', 'decrease', 'override'])],
+            'quantity' => ['required', 'numeric', 'min:0'],
+            'cost_price' => ['required', 'numeric', 'min:0'],
+            'selling_price' => ['required', 'numeric', 'min:0'],
+            'note' => ['nullable', 'string', 'max:500'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+        $service->update($movement, $data);
+
+        return redirect()->route('products.adjustments')->with('success', 'Stock adjustment updated.');
+    }
+
+    public function adjustmentDestroy(Request $request, StockMovement $movement, StockAdjustmentService $service)
+    {
+        $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+        $service->delete($movement, $data['reason']);
+
+        return redirect()->route('products.adjustments')->with('success', 'Stock adjustment deleted and its quantity change reversed. Product prices were kept.');
     }
 
     public function stock(Request $request, Product $product, WorkshopService $service)

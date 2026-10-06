@@ -84,6 +84,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('products/transfers', [ProductController::class, 'transferStore'])->name('products.transfers.store');
     Route::get('products/adjustments', [ProductController::class, 'adjustments'])->name('products.adjustments');
     Route::post('products/adjustments', [ProductController::class, 'adjustmentStore'])->name('products.adjustments.store');
+    Route::put('products/adjustments/{movement}', [ProductController::class, 'adjustmentUpdate'])->name('products.adjustments.update');
+    Route::delete('products/adjustments/{movement}', [ProductController::class, 'adjustmentDestroy'])->name('products.adjustments.destroy');
     Route::get('products/low-stock', [ProductController::class, 'lowStock'])->name('products.low-stock');
     Route::get('products/damages', [ProductController::class, 'damages'])->name('products.damages');
     Route::post('products/damages', [ProductController::class, 'damageStore'])->name('products.damages.store');
