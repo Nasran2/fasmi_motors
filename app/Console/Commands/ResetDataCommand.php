@@ -56,6 +56,7 @@ class ResetDataCommand extends Command
             'technician_contributions',
             'technician_deductions',
             'technician_salary_sheets',
+            'technicians',
         ];
 
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
