@@ -30,7 +30,7 @@ class PublicInvoiceController extends Controller
         }
 
         return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
-            ->setPaper('a4')->download($this->filename($invoice));
+            ->setPaper($request->query('format') === 'a5' ? 'a5' : 'a4')->download($this->filename($invoice));
     }
 
     private function openInvoice(Request $request, string $token): Invoice

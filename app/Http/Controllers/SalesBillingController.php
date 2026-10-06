@@ -413,7 +413,7 @@ class SalesBillingController extends Controller
         }
 
         return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
-            ->setPaper('a4')->download($filename);
+            ->setPaper($request->query('format') === 'a5' ? 'a5' : 'a4')->download($filename);
     }
 
     public function cancelInvoice(Request $request, Invoice $invoice, WorkshopService $service)
