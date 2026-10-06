@@ -24,8 +24,10 @@ test('product export popup shows the filtered catalog PDF page count', function 
     ($this->seedProducts)(41);
     Product::create(['code' => 'OTHER', 'name' => 'Another brand', 'brand' => 'Other Brand', 'active' => true]);
     $this->get(route('products.index', ['brand' => 'Export Brand', 'page' => 2]))->assertOk()
-        ->assertViewHas('productPdf', ['total' => 41, 'pages' => 3, 'perPage' => 20, 'maxPages' => 20])
-        ->assertSeeText('Total PDF Pages')->assertSeeText('From Page')->assertSeeText('To Page')->assertSeeText('Download up to 20 pages at a time.');
+        ->assertViewHas('productPdf', ['total' => 41, 'pages' => 3, 'perPage' => 20, 'recommendedPages' => 20])
+        ->assertSeeText('Total PDF Pages')->assertSeeText('From Page')->assertSeeText('To Page')
+        ->assertSeeText('You can download any valid range, including all pages.')
+        ->assertSeeText('You can still download this range.');
 });
 
 test('large product catalog only loads the selected range and downloads an A4 PDF', function () {
@@ -66,9 +68,17 @@ test('wide exports use A4 landscape and the final page contains only remaining p
 test('empty results and invalid page ranges or columns return validation errors', function () {
     $this->getJson(route('products.pdf.export'))->assertUnprocessable()->assertJsonValidationErrors('products');
     ($this->seedProducts)(421);
-    foreach ([['from_page' => 0, 'to_page' => 1], ['from_page' => 2, 'to_page' => 1], ['from_page' => 1, 'to_page' => 23], ['from_page' => 1, 'to_page' => 21], ['from_page' => 1.5, 'to_page' => 2], ['columns' => []], ['columns' => ['unknown']], ['columns' => ['name', 'name']], ['sort' => 'id desc'], ['q' => ['malformed']]] as $parameters) {
+    foreach ([['from_page' => 0, 'to_page' => 1], ['from_page' => 2, 'to_page' => 1], ['from_page' => 1, 'to_page' => 23], ['from_page' => 1.5, 'to_page' => 2], ['columns' => []], ['columns' => ['unknown']], ['columns' => ['name', 'name']], ['sort' => 'id desc'], ['q' => ['malformed']]] as $parameters) {
         $this->json('GET', route('products.pdf.export'), $parameters)->assertUnprocessable();
     }
+});
+
+test('exports over the recommended page count can download the full catalog', function () {
+    ($this->seedProducts)(421);
+    $response = $this->get(route('products.pdf.export', ['columns' => ['name', 'rack_number'], 'from_page' => 1, 'to_page' => 22]))
+        ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    expect($response->headers->get('Content-Disposition'))->toContain('products-pages-1-22.pdf');
+    expect($response->getContent())->toMatch('/\/Count\s+22\b/')->toMatch('/\/MediaBox\s*\[0\.000\s+0\.000\s+595\.280\s+841\.890\]/');
 });
 
 test('older export links default to a bounded range and rack ordering stays deterministic', function () {

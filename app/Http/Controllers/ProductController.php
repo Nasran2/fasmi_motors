@@ -693,9 +693,6 @@ class ProductController extends Controller
         ]);
         $from = (int) $data['from_page'];
         $to = (int) $data['to_page'];
-        if ($to - $from + 1 > ProductPdfExport::MAX_PAGES) {
-            throw ValidationException::withMessages(['to_page' => 'Download up to '.ProductPdfExport::MAX_PAGES.' pages at a time.']);
-        }
         $columns = array_values(array_intersect(array_keys(ProductPdfExport::COLUMNS), $request->input('columns', ['name', 'code', 'rack_number'])));
         $products = $export->sortedQuery($request)->offset(($from - 1) * ProductPdfExport::PER_PAGE)->limit(($to - $from + 1) * ProductPdfExport::PER_PAGE)->get();
         if ($products->isEmpty()) {

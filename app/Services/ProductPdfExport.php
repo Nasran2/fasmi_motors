@@ -13,7 +13,7 @@ class ProductPdfExport
 {
     public const PER_PAGE = 20;
 
-    public const MAX_PAGES = 20;
+    public const RECOMMENDED_PAGES = 20;
 
     public const COLUMNS = [
         'name' => ['Product Name', 28], 'code' => ['SKU / Barcode', 20],
@@ -47,7 +47,7 @@ class ProductPdfExport
 
     public function summary(int $total): array
     {
-        return ['total' => $total, 'pages' => (int) ceil($total / self::PER_PAGE), 'perPage' => self::PER_PAGE, 'maxPages' => self::MAX_PAGES];
+        return ['total' => $total, 'pages' => (int) ceil($total / self::PER_PAGE), 'perPage' => self::PER_PAGE, 'recommendedPages' => self::RECOMMENDED_PAGES];
     }
 
     public function render(Collection $products, array $columns, int $from, int $to, int $total): string
