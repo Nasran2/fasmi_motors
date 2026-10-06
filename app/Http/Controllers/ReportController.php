@@ -164,7 +164,8 @@ class ReportController extends Controller
             ->whereIn('invoice_type', ['Job Card Bill', 'Parts Sale'])->sum(DB::raw("case when invoice_type = 'Parts Sale' then total else least(total, parts_amount) end"));
         $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale')
         )->sum(DB::raw('(quantity - returned_quantity) * cost_price'));
-        $partsCost += JobCardPart::whereHas('jobCard.invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled'))->sum(DB::raw('quantity * cost_price'));
+        // Outer product costs are already recognized by their immediate expense records.
+        $partsCost += JobCardPart::where('is_external', false)->whereHas('jobCard.invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled'))->sum(DB::raw('quantity * cost_price'));
         $partsProfit = $partsSales - $partsCost;
 
         $otherIncome = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])

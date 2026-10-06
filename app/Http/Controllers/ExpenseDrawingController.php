@@ -53,7 +53,7 @@ class ExpenseDrawingController extends Controller
         [$from, $to, $range] = $this->range($request);
         $model = $module === 'expense' ? Expense::query() : Drawing::query();
         $date = $module.'_date';
-        $model->with(['account', 'creator'])->whereBetween($date, [$from, $to])->when($request->q, fn ($q, $v) => $q->where(fn ($n) => $n->where('number', 'like', "%$v%")->orWhere('note', 'like', "%$v%")))->when($request->category, fn ($q, $v) => $q->where($module === 'expense' ? 'category' : 'drawing_type', $v))->when($request->account_id, fn ($q, $v) => $q->where('account_id', $v))->when($request->payment_method, fn ($q, $v) => $q->where('payment_method', $v));
+        $model->with(['account', 'creator'])->whereBetween($date, [$from, $to])->when($request->q, fn ($q, $v) => $q->where(fn ($n) => $n->where('number', 'like', "%$v%")->orWhere('note', 'like', "%$v%")->orWhere('reference_number', 'like', "%$v%")->when($module === 'expense', fn ($e) => $e->orWhere('description', 'like', "%$v%"))))->when($request->category, fn ($q, $v) => $q->where($module === 'expense' ? 'category' : 'drawing_type', $v))->when($request->account_id, fn ($q, $v) => $q->where('account_id', $v))->when($request->payment_method, fn ($q, $v) => $q->where('payment_method', $v));
         $records = (clone $model)->latest($date)->paginate(20)->withQueryString();
         $all = (clone $model)->get();
         $accounts = Account::where('active', true)->get();
@@ -139,6 +139,7 @@ class ExpenseDrawingController extends Controller
         abort_unless(in_array($module, ['expense', 'drawing'], true), 404);
         $r->validate(['reason' => 'required|min:5|max:500']);
         $record = ($module === 'expense' ? Expense::findOrFail($id) : Drawing::findOrFail($id));
+        abort_if($module === 'expense' && $record->jobPart()->exists(), 422, 'Edit or remove this outer product from its job card to update the expense and profit together.');
         abort_if($record->status === 'Cancelled', 422);
         DB::transaction(function () use ($record, $r, $service) {
             $record = $record->newQuery()->lockForUpdate()->findOrFail($record->id);

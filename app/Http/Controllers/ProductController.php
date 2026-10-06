@@ -12,6 +12,7 @@ use App\Models\StockTransfer;
 use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\Supplier;
+use App\Services\ProductPdfExport;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -71,18 +72,8 @@ class ProductController extends Controller
 
     public function index(Request $request)
     {
-        $products = Product::query()
-            ->with(['category', 'supplier'])
-            ->withSum('stocks', 'quantity')
-            ->when($request->filled('q'), fn ($q) => $q->where(fn ($x) => $x
-                ->where('name', 'like', '%'.$request->q.'%')
-                ->orWhere('code', 'like', '%'.$request->q.'%')
-                ->orWhere('barcode', 'like', '%'.$request->q.'%')
-                ->orWhere('rack_number', 'like', '%'.$request->q.'%')))
-            ->when($request->filled('rack_number'), fn ($q) => $q->where('rack_number', 'like', '%'.$request->rack_number.'%'))
-            ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
-            ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))
-            ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'));
+        $products = app(ProductPdfExport::class)->query($request)
+            ->with(['category', 'supplier'])->withSum('stocks', 'quantity');
 
         $sortBy = $request->input('sort_by', 'name');
         $sortDir = $request->input('sort_dir', 'asc');
@@ -102,6 +93,7 @@ class ProductController extends Controller
             'categories' => ProductCategory::orderBy('name')->get(),
             'brands' => ProductBrand::orderBy('name')->get(),
             'selectedSupplier' => $request->filled('supplier') ? Supplier::find($request->supplier) : null,
+            'productPdf' => app(ProductPdfExport::class)->summary($products->total()),
             'stats' => $this->stockStats(),
             'lowStocks' => StoreStock::with(['product', 'store'])->whereHas('product', fn ($q) => $q->whereColumn('store_stocks.quantity', '<=', 'products.minimum_stock'))->orderBy('quantity')->limit(6)->get(),
             'stores' => Store::withCount('stocks')->withSum('stocks', 'quantity')->where('active', true)->get(),
@@ -130,7 +122,10 @@ class ProductController extends Controller
         $data['opening_amount'] = filled($data['opening_amount'] ?? null)
             ? (float) $data['opening_amount']
             : $opening * (float) $data['cost_price'];
-        $mainStore = Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first();
+        if ($request->routeIs('jobs.products.store')) {
+            $request->validate(['job_store_id' => 'required|exists:stores,id']);
+        }
+        $mainStore = $request->routeIs('jobs.products.store') ? Store::where('active', true)->findOrFail($request->integer('job_store_id')) : Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first();
         if (! $mainStore) {
             throw ValidationException::withMessages(['opening_quantity' => 'Main Store must be configured before adding products.']);
         }
@@ -150,6 +145,10 @@ class ProductController extends Controller
 
             return $product;
         });
+
+        if ($request->routeIs('jobs.products.store')) {
+            return redirect(route('jobs.show', ['job' => $request->route('job'), 'product' => $product->id, 'store' => $storeId]).'#spare-parts')->with('success', $product->name.' added to inventory and selected for this job.');
+        }
 
         return $request->boolean('save_new')
             ? redirect()->route('products.create')->with('success', "{$product->name} saved. Add another product.")
@@ -673,38 +672,41 @@ class ProductController extends Controller
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ProductExport, 'products.xlsx');
     }
 
-    public function exportPdf(\Illuminate\Http\Request $request)
+    public function exportPdf(Request $request, ProductPdfExport $export)
     {
-        ini_set('memory_limit', '512M');
-        ini_set('max_execution_time', '300');
-
-        $query = Product::query()
-            ->with(['category', 'supplier'])
-            ->withSum('stocks', 'quantity')
-            ->when($request->filled('q'), fn ($q) => $q->where(fn ($x) => $x
-                ->where('name', 'like', '%'.$request->q.'%')
-                ->orWhere('code', 'like', '%'.$request->q.'%')
-                ->orWhere('barcode', 'like', '%'.$request->q.'%')
-                ->orWhere('rack_number', 'like', '%'.$request->q.'%')))
-            ->when($request->filled('rack_number'), fn ($q) => $q->where('rack_number', 'like', '%'.$request->rack_number.'%'))
-            ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
-            ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))
-            ->when($request->status === 'low', fn ($q) => $q->whereRaw('(select coalesce(sum(quantity),0) from store_stocks where store_stocks.product_id = products.id) <= products.minimum_stock'));
-
-        if ($request->sort === 'qty_asc') {
-            $products = $query->get()->sortBy('stocks_sum_quantity');
-        } elseif ($request->sort === 'qty_desc') {
-            $products = $query->get()->sortByDesc('stocks_sum_quantity');
-        } elseif ($request->sort === 'rack_number') {
-            $products = $query->orderBy('rack_number', 'asc')->get();
-        } else {
-            $products = $query->orderBy('name', 'asc')->get();
+        $request->validate([
+            'q' => 'nullable|string|max:255', 'rack_number' => 'nullable|string|max:100',
+            'supplier' => 'nullable|integer', 'brand' => 'nullable|string|max:100', 'status' => 'nullable|in:low',
+            'sort' => 'nullable|in:name,qty_asc,qty_desc,rack_number',
+            'columns' => 'sometimes|required|array|min:1|max:8',
+            'columns.*' => ['required', 'string', 'distinct', Rule::in(array_keys(ProductPdfExport::COLUMNS))],
+        ]);
+        $total = $export->query($request)->count();
+        $pages = (int) ceil($total / ProductPdfExport::PER_PAGE);
+        if (! $total) {
+            throw ValidationException::withMessages(['products' => 'No products match these filters.']);
         }
+        $request->merge(['from_page' => $request->input('from_page', 1), 'to_page' => $request->input('to_page', min(5, $pages))]);
+        $data = $request->validate([
+            'from_page' => 'required|integer|min:1|max:'.$pages,
+            'to_page' => 'required|integer|gte:from_page|max:'.$pages,
+        ]);
+        $from = (int) $data['from_page'];
+        $to = (int) $data['to_page'];
+        if ($to - $from + 1 > ProductPdfExport::MAX_PAGES) {
+            throw ValidationException::withMessages(['to_page' => 'Download up to '.ProductPdfExport::MAX_PAGES.' pages at a time.']);
+        }
+        $columns = array_values(array_intersect(array_keys(ProductPdfExport::COLUMNS), $request->input('columns', ['name', 'code', 'rack_number'])));
+        $products = $export->sortedQuery($request)->offset(($from - 1) * ProductPdfExport::PER_PAGE)->limit(($to - $from + 1) * ProductPdfExport::PER_PAGE)->get();
+        if ($products->isEmpty()) {
+            throw ValidationException::withMessages(['products' => 'Products changed. Refresh the list and try again.']);
+        }
+        $content = $export->render($products, $columns, $from, $to, $total);
 
-        $columns = $request->input('columns', []);
-
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('products.pdf', compact('products', 'columns'))->setPaper('a4', 'landscape');
-        return $pdf->stream('products-list.pdf');
+        return response($content, 200, [
+            'Content-Type' => 'application/pdf', 'Content-Disposition' => 'attachment; filename="products-pages-'.$from.'-'.$to.'.pdf"',
+            'Content-Length' => strlen($content), 'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     public function import(\Illuminate\Http\Request $request)

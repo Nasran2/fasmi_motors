@@ -29,6 +29,7 @@ return [
         'intakes.create' => 'intake.add',
         'intakes.store' => 'intake.add',
         'intakes.*' => 'intake.view',
+        'jobs.products.store' => 'product.add',
         'jobs.parts.*' => 'job_card.add_parts',
         'jobs.invoice' => 'job_card.complete',
         'jobs.unlock' => 'job_card.edit',

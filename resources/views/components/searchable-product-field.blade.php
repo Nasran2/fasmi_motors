@@ -1,6 +1,7 @@
-@props(['products', 'name' => 'product_id', 'id', 'label' => 'Product *', 'placeholder' => 'Type product name, SKU, barcode or rack no…'])
+@props(['products', 'name' => 'product_id', 'id', 'selectedId' => null, 'label' => 'Product *', 'placeholder' => 'Type product name, SKU, barcode or rack no…'])
 @php
-    $selectedId = old($name);
+    $products = $products->sort(fn($a, $b) => strcmp(mb_strtolower(trim($a->name)), mb_strtolower(trim($b->name))) ?: strcmp($a->code, $b->code))->values();
+    $selectedId = old($name, $selectedId);
     $selected = $products->firstWhere('id', (int) $selectedId);
     $labelFor = function($product) {
         $totalStock = $product->stocks ? $product->stocks->sum('quantity') : 0;
@@ -16,7 +17,7 @@
         <svg class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
         <input data-product-search list="{{ $id }}-options" value="{{ $selected ? $labelFor($selected) : '' }}" class="field !pl-10" placeholder="{{ $placeholder }}" aria-label="{{ $label }}" autocomplete="off" required>
         <input data-product-id type="hidden" name="{{ $name }}" value="{{ $selectedId }}">
-        <datalist id="{{ $id }}-options">@foreach($products as $product)<option value="{{ $labelFor($product) }}"></option>@endforeach</datalist>
+        <datalist id="{{ $id }}-options">@foreach($products as $product)<option value="{{ $labelFor($product) }}" data-sort-order="{{ $loop->index }}"></option>@endforeach</datalist>
     </div>
     <p data-product-error class="mt-1 hidden text-xs font-semibold text-red-600">Choose a product from the search suggestions.</p>
 </div>

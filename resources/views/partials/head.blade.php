@@ -207,7 +207,7 @@
                 if (input.tomselect) return;
                 const list = input.list;
                 if (!list) return;
-                const options = Array.from(list.options, option => ({value:option.value, text:option.label || option.value}));
+                const options = Array.from(list.options, (option, index) => ({value:option.value, text:option.label || option.value, sortOrder:Number(option.dataset.sortOrder ?? index)}));
                 const originalClasses = Array.from(input.classList);
                 const initialValue = input.value;
                 input.removeAttribute('list');
@@ -228,6 +228,7 @@
                 };
                 const control = new TomSelect(input, {
                     options,
+                    ...(input.hasAttribute('data-product-search') ? {sortField:[{field:'sortOrder', direction:'asc'}, {field:'$score', direction:'desc'}]} : {}),
                     items: initialValue ? [initialValue] : [],
                     maxItems:1,
                     maxOptions:null,

@@ -2,7 +2,7 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Profit & Loss Report',
-      'subtitle' => 'View business income, expenses, gross profit, and net profit',
+      'subtitle' => 'Outer product purchases are included in Expenses, so Stock Parts Cost excludes them.',
     ])
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3">
@@ -37,11 +37,11 @@
             <span class="font-bold">Rs. {{ number_format($partsSales, 2) }}</span>
           </div>
           <div class="flex justify-between items-center pb-2 border-b border-slate-100 border-dashed">
-            <span class="text-sm font-bold text-slate-600">Less: Cost of Goods Sold</span>
+            <span class="text-sm font-bold text-slate-600">Less: Stock Parts Cost</span>
             <span class="font-bold text-red-600">- Rs. {{ number_format($partsCost, 2) }}</span>
           </div>
           <div class="flex justify-between items-center pb-2 border-b border-slate-100 border-dashed">
-            <span class="text-sm font-bold text-green-700">Spare Parts Gross Profit</span>
+            <span class="text-sm font-bold text-green-700">Parts Margin Before Outer Purchases</span>
             <span class="font-bold text-green-700">Rs. {{ number_format($partsProfit, 2) }}</span>
           </div>
           <div class="flex justify-between items-center pb-2 border-b border-slate-100 border-dashed">

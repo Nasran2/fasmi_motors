@@ -6,53 +6,7 @@
     <button onclick="document.getElementById('import-dialog').showModal()" class="btn-secondary">Import</button>
     <a href="{{ route('products.create') }}" class="btn-primary">＋ Add Product</a>
 </div></div></div>
-<dialog id="export-pdf-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
-    <div class="p-6 space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h2 class="text-base font-black text-slate-900">Export PDF Options</h2>
-            <button type="button" class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('export-pdf-dialog').close()">✕</button>
-        </div>
-        <form method="GET" action="{{ route('products.pdf.export') }}" target="_blank">
-            @foreach(request()->except(['columns', 'sort']) as $key => $value)
-                @if(is_array($value))
-                    @foreach($value as $v)
-                        <input type="hidden" name="{{ $key }}[]" value="{{ $v }}">
-                    @endforeach
-                @else
-                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
-                @endif
-            @endforeach
-            <div class="space-y-4">
-                <div>
-                    <label class="label mb-2 block text-sm font-bold text-slate-700">Columns to include:</label>
-                    <div class="grid grid-cols-2 gap-2">
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="name" checked class="form-checkbox text-blue-600"> Product Name</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="code" checked class="form-checkbox text-blue-600"> SKU/Barcode</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="rack_number" checked class="form-checkbox text-blue-600"> Rack No</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="brand" checked class="form-checkbox text-blue-600"> Brand</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="qty" checked class="form-checkbox text-blue-600"> Qty</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="cost" checked class="form-checkbox text-blue-600"> Cost</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="sell" checked class="form-checkbox text-blue-600"> Sell</label>
-                        <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="columns[]" value="status" checked class="form-checkbox text-blue-600"> Status</label>
-                    </div>
-                </div>
-                <div>
-                    <label class="label block text-sm font-bold mb-1 text-slate-700">Sort by:</label>
-                    <select name="sort" class="w-full text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
-                        <option value="name">Name (A-Z)</option>
-                        <option value="qty_asc">Quantity (Low to High)</option>
-                        <option value="qty_desc">Quantity (High to Low)</option>
-                        <option value="rack_number">Rack Number</option>
-                    </select>
-                </div>
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" class="btn-secondary text-xs" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;" onclick="document.getElementById('export-pdf-dialog').close()">Cancel</button>
-                    <button type="submit" class="btn-primary text-xs" onclick="document.getElementById('export-pdf-dialog').close()">Generate PDF</button>
-                </div>
-            </div>
-        </form>
-    </div>
-</dialog>
+@include('products.partials.pdf-export')
 <dialog id="import-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
     <div class="p-6 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-100 pb-3">

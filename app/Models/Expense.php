@@ -2,19 +2,26 @@
 
 namespace App\Models;
 
+use App\Traits\ShopScoped;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
 {
-    use \App\Traits\ShopScoped, SoftDeletes;
+    use ShopScoped, SoftDeletes;
 
     protected $guarded = [];
 
     protected function casts(): array
     {
         return ['expense_date' => 'date'];
+    }
+
+    public function jobPart(): HasOne
+    {
+        return $this->hasOne(JobCardPart::class);
     }
 
     public function account(): BelongsTo

@@ -65,6 +65,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('bike-intakes/lookup/{query}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
     Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->names('intakes');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
+    Route::post('job-cards/{job}/parts/outer', [JobCardController::class, 'addOuterPart'])->name('jobs.parts.outer');
+    Route::post('job-cards/{job}/products', [JobCardController::class, 'newProduct'])->name('jobs.products.store');
     Route::post('job-cards/{job}/parts/multiple', [JobCardController::class, 'addMultipleParts'])->name('jobs.parts.store_multiple');
     Route::post('job-cards/{job}/parts/{part}/update', [JobCardController::class, 'updatePart'])->name('jobs.parts.update');
     Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
