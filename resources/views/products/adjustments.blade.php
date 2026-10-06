@@ -1,4 +1,7 @@
 <x-layouts::app title="Stock Adjustment">
+    @php
+        $defaultStore = $stores->firstWhere('name', 'Main Store') ?? $stores->firstWhere('is_default', true) ?? $stores->first();
+    @endphp
     <div class="space-y-5">
         <div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Products / Stock</p><h1 class="page-title">Stock Adjustment</h1><p class="page-subtitle">Correct inventory counts and update product prices.</p></div>
         <x-flash/>
@@ -6,7 +9,7 @@
             @csrf<x-submission-token/>
             <h2 class="mb-4 text-lg font-extrabold">Create Stock Adjustment</h2>
             <div class="grid gap-4 md:grid-cols-3">
-                <label><span class="label">Store *</span><select name="store_id" id="adjustment-store" class="field" required><option value="">Select store</option>@foreach($stores as $store)<option value="{{ $store->id }}" @selected(old('store_id') == $store->id)>{{ $store->name }}</option>@endforeach</select></label>
+                <label><span class="label">Store *</span><select name="store_id" id="adjustment-store" class="field" required><option value="">Select store</option>@foreach($stores as $store)<option value="{{ $store->id }}" @selected(old('store_id', $defaultStore?->id) == $store->id)>{{ $store->name }}</option>@endforeach</select></label>
                 <label><span class="label">Adjustment Type *</span><select name="direction" id="adjustment-direction" class="field" required><option value="increase" @selected(old('direction') === 'increase')>Increase</option><option value="decrease" @selected(old('direction') === 'decrease')>Decrease</option><option value="override" @selected(old('direction') === 'override')>Set Exact Quantity</option></select></label>
                 <label><span class="label">Reason / Note</span><input name="note" value="{{ old('note') }}" maxlength="500" class="field" placeholder="Stock count correction (optional)"></label>
             </div>
