@@ -18,6 +18,25 @@ class JobCard extends Model
 
     protected $guarded = [];
 
+    protected static function booted(): void
+    {
+        static::saving(function (JobCard $job) {
+            if ($job->discount_type === 'percentage') {
+                $job->discount = round($job->subtotal * (float) $job->discount_value / 100, 2);
+            } elseif ($job->isDirty('discount_value') || $job->isDirty('discount_type')) {
+                $job->discount = (float) $job->discount_value;
+            } elseif ($job->isDirty('discount')) {
+                // Preserve callers that still submit a fixed discount amount.
+                $job->discount_value = $job->discount;
+            }
+        });
+    }
+
+    public function getSubtotalAttribute(): float
+    {
+        return (float) $this->parts_total + (float) $this->service_total + (float) $this->labor_total + (float) $this->washing_total + (float) $this->other_total;
+    }
+
     public function intake(): BelongsTo
     {
         return $this->belongsTo(BikeIntake::class, 'bike_intake_id');
@@ -46,6 +65,6 @@ class JobCard extends Model
 
     public function getTotalAttribute(): float
     {
-        return max(0, (float) $this->parts_total + (float) $this->service_total + (float) $this->labor_total + (float) $this->washing_total + (float) $this->other_total - (float) $this->discount + (float) $this->tax);
+        return max(0, round($this->subtotal - (float) $this->discount + (float) $this->tax, 2));
     }
 }

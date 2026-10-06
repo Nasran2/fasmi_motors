@@ -7,6 +7,7 @@ use App\Models\PublicBillAccess;
 use App\Models\Setting;
 use App\Scopes\ShopScope;
 use App\Support\InvoiceDocument;
+use App\Support\ThermalReceipt;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 
@@ -16,13 +17,17 @@ class PublicInvoiceController extends Controller
     {
         $invoice = $this->openInvoice($request, $token);
 
-        return view('invoices.public', InvoiceDocument::data($invoice, allowPublicPdf: filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL)));
+        return view($request->query('format') === '80mm' ? 'invoices.thermal' : 'invoices.public', InvoiceDocument::data($invoice, allowPublicPdf: filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL)));
     }
 
     public function pdf(Request $request, string $token)
     {
         abort_unless(filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL), 403);
         $invoice = $this->openInvoice($request, $token);
+
+        if ($request->query('format') === '80mm') {
+            return ThermalReceipt::pdf(InvoiceDocument::data($invoice, pdfMode: true))->download($this->filename($invoice));
+        }
 
         return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
             ->setPaper('a4')->download($this->filename($invoice));

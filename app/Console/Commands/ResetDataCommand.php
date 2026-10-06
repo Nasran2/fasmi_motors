@@ -29,6 +29,7 @@ class ResetDataCommand extends Command
             'daily_closings',
             'drawings',
             'expenses',
+            'sale_returns',
             'invoice_charges',
             'invoice_items',
             'invoices',

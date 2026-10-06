@@ -399,14 +399,18 @@ class SalesBillingController extends Controller
 
     public function invoiceShow(Invoice $invoice)
     {
-        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'charges', 'payments.account', 'payments.cheque.forwardedSupplier'])]);
+        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'charges', 'payments.account', 'payments.cheque.forwardedSupplier', 'returns'])]);
     }
 
-    public function invoicePdf(Invoice $invoice)
+    public function invoicePdf(Request $request, Invoice $invoice)
     {
         abort_unless(auth()->user()->canAccess('sales.view_invoices') || (auth()->user()->canAccess('sales.parts_sales') && (int) $invoice->created_by === (int) auth()->id()), 403);
         $filename = ($invoice->invoice_type === 'Quotation' ? 'Quotation-' : 'Bill-')
             .preg_replace('/[^A-Za-z0-9_-]/', '-', $invoice->number).'.pdf';
+
+        if ($request->query('format') === '80mm') {
+            return \App\Support\ThermalReceipt::pdf(InvoiceDocument::data($invoice, pdfMode: true))->download($filename);
+        }
 
         return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
             ->setPaper('a4')->download($filename);
@@ -446,7 +450,7 @@ class SalesBillingController extends Controller
             }
             if ($invoice->invoice_type === 'Parts Sale') {
                 foreach ($invoice->items as $item) {
-                    $service->adjustStock($item->store_id, $item->product_id, (float) $item->quantity, 'invoice_cancel', $invoice, $data['reason'], $item->stock_batch_id, (float) $item->cost_price, (float) $item->unit_price);
+                    $service->adjustStock($item->store_id, $item->product_id, max(0, (float) $item->quantity - (float) $item->returned_quantity), 'invoice_cancel', $invoice, $data['reason'], $item->stock_batch_id, (float) $item->cost_price, (float) $item->unit_price);
                 }
             }
             $invoice->update(['status' => 'Cancelled', 'paid_amount' => 0, 'due_amount' => 0, 'link_enabled' => false, 'cancel_reason' => $data['reason'], 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);

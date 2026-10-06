@@ -45,10 +45,10 @@
               <td class="px-4 py-3">{{ $row->invoice?->created_at->format("d M Y") }}</td>
 <td class="px-4 py-3">{{ $row->invoice?->number }}</td>
 <td class="px-4 py-3">{{ $row->product?->name }}</td>
-<td class="px-4 py-3">{{ $row->quantity }}</td>
+<td class="px-4 py-3">{{ $row->quantity-$row->returned_quantity }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->cost_price, 2) }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->unit_price, 2) }}</td>
-<td class="px-4 py-3">{{ "Rs. " . number_format($row->total, 2) }}</td>
+<td class="px-4 py-3">{{ "Rs. " . number_format($row->total-round($row->total*$row->returned_quantity/$row->quantity,2), 2) }}</td>
             </tr>
             @empty
             <tr>

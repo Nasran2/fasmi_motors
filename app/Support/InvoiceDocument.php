@@ -67,11 +67,12 @@ final class InvoiceDocument
                 'name' => $item->description ?: ($item->product?->name ?? 'Product'),
                 'detail' => collect([
                     $item->product?->code,
+                    (float) ($item->returned_quantity ?? 0) > 0 ? 'Returned: '.$item->returned_quantity : null,
                     (float) ($item->discount ?? 0) > 0 ? 'Line discount Rs. '.number_format((float) $item->discount, 2) : null,
                 ])->filter()->implode(' · '),
-                'qty' => (float) $item->quantity,
+                'qty' => max(0, (float) $item->quantity - (float) ($item->returned_quantity ?? 0)),
                 'rate' => (float) $item->unit_price,
-                'total' => (float) $item->total,
+                'total' => (float) $item->total - round((float) $item->total * (float) ($item->returned_quantity ?? 0) / (float) $item->quantity, 2),
             ];
         }
 

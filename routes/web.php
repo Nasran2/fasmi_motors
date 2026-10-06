@@ -112,6 +112,12 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('sales/job-billing/{job}', [SalesBillingController::class, 'billJob'])->name('sales.job-billing.store');
     Route::get('sales/parts', [SalesBillingController::class, 'partsSales'])->name('sales.parts');
     Route::post('sales/parts', [SalesBillingController::class, 'partsStore'])->name('sales.parts.store');
+    Route::get('sales/parts/list', [\App\Http\Controllers\PartsSaleController::class, 'index'])->name('sales.parts.index');
+    Route::get('sales/parts/{invoice}/edit', [\App\Http\Controllers\PartsSaleController::class, 'edit'])->name('sales.parts.edit');
+    Route::put('sales/parts/{invoice}', [\App\Http\Controllers\PartsSaleController::class, 'update'])->name('sales.parts.update');
+    Route::get('sales/parts/{invoice}/return', [\App\Http\Controllers\PartsSaleController::class, 'returnForm'])->name('sales.parts.return');
+    Route::post('sales/parts/{invoice}/return', [\App\Http\Controllers\PartsSaleController::class, 'returnStore'])->name('sales.parts.return.store');
+    Route::delete('sales/parts/{invoice}', [\App\Http\Controllers\PartsSaleController::class, 'destroy'])->name('sales.parts.destroy');
     Route::get('sales/quotations', [SalesBillingController::class, 'quotations'])->name('sales.quotations');
     Route::get('sales/accident-quotations/create', [AccidentQuotationController::class, 'create'])->name('sales.accident-quotations.create');
     Route::post('sales/accident-quotations', [AccidentQuotationController::class, 'store'])->name('sales.accident-quotations.store');
@@ -294,6 +300,22 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
 
         Route::get('cheques', [ChequeController::class, 'index'])->name('cheques.index');
         Route::post('cheques', [ChequeController::class, 'store'])->name('cheques.store');
+        Route::get('cheques/create', [ChequeController::class, 'create'])->name('cheques.create');
+        Route::get('cheques/pending', [ChequeController::class, 'index'])->defaults('cheque_status', 'Pending')->name('cheques.pending');
+        Route::get('cheques/passed', [ChequeController::class, 'index'])->defaults('cheque_status', 'Cleared')->name('cheques.passed');
+        Route::get('cheques/returned', [ChequeController::class, 'index'])->defaults('cheque_status', 'Returned')->name('cheques.returned');
+        Route::get('cheques/cancelled', [ChequeController::class, 'index'])->defaults('cheque_status', 'Cancelled')->name('cheques.cancelled');
+        Route::get('cheques/deleted', [ChequeController::class, 'index'])->defaults('cheque_status', 'Deleted')->name('cheques.deleted');
+        Route::get('cheques/customer', [ChequeController::class, 'index'])->defaults('cheque_type', 'Received')->name('cheques.customer');
+        Route::get('cheques/supplier', [ChequeController::class, 'index'])->defaults('cheque_type', 'Issued')->name('cheques.supplier');
+        Route::get('cheques/party', [ChequeController::class, 'index'])->defaults('cheque_type', 'Forwarded')->name('cheques.party');
+        Route::get('cheques/reports', [ChequeController::class, 'index'])->name('cheques.reports');
+        Route::get('cheques/print', [ChequeController::class, 'printReport'])->name('cheques.print');
+        Route::get('cheques/export', [ChequeController::class, 'export'])->name('cheques.export');
+        Route::get('cheques/{cheque}', [ChequeController::class, 'show'])->withTrashed()->name('cheques.show');
+        Route::get('cheques/{cheque}/edit', [ChequeController::class, 'edit'])->name('cheques.edit');
+        Route::put('cheques/{cheque}', [ChequeController::class, 'update'])->name('cheques.update');
+        Route::delete('cheques/{cheque}', [ChequeController::class, 'destroy'])->name('cheques.destroy');
         Route::patch('cheques/{cheque}/status', [ChequeController::class, 'updateStatus'])->name('cheques.status');
 
         // Card payments is essentially a filtered view of bank ledger. Using BankAccountController for now.

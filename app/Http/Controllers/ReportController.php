@@ -142,9 +142,9 @@ class ReportController extends Controller
             ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();
 
         $stats = [
-            'total_sales' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * unit_price')),
-            'items_sold' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum('quantity'),
-            'total_cost' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity * cost_price')),
+            'total_sales' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('(quantity - returned_quantity) * unit_price')),
+            'items_sold' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('quantity - returned_quantity')),
+            'total_cost' => InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'))->sum(DB::raw('(quantity - returned_quantity) * cost_price')),
         ];
         $stats['gross_profit'] = $stats['total_sales'] - $stats['total_cost'];
 
@@ -163,7 +163,7 @@ class ReportController extends Controller
         $partsSales = Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$from, $to])
             ->whereIn('invoice_type', ['Job Card Bill', 'Parts Sale'])->sum(DB::raw("case when invoice_type = 'Parts Sale' then total else least(total, parts_amount) end"));
         $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale')
-        )->sum(DB::raw('quantity * cost_price'));
+        )->sum(DB::raw('(quantity - returned_quantity) * cost_price'));
         $partsCost += JobCardPart::whereHas('jobCard.invoice', fn ($q) => $q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled'))->sum(DB::raw('quantity * cost_price'));
         $partsProfit = $partsSales - $partsCost;
 

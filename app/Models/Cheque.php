@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Traits\ShopScoped;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 class Cheque extends Model
 {
     use ShopScoped;
+    use SoftDeletes;
 
     protected $guarded = [];
 

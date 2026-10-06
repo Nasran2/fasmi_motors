@@ -75,7 +75,7 @@ class AccountService
             if ($reference instanceof Payment && $transactionType === 'income') {
                 $existing = AccountTransaction::where('account_id', $accountId)->where('account_type', $accountType)
                     ->where('reference_type', $reference->getMorphClass())->where('reference_id', $reference->id)
-                    ->where('transaction_type', $transactionType)->first();
+                    ->where('transaction_type', $transactionType)->where('status', 'active')->first();
                 if ($existing) {
                     return $existing;
                 }

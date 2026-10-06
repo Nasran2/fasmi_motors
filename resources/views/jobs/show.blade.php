@@ -17,7 +17,19 @@
 <div class="space-y-5">
 <x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
 <x-flash/>
-<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
+<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2" x-data="{
+    discountType: @js(old('discount_type', $job->discount_type ?? 'fixed')),
+    discountValue: @js(old('discount_value', $job->discount_value ?? $job->discount)),
+    partsTotal: @js((float) $job->parts_total),
+    serviceTotal: @js((float) $job->service_total),
+    laborTotal: @js((float) $job->labor_total),
+    washingTotal: @js((float) $job->washing_total),
+    otherTotal: @js((float) $job->other_total),
+    get discountAmount() {
+        const base = this.partsTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
+        return this.discountType === 'percentage' ? Math.round(base * (Number(this.discountValue) || 0)) / 100 : (Number(this.discountValue) || 0);
+    }
+}">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
     @foreach($statuses as $s)
         <option @selected($job->status===$s)>{{ $s }}</option>
     @endforeach
@@ -26,26 +38,37 @@
 <div class="relative">
     <input type="hidden" name="service_name" id="hidden_service_name" value="{{ $job->service_name ?: 'Service' }}">
     <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_service_name">{{ $job->service_name ?: 'Service' }}</span> (LKR) <button type="button" onclick="editName('Service', 'hidden_service_name', 'lbl_service_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
-    <input type="number" step=".01" name="service_total" value="{{ $job->service_total }}" class="field" @disabled($isLocked)>
+    <input type="number" step=".01" name="service_total" x-model.number="serviceTotal" value="{{ $job->service_total }}" class="field" @disabled($isLocked)>
 </div>
 
 <div class="relative">
     <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0">Labor (LKR)</span><span class="flex items-center gap-1 text-[10px] text-slate-500 font-bold"><input type="checkbox" name="show_labor_on_bill" value="1" class="size-3 accent-red-600" @checked($job->show_labor_on_bill) @disabled($isLocked)> Show on bill</span></label>
-    <input type="number" step=".01" name="labor_total" value="{{ $job->labor_total }}" class="field" @disabled($isLocked)>
+    <input type="number" step=".01" name="labor_total" x-model.number="laborTotal" value="{{ $job->labor_total }}" class="field" @disabled($isLocked)>
 </div>
 
 <div class="relative">
     <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0">Washing (LKR)</span><span class="flex items-center gap-1 text-[10px] text-slate-500 font-bold"><input type="checkbox" name="show_washing_on_bill" value="1" class="size-3 accent-red-600" @checked($job->show_washing_on_bill) @disabled($isLocked)> Show on bill</span></label>
-    <input type="number" step=".01" name="washing_total" value="{{ $job->washing_total }}" class="field" @disabled($isLocked)>
+    <input type="number" step=".01" name="washing_total" x-model.number="washingTotal" value="{{ $job->washing_total }}" class="field" @disabled($isLocked)>
 </div>
 
 <div class="relative">
     <input type="hidden" name="other_income_name" id="hidden_other_income_name" value="{{ $job->other_income_name ?: 'Other Income' }}">
     <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_other_income_name">{{ $job->other_income_name ?: 'Other Income' }}</span> (LKR) <button type="button" onclick="editName('Other Income', 'hidden_other_income_name', 'lbl_other_income_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
-    <input type="number" step=".01" name="other_total" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
+    <input type="number" step=".01" name="other_total" x-model.number="otherTotal" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
 </div>
 
-<label><span class="label">Discount (LKR)</span><input type="number" step=".01" name="discount" value="{{ $job->discount }}" class="field" @disabled($isLocked)></label>
+<div>
+    <label for="job-discount" class="label">Discount <span x-text="discountType === 'percentage' ? '(%)' : '(LKR)'">(LKR)</span></label>
+    <input type="hidden" name="discount_type" :value="discountType" @disabled($isLocked)>
+    <div class="flex items-stretch gap-2">
+        <div class="inline-flex shrink-0 rounded-xl bg-slate-100 p-1" role="group" aria-label="Discount type">
+            <button type="button" class="min-h-10 rounded-lg px-3 text-sm font-bold transition disabled:opacity-50" :class="discountType === 'fixed' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" :aria-pressed="discountType === 'fixed'" @click="discountType = 'fixed'" @disabled($isLocked)>Fixed</button>
+            <button type="button" aria-label="Percentage" class="min-h-10 min-w-10 rounded-lg px-3 text-sm font-bold transition disabled:opacity-50" :class="discountType === 'percentage' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" :aria-pressed="discountType === 'percentage'" @click="discountType = 'percentage'" @disabled($isLocked)>%</button>
+        </div>
+        <input id="job-discount" type="number" step=".01" min="0" :max="discountType === 'percentage' ? 100 : null" name="discount_value" x-model.number="discountValue" value="{{ old('discount_value', $job->discount_value ?? $job->discount) }}" class="field min-w-0 text-right" @disabled($isLocked)>
+    </div>
+    <p x-show="discountType === 'percentage'" x-cloak class="mt-1 text-xs text-slate-500">Discount: Rs. <span x-text="discountAmount.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span></p>
+</div>
 <label><span class="label">Tax (LKR)</span><input type="number" step=".01" name="tax" value="{{ $job->tax }}" class="field" @disabled($isLocked)></label>
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>

@@ -17,7 +17,7 @@
     })->filter(fn ($group) => count($group['children']) > 0)->values()->all();
 
     if (session('shop_mode', 'workshop') === 'helmet') {
-        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'accounts', 'expenses-drawings', 'reports', 'data-management', 'settings'];
+        $allowedGroups = ['dashboard', 'customers-bikes', 'products-stock', 'sales-billing', 'cheque-management', 'accounts', 'expenses-drawings', 'reports', 'data-management', 'settings'];
         $groups = collect($groups)->filter(fn($g) => in_array($g['slug'], $allowedGroups))->values()->toArray();
         foreach ($groups as &$group) {
             if ($group['slug'] === 'dashboard') {
@@ -31,7 +31,7 @@
                 $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['product-list', 'add-product', 'suppliers', 'categories', 'brands', 'units', 'stores', 'store-stock', 'stock-transfer', 'stock-adjustment', 'low-stock', 'damage-write-off']))->values()->toArray();
             }
             elseif ($group['slug'] === 'sales-billing') {
-                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['parts-sales', 'invoice-list', 'payments', 'due-bills', 'customer-payments']))->values()->toArray();
+                $group['children'] = collect($group['children'])->filter(fn($c) => in_array($c['slug'], ['parts-sales', 'parts-sales-list', 'invoice-list', 'payments', 'due-bills', 'customer-payments']))->values()->toArray();
                 $group['title'] = 'POS & Sales';
             }
             elseif ($group['slug'] === 'accounts') {

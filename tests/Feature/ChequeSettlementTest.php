@@ -148,3 +148,28 @@ test('empty split payments support credit sales and quotations', function () {
     $quotation = Invoice::where('invoice_type', 'Quotation')->firstOrFail();
     expect($quotation->status)->toBe('Draft')->and((float) $quotation->due_amount)->toBe(0.0)->and($quotation->payments()->count())->toBe(0);
 });
+
+test('editing linked cheque details preserves its amount and moves its pending bank account', function () {
+    $this->postJson(route('sales.parts.store'), $this->sale + ['payments' => [$this->cheque]])->assertOk();
+    $cheque = Cheque::firstOrFail();
+    $values = $cheque->only(['cheque_type','party_name','related_reference','cheque_number','bank_name','branch','amount','bank_account_id','note']) + ['cheque_date' => $cheque->cheque_date->toDateString()];
+    $this->put(route('accounts.cheques.update', $cheque), array_replace($values, ['amount' => 600]))->assertSessionHasErrors('amount');
+    $bank = Account::systemAccount('bank');
+    $this->put(route('accounts.cheques.update', $cheque), array_replace($values, ['bank_account_id' => $bank->id, 'cheque_number' => 'CORRECTED-001']))->assertSessionHasNoErrors();
+    expect((int) $cheque->payments()->first()->account_id)->toBe($bank->id)->and((float) Invoice::first()->hold_amount)->toBe(400.0);
+});
+
+test('deleting forwarded cheques restores both dues and preserves payment references', function (bool $passed) {
+    $this->postJson(route('sales.parts.store'), $this->sale + ['payments' => [$this->cheque]])->assertOk();
+    $cheque = Cheque::firstOrFail();
+    $this->post(route('purchases.store'), $this->purchase + ['payments' => [['method' => 'Party Cheque', 'amount' => 400, 'party_cheque_id' => $cheque->id]]])->assertSessionHasNoErrors();
+    if ($passed) {
+        $this->travelTo(now()->setDate(2026, 10, 8));
+        $this->patch(route('accounts.cheques.status', $cheque), ['status' => 'Cleared', 'realized_date' => '2026-10-08'])->assertSessionHasNoErrors();
+    }
+    $this->delete(route('accounts.cheques.destroy', $cheque), ['reason' => 'Incorrect cheque instrument'])->assertSessionHasNoErrors();
+    $invoice = Invoice::first();
+    $purchase = Purchase::first();
+    expect(Cheque::count())->toBe(0)->and((float) $invoice->hold_amount)->toBe(0.0)->and((float) $invoice->paid_amount)->toBe(0.0)->and((float) $invoice->due_amount)->toBe(1000.0)->and((float) $purchase->due_amount)->toBe(1000.0)->and((float) $purchase->hold_amount)->toBe(0.0)->and((float) $purchase->paid_amount)->toBe(0.0)->and((float) Account::systemAccount('bank')->balance)->toBe(0.0)->and($invoice->payments()->first()->cheque->trashed())->toBeTrue()->and($purchase->payments()->first()->cheque->trashed())->toBeTrue();
+    $this->get(route('accounts.cheques.show', $cheque))->assertOk()->assertSeeText('Customer → Supplier')->assertSeeText('Linked Payments');
+})->with([false, true]);

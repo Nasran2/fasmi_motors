@@ -1,4 +1,5 @@
 @props(['cheques'])
+@if($cheques->isNotEmpty())
 <section class="panel space-y-4">
     <div class="flex flex-wrap justify-between gap-2"><div><h2 class="text-lg font-extrabold">Cheques to Review</h2><p class="text-xs text-slate-500">Cheques due within two days and overdue cheques. Hold becomes paid when passed; returned amounts become due.</p></div><a class="btn-secondary" href="{{ route('accounts.cheques.index') }}">Cheque Register</a></div>
     <div class="grid gap-4 xl:grid-cols-2">
@@ -16,3 +17,4 @@
     @endforeach
     </div>
 </section>
+@endif

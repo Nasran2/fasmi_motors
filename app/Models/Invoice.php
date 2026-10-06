@@ -21,7 +21,7 @@ class Invoice extends Model
 
     protected function casts(): array
     {
-        return ['link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'link_enabled' => 'boolean', 'is_accident_quotation' => 'boolean'];
+        return ['link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'parts_deleted_at' => 'datetime', 'link_enabled' => 'boolean', 'is_accident_quotation' => 'boolean'];
     }
 
     public function jobCard(): BelongsTo
@@ -54,6 +54,11 @@ class Invoice extends Model
     public function items(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SaleReturn::class)->latest();
     }
 
     public function charges(): HasMany

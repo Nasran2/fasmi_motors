@@ -25,6 +25,9 @@
     @case('accounts')
         <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h15a2 2 0 0 1 2 2v11H5a2 2 0 0 1-2-2V6Zm0 0 12-3v3"/><path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z"/></svg>
         @break
+    @case('cheque')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h6m-6 4h4m4 3h6m-4-3 2 2 3-4"/></svg>
+        @break
     @case('expense')
         <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M8 8h8m-8 4h8m-8 4h5"/></svg>
         @break

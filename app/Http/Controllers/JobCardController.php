@@ -128,6 +128,8 @@ class JobCardController extends Controller
                 'washing_total' => 'nullable|numeric|min:0',
                 'other_total' => 'nullable|numeric|min:0',
                 'discount' => 'nullable|numeric|min:0',
+                'discount_type' => 'nullable|in:fixed,percentage',
+                'discount_value' => 'required_with:discount_type|nullable|numeric|min:0|max:999999999999.99',
                 'tax' => 'nullable|numeric|min:0',
                 'show_washing_on_bill' => 'nullable|boolean',
                 'show_labor_on_bill' => 'nullable|boolean',
@@ -135,6 +137,18 @@ class JobCardController extends Controller
                 'other_income_name' => 'nullable|string|max:50',
             ]);
             
+            if (($v['discount_type'] ?? null) === 'percentage' && (float) $v['discount_value'] > 100) {
+                throw ValidationException::withMessages(['discount_value' => 'Percentage discount must be between 0 and 100.']);
+            }
+            if (isset($v['discount_type'])) {
+                unset($v['discount']);
+            } elseif (isset($v['discount'])) {
+                $v['discount_type'] = 'fixed';
+                $v['discount_value'] = $v['discount'];
+            } else {
+                unset($v['discount_type'], $v['discount_value'], $v['discount']);
+            }
+
             // Checkboxes are only sent if checked, handle defaults
             $v['show_washing_on_bill'] = $r->has('show_washing_on_bill');
             $v['show_labor_on_bill'] = $r->has('show_labor_on_bill');

@@ -11,7 +11,7 @@ class Payment extends Model
 
     public function cheque(): BelongsTo
     {
-        return $this->belongsTo(Cheque::class);
+        return $this->belongsTo(Cheque::class)->withTrashed();
     }
 
     protected function casts(): array

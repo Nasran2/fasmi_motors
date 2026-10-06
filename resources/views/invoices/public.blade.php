@@ -227,6 +227,7 @@
         <tr><td>Subtotal</td><td>Rs. {{ number_format((float) $invoice->subtotal, 2) }}</td></tr>
         @if((float) $invoice->discount > 0)<tr><td>Discount</td><td>- Rs. {{ number_format((float) $invoice->discount, 2) }}</td></tr>@endif
         @if((float) $invoice->tax > 0)<tr><td>Tax</td><td>+ Rs. {{ number_format((float) $invoice->tax, 2) }}</td></tr>@endif
+        @if($invoice->return_amount>0)<tr><td>Returned credit</td><td>Rs. {{ number_format($invoice->return_amount,2) }}</td></tr>@endif
         <tr class="grand"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
         @unless($isQuotation)
             @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')

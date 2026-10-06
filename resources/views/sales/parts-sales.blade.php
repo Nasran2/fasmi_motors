@@ -23,7 +23,7 @@
             </a>
         @endif
         @if(auth()->user()->canAccess('sales.view_invoices'))
-            <a href="{{ route('sales.invoices') }}" class="relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border-2 border-slate-700 bg-transparent text-white hover:border-slate-500 hover:bg-slate-800 transition" title="Bills and quotations (Alt+L)" aria-label="Bills and quotations (Alt+L)">
+            <a href="{{ route('sales.parts.index') }}" class="relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border-2 border-slate-700 bg-transparent text-white hover:border-slate-500 hover:bg-slate-800 transition" title="Bills and quotations (Alt+L)" aria-label="Bills and quotations (Alt+L)">
                 <kbd class="pos-header-key">Alt+L</kbd><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M8 8h8M8 12h8"/></svg>
             </a>
         @endif
@@ -411,6 +411,7 @@
                     <p class="text-sm font-bold text-slate-500 mb-6" x-text="lastDocumentType === 'Quotation' ? 'Print or view the quotation now?' : 'Print or view the bill now?'"></p>
                     <div class="grid grid-cols-2 gap-3 mb-3">
                         <button @click="openDocument('80mm')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print 80mm</button>
+                        <a :href="lastInvoiceId ? @js(route('sales.invoices.pdf', ['invoice' => '__ID__', 'format' => '80mm'])).replace('__ID__', lastInvoiceId) : '#'" class="flex-1 py-3 text-center bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">80mm PDF</a>
                         <button @click="openDocument('a5')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm">Print A5</button>
                     </div>
                     <div class="flex gap-3">
