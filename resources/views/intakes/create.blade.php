@@ -24,7 +24,7 @@
                         <label><span class="label">Bike number <em class="not-italic text-red-500">*</em></span><input id="bike_number" name="bike_number" value="{{ old('bike_number') }}" class="field uppercase" required placeholder="BAM 5428" autocomplete="off"></label>
                         <label><span class="label">Bike model <em class="not-italic text-red-500">*</em></span><input id="bike_model" name="bike_model" value="{{ old('bike_model') }}" class="field" required placeholder="e.g. Yamaha FZ-S V3"></label>
                         <label><span class="label">Customer name</span><input id="customer_name" name="customer_name" value="{{ old('customer_name') }}" class="field" placeholder="Full name"></label>
-                        <label><span class="label">Phone number <em class="not-italic text-red-500">*</em></span><input id="phone" name="phone" value="{{ old('phone') }}" class="field" required placeholder="07X XXX XXXX"></label>
+                        <label><span class="label">Phone number <span class="text-xs font-normal text-slate-400">(optional)</span></span><input id="phone" name="phone" value="{{ old('phone') }}" class="field" placeholder="07X XXX XXXX"></label>
                         <label class="md:col-span-2"><span class="label">Address</span><input id="address" name="address" value="{{ old('address') }}" class="field" placeholder="Customer address"></label>
                         <label><span class="label">Brand</span><input name="brand" value="{{ old('brand') }}" class="field" placeholder="Yamaha, Honda, Bajaj..."></label>
                         <label><span class="label">Color</span><input name="color" value="{{ old('color') }}" class="field" placeholder="Bike color"></label>

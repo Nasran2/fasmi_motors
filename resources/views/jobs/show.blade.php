@@ -84,6 +84,10 @@
             <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
+            @if($job->invoice->change_amount > 0)
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Amount received</dt><dd class="font-bold">Rs. {{ number_format($job->invoice->received_amount,2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-violet-700"><dt>Change to return</dt><dd class="font-bold">Rs. {{ number_format($job->invoice->change_amount,2) }}</dd></div>
+            @endif
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold">Rs. {{ number_format($job->invoice->hold_amount,2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
             @endif
@@ -100,7 +104,7 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
             @csrf<x-submission-token/>
-            <x-split-payments :accounts="$accounts" />
+            <x-split-payments :accounts="$accounts" :change-total="$job->total" />
             <button class="btn-primary w-full">Generate invoice</button>
         </form>
         @endif
@@ -453,7 +457,7 @@ function saveEditedName() {
             <p class="text-xs font-bold text-red-500">Outstanding Due</p>
             <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
         </div>
-        <div class="mt-4"><x-split-payments :accounts="$accounts" /></div>
+        <div class="mt-4"><x-split-payments :accounts="$accounts" :change-total="$job->invoice?->due_amount ?? 0" /></div>
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
             <button class="btn-primary">Save Payment</button>
@@ -470,9 +474,7 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
     document.getElementById('due-payment-title').textContent = `Pay Bill ${invoiceNumber}`;
     document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
     
-    const amountInput = document.getElementById('due-payment-amount');
-    if (amountInput) amountInput.value = parseFloat(dueAmount).toFixed(2);
-    if (amountInput) amountInput.max = parseFloat(dueAmount);
+    form.dispatchEvent(new CustomEvent('payment-due-selected', {bubbles: true, detail: {due: Number(dueAmount)}}));
     
     dialog.showModal();
 }

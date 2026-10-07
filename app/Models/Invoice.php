@@ -35,6 +35,16 @@ class Invoice extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function getReceivedAmountAttribute(): float
+    {
+        return round($this->payments->whereIn('status', ['Completed', 'Hold'])->sum(fn ($payment) => (float) ($payment->received_amount ?? $payment->amount)), 2);
+    }
+
+    public function getChangeAmountAttribute(): float
+    {
+        return round($this->payments->whereIn('status', ['Completed', 'Hold'])->sum('change_amount'), 2);
+    }
+
     /** @return BelongsTo<Customer, $this> */
     public function customer(): BelongsTo
     {

@@ -41,12 +41,17 @@ class LiveBoardController extends Controller
 
     public function data(Request $request): JsonResponse
     {
+        $customerDisplay = $request->boolean('customer_display');
         $jobs = JobCard::query()
             ->with(['intake.bike.customer', 'technician', 'parts', 'invoice'])
-            ->whereNotIn('status', self::TERMINAL_STATUSES)
-            ->where(function ($q) {
-                $q->where('status', '!=', 'Billed')
-                    ->orWhereHas('invoice', fn ($inv) => $inv->where('due_amount', '>', 0));
+            ->when($customerDisplay, function ($query) {
+                $query->whereNotIn('status', ['Delivered', 'Cancelled']);
+            }, function ($query) {
+                $query->whereNotIn('status', self::TERMINAL_STATUSES)
+                    ->where(function ($q) {
+                        $q->where('status', '!=', 'Billed')
+                            ->orWhereHas('invoice', fn ($inv) => $inv->where('due_amount', '>', 0));
+                    });
             })
             ->when($request->filled('technician_id'), fn ($query) => $query->where('main_technician_id', $request->integer('technician_id')))
             ->when($request->filled('priority'), fn ($query) => $query->where('priority', $request->string('priority')))
@@ -79,6 +84,11 @@ class LiveBoardController extends Controller
                 'complaint' => $intake?->complaint ?? 'No complaint recorded',
                 'technician' => $job->technician?->name ?? 'Unassigned',
                 'technician_initial' => mb_strtoupper(mb_substr($job->technician?->name ?? 'U', 0, 1)),
+                'customer_stage' => match (true) {
+                    in_array($job->status, ['Repair Ready', 'Ready for Delivery', 'Pending Payment', 'Completed', 'Billed'], true) => 'completed',
+                    $job->status === 'Received' && ! $job->main_technician_id => 'intakes',
+                    default => 'processing',
+                },
                 'priority' => $job->priority,
                 'status' => $boardStatus,
                 'database_status' => $job->status,
@@ -124,6 +134,7 @@ class LiveBoardController extends Controller
                         'complaint' => $intake->complaint ?? 'No complaint recorded',
                         'technician' => 'Awaiting assignment',
                         'technician_initial' => '—',
+                        'customer_stage' => 'intakes',
                         'priority' => 'Normal',
                         'status' => 'new_intake',
                         'database_status' => 'New Intake',
@@ -155,7 +166,9 @@ class LiveBoardController extends Controller
             $cards = $cards->filter(fn ($card) => $card['status'] === 'pending_payment' || $card['due_amount'] > 0);
         }
 
-        $groups = collect(array_keys(self::BOARD_STATUSES))->mapWithKeys(fn ($status) => [$status => $cards->where('status', $status)->values()]);
+        $groups = $customerDisplay
+            ? collect(['intakes', 'processing', 'completed'])->mapWithKeys(fn ($stage) => [$stage => $cards->where('customer_stage', $stage)->values()])
+            : collect(array_keys(self::BOARD_STATUSES))->mapWithKeys(fn ($status) => [$status => $cards->where('status', $status)->values()]);
 
         return response()->json([
             'groups' => $groups,

@@ -276,6 +276,10 @@
         @unless($isQuotation)
             @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
                 <tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr>
+                @if($invoice->change_amount > 0)
+                <tr><td>Amount received</td><td>Rs. {{ number_format($invoice->received_amount, 2) }}</td></tr>
+                <tr><td>Change to return</td><td>Rs. {{ number_format($invoice->change_amount, 2) }}</td></tr>
+                @endif
                 @if((float) $invoice->hold_amount > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $invoice->hold_amount, 2) }}</td></tr>@endif
                 <tr class="balance"><td>Balance due</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
             @endif

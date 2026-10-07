@@ -206,11 +206,16 @@ class CustomerBikeController extends Controller
         $rows = $settlement->rows($request->all());
         DB::transaction(function () use ($rows, $invoice, $settlement) {
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
-            if (! $rows || $invoice->status === 'Cancelled' || $settlement->total($rows) > (float) $invoice->due_amount) {
-                throw ValidationException::withMessages(['amount' => 'Enter payments within the current invoice due.']);
+            if (! $rows || $invoice->status === 'Cancelled' || (float) $invoice->due_amount <= 0) {
+                throw ValidationException::withMessages(['amount' => 'Select an invoice with an outstanding due and enter a payment.']);
             }
-            foreach ($rows as $row) {
-                $settlement->receive($invoice, $row);
+            $nonCashRows = array_values(array_filter($rows, fn ($row) => $row['method'] !== 'Cash'));
+            $cashRows = array_values(array_filter($rows, fn ($row) => $row['method'] === 'Cash'));
+            if ($settlement->total($nonCashRows) > round((float) $invoice->due_amount, 2)) {
+                throw ValidationException::withMessages(['amount' => 'Non-cash payments cannot exceed the remaining due. Enter excess cash as Cash to calculate change.']);
+            }
+            foreach (array_merge($nonCashRows, $cashRows) as $row) {
+                $settlement->receive($invoice, $row, allowCashChange: true);
             }
         });
 

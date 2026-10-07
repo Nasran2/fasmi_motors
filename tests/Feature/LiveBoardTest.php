@@ -3,7 +3,9 @@
 use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Customer;
+use App\Models\Invoice;
 use App\Models\JobCard;
+use App\Models\Technician;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -29,7 +31,48 @@ test('authenticated staff can load both live board views and live data', functio
         ->assertOk()
         ->assertJsonStructure(['groups', 'counts', 'total', 'updated_at']);
 
-    $this->get(route('live-board.customer'))->assertOk()->assertSee('Object.values(data.groups || {})', false);
+    $this->get(route('live-board.customer'))
+        ->assertOk()
+        ->assertSee('INTAKES')
+        ->assertSee('PROCESSING')
+        ->assertSee('COMPLETED')
+        ->assertSee('customer_display=1', false)
+        ->assertDontSee('READY / WAITING');
+});
+
+test('customer display groups all workshop bikes into intake processing and completed stages', function () {
+    $user = User::factory()->create(['email_verified_at' => now()]);
+    $this->actingAs($user);
+    $customer = Customer::create(['name' => 'Live Board Customer', 'phone' => '0771234567']);
+    $technician = Technician::create(['name' => 'Workshop Technician', 'phone' => '0700000001', 'active' => true]);
+    $bike = Bike::create(['customer_id' => $customer->id, 'number' => 'WP LIVE 2001', 'model' => 'Honda Dio']);
+    BikeIntake::create(['intake_number' => 'IN-UNASSIGNED', 'bike_id' => $bike->id, 'complaint' => 'Service', 'created_by' => $user->id]);
+
+    $statuses = ['Received', 'Assigned', 'Diagnosis', 'In Progress', 'Waiting for Parts', 'Washing / Final Check', 'On Hold', 'Repair Ready', 'Ready for Delivery', 'Pending Payment', 'Completed', 'Billed', 'Delivered', 'Cancelled'];
+    foreach ($statuses as $index => $status) {
+        $intake = BikeIntake::create(['intake_number' => 'IN-STAGE-'.$index, 'bike_id' => $bike->id, 'complaint' => 'Service', 'created_by' => $user->id]);
+        $job = JobCard::create(['number' => 'JOB-STAGE-'.$index, 'bike_intake_id' => $intake->id, 'status' => $status, 'priority' => 'Normal', 'created_by' => $user->id]);
+        if (in_array($status, ['Billed', 'Pending Payment'], true)) {
+            $paid = $status === 'Billed';
+            Invoice::create(['number' => 'INV-STAGE-'.$index, 'invoice_type' => 'Job Card', 'job_card_id' => $job->id, 'customer_id' => $customer->id, 'subtotal' => 1000, 'total' => 1000, 'paid_amount' => $paid ? 1000 : 0, 'due_amount' => $paid ? 0 : 1000, 'status' => $paid ? 'Paid' : 'Unpaid', 'public_token' => 'live-board-test-'.$index, 'created_by' => $user->id]);
+        }
+    }
+
+    $assignedIntake = BikeIntake::create(['intake_number' => 'IN-ASSIGNED', 'bike_id' => $bike->id, 'complaint' => 'Service', 'created_by' => $user->id]);
+    JobCard::create(['number' => 'JOB-ASSIGNED-RECEIVED', 'bike_intake_id' => $assignedIntake->id, 'main_technician_id' => $technician->id, 'status' => 'Received', 'priority' => 'Normal', 'created_by' => $user->id]);
+
+    $response = $this->getJson(route('live-board.data', ['customer_display' => 1]))
+        ->assertOk()
+        ->assertJsonPath('total', 14)
+        ->assertJsonPath('counts.intakes', 2)
+        ->assertJsonPath('counts.processing', 7)
+        ->assertJsonPath('counts.completed', 5)
+        ->assertJsonMissing(['database_status' => 'Delivered'])
+        ->assertJsonMissing(['database_status' => 'Cancelled']);
+
+    expect(collect($response->json('groups.intakes'))->pluck('database_status')->all())->toBe(['Received', 'New Intake'])
+        ->and(collect($response->json('groups.processing'))->pluck('database_status')->all())->toBe(['Assigned', 'Diagnosis', 'In Progress', 'Waiting for Parts', 'Washing / Final Check', 'On Hold', 'Received'])
+        ->and(collect($response->json('groups.completed'))->pluck('database_status')->all())->toBe(['Repair Ready', 'Ready for Delivery', 'Pending Payment', 'Completed', 'Billed']);
 });
 
 test('live data includes unassigned intakes and excludes terminal jobs', function () {

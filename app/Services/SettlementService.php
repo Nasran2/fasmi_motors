@@ -78,11 +78,19 @@ class SettlementService
         return round(array_sum(array_column($rows, 'amount')), 2);
     }
 
-    public function receive(Invoice $invoice, array $row, $date = null, ?Cheque $cheque = null): Payment
+    public function receive(Invoice $invoice, array $row, $date = null, ?Cheque $cheque = null, bool $allowCashChange = false): Payment
     {
-        return DB::transaction(function () use ($invoice, $row, $date, $cheque) {
+        return DB::transaction(function () use ($invoice, $row, $date, $cheque, $allowCashChange) {
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
-            $this->checkAmount($row, (float) $invoice->due_amount);
+            $received = round((float) $row['amount'], 2);
+            $change = 0;
+            if ($allowCashChange && $row['method'] === 'Cash' && $received > 0) {
+                $row['amount'] = min($received, max(0, round((float) $invoice->due_amount, 2)));
+                $change = round($received - $row['amount'], 2);
+            }
+            if ($change <= 0 || (float) $row['amount'] > 0) {
+                $this->checkAmount($row, (float) $invoice->due_amount);
+            }
             if ($row['method'] === 'Cheque') {
                 if (! $invoice->customer_id) {
                     throw ValidationException::withMessages(['customer_id' => 'Select a customer when receiving a cheque.']);
@@ -91,13 +99,14 @@ class SettlementService
             }
             $payment = $invoice->payments()->create([
                 'number' => 'RCPT-'.Str::upper(Str::random(12)), 'amount' => $row['amount'], 'method' => $row['method'],
+                'received_amount' => $received, 'change_amount' => $change,
                 'account_id' => $row['account_id'] ?? null, 'cheque_id' => $cheque?->id,
                 'paid_at' => $date ?? now(), 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $invoice->due_amount - (float) $row['amount'], 2),
                 'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),
             ]);
             $this->move($invoice, (float) $payment->amount, $cheque ? 'hold_amount' : 'paid_amount', 1);
-            if (! $cheque) {
+            if (! $cheque && (float) $payment->amount > 0) {
                 app(AccountService::class)->receiveInvoicePayment($invoice->fresh(), $payment);
             }
 

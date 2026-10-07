@@ -47,8 +47,8 @@ class WorkshopService
                 throw ValidationException::withMessages(['invoice' => 'This job card is already billed.']);
             }
             $total = $job->total;
-            if ($paid < 0 || $paid > $total) {
-                throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the invoice total.']);
+            if ($paid < 0) {
+                throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
             }
             $invoice = $job->invoice()->create([
                 'number' => InvoiceNumber::next('Job Card Bill'),
@@ -64,11 +64,14 @@ class WorkshopService
             ]);
             $settlement = app(SettlementService::class);
             $rows = $payments ?? $settlement->rows(['paid_amount' => $paid, 'payment_method' => $method, 'account_id' => $accountId ?? Account::systemAccount('main')->id]);
-            if ($settlement->total($rows) > $total) {
-                throw ValidationException::withMessages(['paid_amount' => 'Payments exceed the invoice total.']);
+            $nonCashRows = array_values(array_filter($rows, fn ($row) => $row['method'] !== 'Cash'));
+            $cashRows = array_values(array_filter($rows, fn ($row) => $row['method'] === 'Cash'));
+            if ($settlement->total($nonCashRows) > round($total, 2)) {
+                throw ValidationException::withMessages(['paid_amount' => 'Non-cash payments cannot exceed the invoice total. Enter excess cash as Cash to calculate change.']);
             }
-            foreach ($rows as $row) {
-                $settlement->receive($invoice, $row);
+            // Apply fixed bank/card/cheque amounts before calculating cash change.
+            foreach (array_merge($nonCashRows, $cashRows) as $row) {
+                $settlement->receive($invoice, $row, allowCashChange: true);
             }
             $invoice->refresh();
             $invoice->payment_method = count($rows) > 1 ? 'Mixed' : $method;

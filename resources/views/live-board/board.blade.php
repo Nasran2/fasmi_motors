@@ -342,16 +342,14 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
     document.getElementById('due-payment-title').textContent = `Pay Bill ${invoiceNumber}`;
     document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
     
-    const amountInput = document.getElementById('due-payment-amount');
-    amountInput.value = parseFloat(dueAmount).toFixed(2);
-    amountInput.max = parseFloat(dueAmount);
+    form.dispatchEvent(new CustomEvent('payment-due-selected', {bubbles: true, detail: {due: Number(dueAmount)}}));
     
     dialog.showModal();
 }
 </script>
 
 {{-- Due Payment Dialog --}}
-<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important;">
+<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
     <form method="POST" id="due-payment-form" class="p-6">
         @csrf<x-submission-token/>
         <div class="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -365,29 +363,8 @@ function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
             <p class="text-xs font-bold text-red-500">Outstanding Due</p>
             <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
         </div>
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <label class="block">
-                <span class="label" style="color: #475569 !important;">Payment Amount *</span>
-                <input type="number" step="0.01" min="0.01" name="amount" id="due-payment-amount" class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
-            </label>
-            <label class="block">
-                <span class="label" style="color: #475569 !important;">Payment Method *</span>
-                <select name="method" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
-                    <option>Cash</option>
-                    <option>Card</option>
-                    <option>Bank Transfer</option>
-                    <option>Cheque</option>
-                    <option>QR</option>
-                </select>
-            </label>
-            <label class="sm:col-span-2 block">
-                <span class="label" style="color: #475569 !important;">Deposit Account *</span>
-                <select name="account_id" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
-                    @foreach($accounts as $account)
-                    <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
-                    @endforeach
-                </select>
-            </label>
+        <div class="mt-4 space-y-3">
+            <x-split-payments :accounts="$accounts" :change-total="0" />
             <label class="sm:col-span-2 block">
                 <span class="label" style="color: #475569 !important;">Note</span>
                 <textarea name="note" rows="2" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;"></textarea>

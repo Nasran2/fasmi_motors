@@ -11,6 +11,9 @@ final class ThermalReceipt
         // Leave enough room for wrapping product names, contact details, and customer terms.
         $text = ($data['business']['business_address'] ?? '').$data['wording']['customerNote'].$data['wording']['terms'];
         $heightMm = 120 + ceil(mb_strlen($text) / 30) * 4;
+        if ($data['invoice']->change_amount > 0) {
+            $heightMm += 12;
+        }
         foreach ($data['lines'] as $line) {
             $heightMm += 11 + ceil(mb_strlen($line['name'].$line['detail']) / 30) * 4;
         }
