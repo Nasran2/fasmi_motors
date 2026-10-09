@@ -296,7 +296,7 @@ class JobCardController extends Controller
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
         $rows = $settlement->rows($input);
-        $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows);
+        $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id);
 
         return redirect()->route('jobs.show', $job)->with([
             'success' => 'Invoice generated.',

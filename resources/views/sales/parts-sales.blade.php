@@ -153,23 +153,36 @@
                 <span x-show="cart.bikeNumber" class="block text-[11px] font-medium" x-text="'Bike: ' + cart.bikeNumber"></span>
             </div>
             <!-- Customer Section -->
-            <div class="p-4 border-b border-slate-100 flex gap-2">
+            <div class="p-4 border-b border-slate-100 flex flex-col gap-3">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <select id="pos-customer-select" class="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition appearance-none" x-model="cart.customerId" title="Select customer (Alt+Y)">
+                            <option value="">Walk-in Customer</option>
+                            <option value="new" x-show="cart.customerName" x-text="'New: ' + cart.customerName"></option>
+                            @foreach($customers as $customer)
+                                <option value="{{ $customer->id }}">{{ $customer->name }} — {{ $customer->phone }}</option>
+                            @endforeach
+                        </select>
+                        <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                        </div>
+                    </div>
+                    <button type="button" @click="openNewCustomer" title="Add customer (Alt+A)" aria-label="Add customer (Alt+A)" class="relative size-11 shrink-0 grid place-items-center bg-[#0b2447] text-white rounded-xl hover:bg-[#123665] transition shadow-md">
+                        <kbd class="pos-key !text-white">Alt+A</kbd>
+                        <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    </button>
+                </div>
                 <div class="relative flex-1">
-                    <select id="pos-customer-select" class="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition appearance-none" x-model="cart.customerId" title="Select customer (Alt+Y)">
-                        <option value="">Walk-in Customer</option>
-                        <option value="new" x-show="cart.customerName" x-text="'New: ' + cart.customerName"></option>
-                        @foreach($customers as $customer)
-                            <option value="{{ $customer->id }}">{{ $customer->name }} — {{ $customer->phone }}</option>
+                    <select class="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition appearance-none" x-model="cart.technicianId" title="Assign Technician for Commission">
+                        <option value="">No Technician (No Commission)</option>
+                        @foreach($technicians as $tech)
+                            <option value="{{ $tech->id }}">{{ $tech->name }}</option>
                         @endforeach
                     </select>
                     <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
                         <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
                     </div>
                 </div>
-                <button type="button" @click="openNewCustomer" title="Add customer (Alt+A)" aria-label="Add customer (Alt+A)" class="relative size-11 shrink-0 grid place-items-center bg-[#0b2447] text-white rounded-xl hover:bg-[#123665] transition shadow-md">
-                    <kbd class="pos-key !text-white">Alt+A</kbd>
-                    <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
             </div>
 
             <!-- Cart Items -->
@@ -679,6 +692,7 @@
                 
                 cart: {
                     customerId: '',
+                    technicianId: '',
                     customerName: '',
                     customerPhone: '',
                     internalNote: '',
@@ -1122,7 +1136,7 @@
                 closeDialog(id) { document.getElementById(id)?.close(); },
 
                 resetCart() {
-                    this.cart = { customerId: '', customerName: '', customerPhone: '', internalNote: '', customerNote: '', items: [], charges: [], sourceQuotationId: null, sourceQuotationNumber: '', bikeNumber: '', subtotal: 0, discountType: 'fixed', discountValue: 0, discount: 0, tax: 0, total: 0 };
+                    this.cart = { customerId: '', technicianId: '', customerName: '', customerPhone: '', internalNote: '', customerNote: '', items: [], charges: [], sourceQuotationId: null, sourceQuotationNumber: '', bikeNumber: '', subtotal: 0, discountType: 'fixed', discountValue: 0, discount: 0, tax: 0, total: 0 };
                     this.submissionToken = crypto.randomUUID();
                     this.persistCart();
                 },

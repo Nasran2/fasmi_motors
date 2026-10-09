@@ -150,6 +150,7 @@ class SalesBillingController extends Controller
 
         return view('sales.parts-sales', [
             'customers' => Customer::where('active', true)->orderBy('name')->get(['id', 'name', 'phone']),
+            'technicians' => Technician::where('active', true)->orderBy('name')->get(['id', 'name']),
             'stores' => Store::where('active', true)->orderByDesc('is_default')->get(['id', 'name']),
             'accounts' => Account::where('active', true)->get(['id', 'name', 'code', 'type']),
             'categories' => $categories,
@@ -169,6 +170,7 @@ class SalesBillingController extends Controller
             'customer_id' => 'nullable|exists:customers,id',
             'customer_name' => 'nullable|string|max:255',
             'customer_phone' => 'nullable|string|max:255',
+            'technician_id' => 'nullable|exists:technicians,id',
             'store_id' => 'required|exists:stores,id',
             'discount' => 'nullable|numeric|min:0',
             'tax' => 'nullable|numeric|min:0',
@@ -340,6 +342,34 @@ class SalesBillingController extends Controller
                 }
                 $invoice->refresh();
                 $settlement->saveStatus($invoice);
+                
+                // Process Technician Commission
+                if (!empty($v['technician_id'])) {
+                    $technician = Technician::find($v['technician_id']);
+                    if ($technician && $technician->commission_enabled && (float)$technician->parts_commission_percentage > 0) {
+                        $baseAmount = 0;
+                        if (stripos($technician->commission_type, 'profit') !== false) {
+                            $baseAmount = $invoice->items->sum('profit');
+                        } else {
+                            $baseAmount = $partsSubtotal;
+                        }
+                        
+                        if ($baseAmount > 0) {
+                            $amount = $baseAmount * ((float)$technician->parts_commission_percentage / 100);
+                            \App\Models\TechnicianCommission::create([
+                                'technician_id' => $technician->id,
+                                'invoice_id' => $invoice->id,
+                                'commission_type' => 'Parts Sale',
+                                'percentage' => (float)$technician->parts_commission_percentage,
+                                'base_amount' => $baseAmount,
+                                'amount' => round($amount, 2),
+                                'earned_date' => now()->toDateString(),
+                                'status' => 'Pending',
+                                'created_by' => auth()->id(),
+                            ]);
+                        }
+                    }
+                }
             }
 
             $sourceQuotation?->update(['status' => 'Converted']);

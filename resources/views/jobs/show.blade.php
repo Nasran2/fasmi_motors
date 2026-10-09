@@ -105,7 +105,16 @@
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
             @csrf<x-submission-token/>
             <x-split-payments :accounts="$accounts" :change-total="$job->total" />
-            <button class="btn-primary w-full">Generate invoice</button>
+            <div class="mt-3">
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Parts Commission (Optional)</label>
+                <select name="parts_technician_id" class="field">
+                    <option value="">-- Same as Main Technician --</option>
+                    @foreach(\App\Models\Technician::where('active', true)->orderBy('name')->get() as $tech)
+                        <option value="{{ $tech->id }}">{{ $tech->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <button class="btn-primary w-full mt-3">Generate invoice</button>
         </form>
         @endif
     </div>
