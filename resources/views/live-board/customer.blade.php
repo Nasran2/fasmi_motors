@@ -10,11 +10,12 @@
         .column { background: rgba(255, 255, 255, 0.03); border-radius: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.05); padding: 1.5rem; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
         .col-title { font-size: clamp(1.25rem, 2vw, 2rem); font-weight: 900; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 1rem; border-bottom: 2px solid rgba(255, 255, 255, 0.1); }
         
-        .bike-card { background: rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; animation: fade-in 0.5s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-        .bike-card:last-child { margin-bottom: 0; }
-        .bike-number { font-size: clamp(1.5rem, 2.5vw, 2.5rem); font-weight: 900; letter-spacing: 2px; overflow-wrap: anywhere; }
-        .bike-customer { font-size: 1.125rem; font-weight: 600; color: #cbd5e1; overflow-wrap: anywhere; }
-        .status-badge { padding: 0.5rem 1rem; border-radius: 2rem; font-size: 1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .bike-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+        .bike-card { background: rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 0.875rem; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem; animation: fade-in 0.5s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .bike-card > div:first-child { min-width: 0; width: 100%; }
+        .bike-number { font-size: clamp(1.125rem, 1.5vw, 1.75rem); font-weight: 900; letter-spacing: 1px; overflow-wrap: anywhere; }
+        .bike-customer { margin-top: 0.25rem; font-size: clamp(0.85rem, 1vw, 1rem); font-weight: 600; color: #cbd5e1; overflow-wrap: anywhere; }
+        .status-badge { margin-top: auto; max-width: 100%; box-sizing: border-box; padding: 0.5rem 0.75rem; border-radius: 2rem; font-size: clamp(0.7rem, 0.8vw, 0.85rem); font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; overflow-wrap: anywhere; }
         .empty-state { padding: 2rem 1rem; color: #94a3b8; text-align: center; font-size: 1.125rem; }
 
         .status-badge { background: var(--status-background); color: var(--status-color); border: 1px solid var(--status-border); }
@@ -24,6 +25,7 @@
         /* Auto scroll */
         .scroller { overflow: hidden; flex: 1; position: relative; }
         .scroll-content { position: absolute; width: 100%; transition: top 1s linear; }
+        #list-processing { top: 0; transition: none; will-change: transform; }
 
         header { padding: 1.5rem 2rem; background: rgba(0, 0, 0, 0.3); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; height: 100px; box-sizing: border-box; }
         .logo-text { font-size: 2.5rem; font-weight: 900; font-style: italic; letter-spacing: -1px; }
@@ -83,6 +85,9 @@
         }, 1000);
 
         let autoScrollers = {};
+        let processingHtml = null;
+        let processingFrame = null;
+        let processingOffset = 0;
 
         const statusColors = {
             'New Intake': '#60a5fa',
@@ -114,7 +119,41 @@
             return element.innerHTML;
         }
 
+        function startProcessingScroll() {
+            if (processingFrame !== null) cancelAnimationFrame(processingFrame);
+            const container = document.getElementById('scroll-processing');
+            const content = document.getElementById('list-processing');
+            const cycle = document.createElement('div');
+            cycle.innerHTML = processingHtml;
+            const repeat = cycle.cloneNode(true);
+            repeat.setAttribute('aria-hidden', 'true');
+            repeat.style.marginTop = '1rem';
+            content.replaceChildren(cycle);
+            let previousTime = null;
+
+            function scrollFrame(time) {
+                const elapsed = previousTime === null ? 0 : Math.min((time - previousTime) / 1000, 0.1);
+                previousTime = time;
+                if (container.clientHeight > 0 && cycle.offsetHeight > container.clientHeight) {
+                    if (repeat.parentNode !== content) content.appendChild(repeat);
+                    const cycleHeight = repeat.offsetTop - cycle.offsetTop;
+                    processingOffset = (processingOffset + elapsed * 32) % cycleHeight;
+                } else {
+                    repeat.remove();
+                    processingOffset = 0;
+                }
+                content.style.transform = `translateY(-${processingOffset}px)`;
+                processingFrame = requestAnimationFrame(scrollFrame);
+            }
+
+            processingFrame = requestAnimationFrame(scrollFrame);
+        }
+
         function startAutoScroll(id) {
+            if (id === 'processing') {
+                startProcessingScroll();
+                return;
+            }
             if (autoScrollers[id]) clearInterval(autoScrollers[id]);
             const container = document.getElementById('scroll-' + id);
             const content = document.getElementById('list-' + id);
@@ -142,7 +181,7 @@
                 
                 ['intakes', 'processing', 'completed'].forEach(stage => {
                     const cards = data.groups?.[stage] || [];
-                    const html = cards.map(card => {
+                    const cardsHtml = cards.map(card => {
                         const statusLabel = card.database_status || boardStatusLabels[card.status] || String(card.status || '').replaceAll('_', ' ');
                         const statusColor = statusColors[statusLabel] || '#cbd5e1';
 
@@ -155,11 +194,14 @@
                                 <div class="status-badge" style="--status-color:${statusColor};--status-background:${statusColor}26;--status-border:${statusColor}80;">${escapeBoardText(statusLabel)}</div>
                             </div>
                         `;
-                    }).join('') || '<div class="empty-state">No bikes in this stage</div>';
+                    }).join('');
+                    const html = cards.length ? `<div class="bike-grid">${cardsHtml}</div>` : '<div class="empty-state">No bikes in this stage</div>';
 
                     document.getElementById('count-' + stage).innerText = cards.length;
                     const list = document.getElementById('list-' + stage);
-                    if (list.innerHTML !== html) {
+                    const changed = stage === 'processing' ? processingHtml !== html : list.innerHTML !== html;
+                    if (changed) {
+                        if (stage === 'processing') processingHtml = html;
                         list.innerHTML = html;
                         startAutoScroll(stage);
                     }
