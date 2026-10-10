@@ -29,6 +29,24 @@ class LiveBoardController extends Controller
         return view('live-board.index', ['technicians' => Technician::where('active', true)->orderBy('name')->get()]);
     }
 
+    public function technicians()
+    {
+        $technicians = Technician::where('active', true)
+            ->where('role', 'technician')
+            ->with(['jobCards' => function($q) {
+                $q->whereNotIn('status', self::TERMINAL_STATUSES)
+                  ->where(function ($q2) {
+                      $q2->where('status', '!=', 'Billed')
+                          ->orWhereHas('invoice', fn ($inv) => $inv->where('due_amount', '>', 0));
+                  })
+                  ->with('intake.bike.customer');
+            }])
+            ->orderBy('name')
+            ->get();
+            
+        return view('live-board.technicians', compact('technicians'));
+    }
+
     public function fullscreen()
     {
         return view('live-board.fullscreen');

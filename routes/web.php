@@ -39,6 +39,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('search', GlobalSearchController::class)->name('search');
     Route::post('notifications/clear', [\App\Http\Controllers\WorkshopNotificationController::class, 'clear'])->name('notifications.clear');
     Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
+    Route::get('live-bike-status/technicians', [LiveBoardController::class, 'technicians'])->name('live-board.technicians');
     Route::get('workshop/live-board', [LiveBoardController::class, 'fullscreen'])->name('live-board.fullscreen');
     Route::get('workshop/live-board/customer', [LiveBoardController::class, 'customer'])->name('live-board.customer');
     Route::get('workshop/live-board/data', [LiveBoardController::class, 'data'])->name('live-board.data');

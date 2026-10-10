@@ -68,6 +68,7 @@
             <span id="board-clock" class="h-10 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-600 shadow-sm"></span>
             @unless($fullscreen)
                 <button type="button" data-calculator-open class="inline-flex h-11 items-center gap-2 rounded-xl bg-[#ed142b] px-4 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(237,20,43,.24)] transition hover:-translate-y-0.5 hover:bg-red-700">{!! $icon('plus', 'size-4') !!} Quick Calculator</button>
+                <a href="{{ route('live-board.technicians') }}" class="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-[#07182f] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300">👨‍🔧 Technician Load</a>
                 <a href="{{ route('live-board.fullscreen') }}" target="_blank" rel="noopener" class="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-[#07182f] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300">Open Full Board <span aria-hidden="true">↗</span></a>
             @else
                 <span class="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 text-xs font-bold text-emerald-700"><span class="size-2 animate-pulse rounded-full bg-emerald-500"></span>Refreshes every 30s</span>
