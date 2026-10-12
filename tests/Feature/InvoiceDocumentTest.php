@@ -13,6 +13,7 @@ use App\Models\StoreStock;
 use App\Models\Technician;
 use App\Models\User;
 use App\Support\InvoiceDocument;
+use App\Support\ThermalReceipt;
 
 test('job card invoices preserve vehicle technician and service details in both paper formats', function () {
     $user = User::factory()->create();
@@ -184,4 +185,23 @@ test('invalid renamed charges cannot create an invoice or change the stored labe
     $job = JobCard::create(['number' => 'JOB-INVALID-NAME', 'bike_intake_id' => $intake->id, 'status' => 'Received', 'priority' => 'Normal', 'other_total' => 100, 'created_by' => $user->id]);
     $this->post(route('jobs.invoice', $job), ['other_income_name' => str_repeat('x', 51)])->assertSessionHasErrors('other_income_name');
     expect($job->fresh()->invoice)->toBeNull()->and($job->fresh()->other_income_name)->toBe('Other');
+});
+
+test('thermal PDFs fit short and long receipts on an 80 mm roll', function () {
+    $user = User::factory()->create();
+    $invoice = Invoice::create(['number' => 'INV-ROLL-LENGTH', 'invoice_type' => 'Quotation', 'subtotal' => 100, 'total' => 100, 'due_amount' => 100, 'public_token' => 'roll-length-token', 'created_by' => $user->id]);
+    $data = InvoiceDocument::data($invoice, pdfMode: true);
+    $heights = [];
+    foreach ([1, 45] as $count) {
+        $data['lines'] = array_fill(0, $count, ['name' => 'Long replacement chain guard for Discover 125 and 135', 'detail' => 'SKU-NOT-PRINTED', 'qty' => 1, 'rate' => 100, 'total' => 100]);
+        $preview = view('invoices.thermal', $data)->render();
+        expect($preview)->toContain('Long replacement chain guard')->not->toContain('SKU-NOT-PRINTED');
+        $pdf = ThermalReceipt::pdf($data);
+        $pdf->render();
+        $canvas = $pdf->getDomPDF()->getCanvas();
+        expect($canvas->get_page_count())->toBe(1)
+            ->and(round($canvas->get_width() * 25.4 / 72, 1))->toBe(80.0);
+        $heights[] = $canvas->get_height() * 25.4 / 72;
+    }
+    expect($heights[0])->toBeLessThan(200)->and($heights[1])->toBeGreaterThan(297);
 });
