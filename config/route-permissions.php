@@ -32,6 +32,7 @@ return [
         'jobs.products.store' => 'product.add',
         'jobs.parts.*' => 'job_card.add_parts',
         'jobs.invoice' => 'job_card.complete',
+        'jobs.previous-balance.store' => 'job_card.edit',
         'jobs.unlock' => 'job_card.edit',
         'jobs.create' => 'job_card.create',
         'jobs.store' => 'job_card.create',

@@ -16,6 +16,7 @@ use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\JobPreviousBalanceController;
 use App\Http\Controllers\LeaveHolidaySettingController;
 use App\Http\Controllers\LiveBoardController;
 use App\Http\Controllers\ProductController;
@@ -72,6 +73,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('job-cards/{job}/parts/{part}/update', [JobCardController::class, 'updatePart'])->name('jobs.parts.update');
     Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
+    Route::post('job-cards/{job}/previous-balance', JobPreviousBalanceController::class)->name('jobs.previous-balance.store');
     Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');
     Route::resource('job-cards', JobCardController::class)->parameters(['job-cards' => 'job'])->only(['index', 'create', 'store', 'show', 'update'])->names('jobs');
     Route::get('products/references', [ProductController::class, 'references'])->name('products.references');

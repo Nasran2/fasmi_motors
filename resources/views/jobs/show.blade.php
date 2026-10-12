@@ -18,7 +18,7 @@
 <x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
 <x-flash/>
 @include('jobs.partials.spare-parts')
-<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2" x-data="{
+<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form id="job-update-form" method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2" x-data="{
     discountType: @js(old('discount_type', $job->discount_type ?? 'fixed')),
     discountValue: @js(old('discount_value', $job->discount_value ?? $job->discount)),
     partsTotal: @js((float) $job->parts_total),
@@ -74,7 +74,7 @@
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
-    <div class="panel">
+    <div class="panel" x-data="{ includePreviousBalance: @js((bool) old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill)) }">
         <h2 class="mb-4 font-bold">Bill summary</h2>
         <dl class="space-y-2 text-sm">
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
@@ -82,6 +82,7 @@
             <div class="flex justify-between"><dt>Discount</dt><dd>- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd>Rs. {{ number_format($job->total,2) }}</dd></div>
             <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd>Rs. {{ number_format($job->total + $oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
             @if($job->invoice->change_amount > 0)
@@ -92,6 +93,34 @@
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
             @endif
         </dl>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <input type="hidden" name="show_previous_balance_on_bill" form="job-update-form" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
+            <label class="flex items-start gap-2 text-sm font-semibold text-slate-700">
+                <input type="checkbox" x-model="includePreviousBalance" class="mt-0.5 size-4 accent-red-600" @checked(old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill))>
+                <span>Include previous balance on bill</span>
+            </label>
+            <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $job->invoice ? '.' : ' or Generate invoice.' }}</p>
+            <div x-show="includePreviousBalance" x-cloak class="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs">
+                @forelse($previousBalances as $balance)
+                    <div class="flex justify-between gap-3"><span>{{ $balance['reference'] }}<span class="block text-slate-500">{{ $balance['date'] }}</span></span><span class="shrink-0 font-bold">Rs. {{ number_format($balance['amount'],2) }}</span></div>
+                @empty
+                    <p class="text-slate-500">No previous unpaid bills.</p>
+                @endforelse
+            </div>
+        </div>
+        @if(auth()->user()->canAccess('job_card.edit') && $job->status !== 'Cancelled' && $job->invoice?->status !== 'Cancelled')
+        @php($previousBalanceLatestDate = min(today()->toDateString(), $job->invoice?->created_at->toDateString() ?? today()->toDateString()))
+        <details class="mt-3 rounded-xl border border-slate-200 p-3" @if($errors->has('previous_balance_amount') || $errors->has('previous_balance_date')) open @endif>
+            <summary class="cursor-pointer text-sm font-bold text-blue-600">+ Add forgotten previous balance</summary>
+            <p class="mt-2 text-xs text-slate-500">Forgot to enter an old balance when adding the customer or intake? Add the missing amount here. Amounts already listed above are included automatically.</p>
+            <form method="POST" action="{{ route('jobs.previous-balance.store', $job) }}" class="mt-3 space-y-3">
+                @csrf<x-submission-token/>
+                <label class="block"><span class="label">Previous balance amount (LKR)</span><input type="number" name="previous_balance_amount" min="0.01" max="999999999999.99" step="0.01" value="{{ old('previous_balance_amount') }}" placeholder="0.00" class="field" required></label>
+                <label class="block"><span class="label">Previous job / balance date</span><input type="date" name="previous_balance_date" max="{{ $previousBalanceLatestDate }}" value="{{ old('previous_balance_date', $previousBalanceLatestDate) }}" class="field" required></label>
+                <button class="btn-secondary w-full">Add previous balance</button>
+            </form>
+        </details>
+        @endif
         @if($job->invoice)
         <div class="flex flex-col gap-2 mt-5">
             <a target="_blank" href="{{ route('invoices.public',$job->invoice->public_token) }}" class="btn-primary w-full text-center">View {{ $job->invoice->number }}</a>
@@ -104,6 +133,7 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
             @csrf<x-submission-token/>
+            <input type="hidden" name="show_previous_balance_on_bill" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <x-split-payments :accounts="$accounts" :change-total="$job->total" />
             <div class="mt-3">
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Parts Commission (Optional)</label>

@@ -14,6 +14,7 @@ use App\Services\AccountService;
 use App\Services\JobPartService;
 use App\Services\SettlementService;
 use App\Services\WorkshopService;
+use App\Support\PreviousCustomerBalance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -89,15 +90,13 @@ class JobCardController extends Controller
             ->get();
 
         $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments');
-        $oldDue = Invoice::where('customer_id', $job->intake->bike->customer_id)
-            ->where('status', '!=', 'Cancelled')
-            ->where('due_amount', '>', 0)
-            ->when($job->invoice, fn ($query) => $query->whereKeyNot($job->invoice->id))
-            ->sum('due_amount');
+        $previousBalances = PreviousCustomerBalance::forJob($job);
+        $oldDue = PreviousCustomerBalance::total($previousBalances);
 
         return view('jobs.show', [
             'job' => $job,
             'oldDue' => $oldDue,
+            'previousBalances' => $previousBalances,
             'technicians' => Technician::where('active', 1)->get(),
             'products' => $products,
             'productBatchOptions' => $productBatchOptions,
@@ -160,6 +159,10 @@ class JobCardController extends Controller
             }
 
             $old = $job->status;
+            $r->validate(['show_previous_balance_on_bill' => 'sometimes|required|boolean']);
+            if ($r->has('show_previous_balance_on_bill')) {
+                $v['show_previous_balance_on_bill'] = $r->boolean('show_previous_balance_on_bill');
+            }
             $changeReason = $v['change_reason'] ?? null;
             unset($v['change_reason']);
             $job->update($v);
@@ -292,11 +295,19 @@ class JobCardController extends Controller
 
     public function invoice(Request $r, JobCard $job, WorkshopService $service)
     {
+        $r->validate(['show_previous_balance_on_bill' => 'sometimes|required|boolean']);
         $settlement = app(SettlementService::class);
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
         $rows = $settlement->rows($input);
-        $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id);
+        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows) {
+            $job = JobCard::lockForUpdate()->findOrFail($job->id);
+            if ($r->has('show_previous_balance_on_bill')) {
+                $job->update(['show_previous_balance_on_bill' => $r->boolean('show_previous_balance_on_bill')]);
+            }
+
+            return $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id);
+        });
 
         return redirect()->route('jobs.show', $job)->with([
             'success' => 'Invoice generated.',

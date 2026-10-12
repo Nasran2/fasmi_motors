@@ -11,7 +11,7 @@ use Illuminate\Support\Carbon;
 
 /** @property float|string $hold_amount
  * @property Carbon|null $link_expires_at
- * @property-read JobCard $jobCard
+ * @property-read JobCard|null $jobCard
  */
 class Invoice extends Model
 {
@@ -24,6 +24,7 @@ class Invoice extends Model
         return ['link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'parts_deleted_at' => 'datetime', 'link_enabled' => 'boolean', 'is_accident_quotation' => 'boolean'];
     }
 
+    /** @return BelongsTo<JobCard, $this> */
     public function jobCard(): BelongsTo
     {
         return $this->belongsTo(JobCard::class);

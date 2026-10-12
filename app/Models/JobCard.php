@@ -11,12 +11,20 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /** @property int $jobs_count
  * @property float|int $billed_total
  * @property-read BikeIntake $intake
+ * @property-read Invoice|null $invoice
  */
 class JobCard extends Model
 {
     use SoftDeletes;
 
     protected $guarded = [];
+
+    protected $attributes = ['show_previous_balance_on_bill' => true];
+
+    protected function casts(): array
+    {
+        return ['show_previous_balance_on_bill' => 'boolean'];
+    }
 
     protected static function booted(): void
     {

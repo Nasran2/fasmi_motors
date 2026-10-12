@@ -14,6 +14,12 @@ final class ThermalReceipt
         if ($data['invoice']->change_amount > 0) {
             $heightMm += 12;
         }
+        if ($data['showPreviousBalance'] ?? false) {
+            $heightMm += 26;
+            foreach ($data['previousBalances'] as $balance) {
+                $heightMm += 12 + ceil(mb_strlen($balance['reference']) / 30) * 4;
+            }
+        }
         foreach ($data['lines'] as $line) {
             $heightMm += 11 + ceil(mb_strlen($line['name'].$line['detail']) / 30) * 4;
         }

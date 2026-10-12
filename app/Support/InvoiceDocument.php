@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Invoice;
+use App\Models\JobCardPart;
 use App\Models\Setting;
 
 final class InvoiceDocument
@@ -64,7 +65,7 @@ final class InvoiceDocument
 
         foreach ($parts as $item) {
             $lines[] = [
-                'name' => $item instanceof \App\Models\JobCardPart ? $item->bill_name : ($item->description ?: ($item->product?->name ?? 'Product')),
+                'name' => $item instanceof JobCardPart ? $item->bill_name : ($item->description ?: ($item->product?->name ?? 'Product')),
                 'detail' => collect([
                     $item->product?->code,
                     (float) ($item->returned_quantity ?? 0) > 0 ? 'Returned: '.$item->returned_quantity : null,
@@ -125,6 +126,10 @@ final class InvoiceDocument
             }
         }
 
+        $showPreviousBalance = ! $isQuotation && (bool) $invoice->jobCard?->show_previous_balance_on_bill;
+        $previousBalances = $showPreviousBalance ? PreviousCustomerBalance::forJob($invoice->jobCard, $invoice) : collect();
+        $previousBalance = PreviousCustomerBalance::total($previousBalances);
+
         return [
             'invoice' => $invoice,
             'business' => $settings,
@@ -134,6 +139,11 @@ final class InvoiceDocument
             'allowPublicPdf' => $allowPublicPdf,
             'isQuotation' => $isQuotation,
             'wording' => $wording,
+            'showPreviousBalance' => $showPreviousBalance,
+            'previousBalances' => $previousBalances,
+            'previousBalance' => $previousBalance,
+            'grandTotal' => round((float) $invoice->total + $previousBalance, 2),
+            'totalBalanceDue' => round((float) $invoice->due_amount + $previousBalance, 2),
         ];
     }
 

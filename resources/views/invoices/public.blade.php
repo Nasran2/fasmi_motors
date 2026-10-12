@@ -75,6 +75,9 @@
         .summary .grand td { padding: 12px 10px; background: #d91e2b; color: #fff; font-size: 18px; font-weight: 700; border-top: 3px solid #0b1d36; }
         .summary .grand td:last-child { color: #fff; }
         .summary .balance td { border-top: 1px solid #dce3eb; padding: 8px 10px; background: #fff0f1; color: #a91d2c; font-weight: 700; }
+        .summary.previous-balance td { padding: 4px 0; }
+        .summary.previous-balance .grand td { padding: 8px 6px; font-size: 15px; }
+        .summary.previous-balance .balance td { padding: 6px; }
         .note-box { margin-top: 13px; padding: 10px 14px; border-left: 3px solid #d91e2b; background: #f7f9fc; page-break-inside: avoid; }
         .note-title { margin: 0 0 5px; color: #d91e2b; font-size: 13px; font-weight: 700; }
         .note-box p { margin: 0; color: #4e5e73; white-space: pre-line; }
@@ -265,14 +268,25 @@
             @endforelse
         </tbody>
     </table>
+    @if($showPreviousBalance && $previousBalances->isNotEmpty())
+        <p class="eyebrow" style="margin-top:16px">Previous unpaid bills</p>
+        <table class="items">
+            <thead><tr><th style="width:45%">Job / Bill</th><th style="width:25%">Date</th><th class="num" style="width:30%">Balance (LKR)</th></tr></thead>
+            <tbody>@foreach($previousBalances as $balance)<tr><td>{{ $balance['reference'] }}</td><td>{{ $balance['date'] }}</td><td class="num">{{ number_format($balance['amount'],2) }}</td></tr>@endforeach</tbody>
+        </table>
+    @endif
     @php($compactClosing = $format !== '80mm' && mb_strlen($wording['introText'].$wording['customerNote'].$wording['terms']) <= 600)
     @if($compactClosing)<table class="closing"><tr><td class="document-notes">@include('invoices.partials.notes')</td><td>@endif
-    <div class="summary-wrap"><table class="summary">
+    <div class="summary-wrap"><table class="summary {{ $showPreviousBalance ? 'previous-balance' : '' }}">
         <tr><td>Subtotal</td><td>Rs. {{ number_format((float) $invoice->subtotal, 2) }}</td></tr>
         @if((float) $invoice->discount > 0)<tr><td>Discount</td><td>- Rs. {{ number_format((float) $invoice->discount, 2) }}</td></tr>@endif
         @if((float) $invoice->tax > 0)<tr><td>Tax</td><td>+ Rs. {{ number_format((float) $invoice->tax, 2) }}</td></tr>@endif
         @if($invoice->return_amount>0)<tr><td>Returned credit</td><td>Rs. {{ number_format($invoice->return_amount,2) }}</td></tr>@endif
-        <tr class="grand"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
+        <tr class="{{ $showPreviousBalance ? '' : 'grand' }}"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
+        @if($showPreviousBalance)
+            <tr><td>Previous Balance</td><td>Rs. {{ number_format($previousBalance,2) }}</td></tr>
+            <tr class="grand"><td>Grand Total</td><td>Rs. {{ number_format($grandTotal,2) }}</td></tr>
+        @endif
         @unless($isQuotation)
             @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
                 <tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr>
@@ -281,8 +295,9 @@
                 <tr><td>Change to return</td><td>Rs. {{ number_format($invoice->change_amount, 2) }}</td></tr>
                 @endif
                 @if((float) $invoice->hold_amount > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $invoice->hold_amount, 2) }}</td></tr>@endif
-                <tr class="balance"><td>Balance due</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
+                <tr class="balance"><td>{{ $showPreviousBalance ? 'Current bill due' : 'Balance due' }}</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
             @endif
+            @if($showPreviousBalance)<tr class="balance"><td>Total balance due</td><td>Rs. {{ number_format($totalBalanceDue,2) }}</td></tr>@endif
         @endunless
     </table></div>
     @if($compactClosing)</td></tr></table>@else @include('invoices.partials.notes') @endif
