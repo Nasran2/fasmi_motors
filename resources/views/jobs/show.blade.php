@@ -26,6 +26,8 @@
     laborTotal: @js((float) $job->labor_total),
     washingTotal: @js((float) $job->washing_total),
     otherTotal: @js((float) $job->other_total),
+    serviceName: @js(old('service_name', $job->service_name ?: 'Service')),
+    otherIncomeName: @js(old('other_income_name', $job->other_income_name ?: 'Other Income')),
     taxTotal: @js((float) $job->tax),
     get subtotal() {
         return this.partsTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
@@ -53,8 +55,8 @@
 </select></label><label><span class="label">Main technician</span><select name="main_technician_id" class="field" @disabled($isLocked)><option value="">Unassigned</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected($job->main_technician_id===$t->id)>{{ $t->name }}</option>@endforeach</select></label><label class="sm:col-span-2"><span class="label">Change reason / notes</span><input name="change_reason" class="field" placeholder="Enter reason for status change (optional)..."></label>
 
 <div class="relative">
-    <input type="hidden" name="service_name" id="hidden_service_name" value="{{ $job->service_name ?: 'Service' }}">
-    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_service_name">{{ $job->service_name ?: 'Service' }}</span> (LKR) <button type="button" onclick="editName('Service', 'hidden_service_name', 'lbl_service_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
+    <input type="hidden" name="service_name" id="hidden_service_name" x-model="serviceName" value="{{ old('service_name', $job->service_name ?: 'Service') }}">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_service_name" x-text="serviceName">{{ $job->service_name ?: 'Service' }}</span> (LKR) <button type="button" onclick="editName('Service', 'hidden_service_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
     <input type="number" step=".01" name="service_total" x-model.number="serviceTotal" value="{{ $job->service_total }}" class="field" @disabled($isLocked)>
 </div>
 
@@ -69,8 +71,8 @@
 </div>
 
 <div class="relative">
-    <input type="hidden" name="other_income_name" id="hidden_other_income_name" value="{{ $job->other_income_name ?: 'Other Income' }}">
-    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_other_income_name">{{ $job->other_income_name ?: 'Other Income' }}</span> (LKR) <button type="button" onclick="editName('Other Income', 'hidden_other_income_name', 'lbl_other_income_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
+    <input type="hidden" name="other_income_name" id="hidden_other_income_name" x-model="otherIncomeName" value="{{ old('other_income_name', $job->other_income_name ?: 'Other Income') }}">
+    <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_other_income_name" x-text="otherIncomeName">{{ $job->other_income_name ?: 'Other Income' }}</span> (LKR) <button type="button" onclick="editName('Other Income', 'hidden_other_income_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
     <input type="number" step=".01" name="other_total" x-model.number="otherTotal" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
 </div>
 
@@ -151,6 +153,8 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-effect="$dispatch('payment-due-selected', {due: jobTotal})">
             @csrf<x-submission-token/>
+            <input type="hidden" name="service_name" :value="serviceName" value="{{ old('service_name', $job->service_name ?: 'Service') }}">
+            <input type="hidden" name="other_income_name" :value="otherIncomeName" value="{{ old('other_income_name', $job->other_income_name ?: 'Other Income') }}">
             <input type="hidden" name="show_previous_balance_on_bill" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <x-split-payments :accounts="$accounts" :change-total="$job->total" />
             <div class="mt-3">
@@ -490,11 +494,9 @@ function openPartModal(details) {
 }
 
 let currentEditingHiddenInputId = '';
-let currentEditingLabelId = '';
 
-function editName(defaultLabel, hiddenInputId, labelId) {
+function editName(defaultLabel, hiddenInputId) {
     currentEditingHiddenInputId = hiddenInputId;
-    currentEditingLabelId = labelId;
     
     const hiddenInput = document.getElementById(hiddenInputId);
     const currentName = hiddenInput.value || defaultLabel;
@@ -505,10 +507,13 @@ function editName(defaultLabel, hiddenInputId, labelId) {
 }
 
 function saveEditedName() {
-    const newName = document.getElementById('edit-name-input').value.trim();
+    const editInput = document.getElementById('edit-name-input');
+    if (!editInput.reportValidity()) return;
+    const newName = editInput.value.trim();
     if (newName !== "") {
-        document.getElementById(currentEditingHiddenInputId).value = newName;
-        document.getElementById(currentEditingLabelId).textContent = newName;
+        const input = document.getElementById(currentEditingHiddenInputId);
+        input.value = newName;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
     }
     document.getElementById('edit-name-dialog').close();
 }
@@ -586,7 +591,7 @@ function openUnlockModal() {
         <div class="mt-4 grid gap-4">
             <label class="block">
                 <span class="label" style="color: #475569 !important;">Custom Name *</span>
-                <input type="text" id="edit-name-input" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
+                <input type="text" id="edit-name-input" maxlength="50" class="w-full bg-white text-slate-900 p-2.5 rounded-lg border border-slate-200" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;" required>
             </label>
         </div>
         <div class="mt-5 flex justify-end gap-2">

@@ -330,13 +330,21 @@ class JobCardController extends Controller
 
     public function invoice(Request $r, JobCard $job, WorkshopService $service)
     {
-        $r->validate(['show_previous_balance_on_bill' => 'sometimes|required|boolean']);
+        $labels = $r->validate([
+            'show_previous_balance_on_bill' => 'sometimes|required|boolean',
+            'service_name' => 'sometimes|required|string|max:50',
+            'other_income_name' => 'sometimes|required|string|max:50',
+        ]);
+        unset($labels['show_previous_balance_on_bill']);
         $settlement = app(SettlementService::class);
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
         $rows = $settlement->rows($input);
-        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows) {
+        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows, $labels) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
+            if ($labels) {
+                $job->update($labels);
+            }
             if ($r->has('show_previous_balance_on_bill')) {
                 $job->update(['show_previous_balance_on_bill' => $r->boolean('show_previous_balance_on_bill')]);
             }

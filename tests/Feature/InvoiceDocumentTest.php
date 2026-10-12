@@ -12,6 +12,7 @@ use App\Models\Store;
 use App\Models\StoreStock;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\InvoiceDocument;
 
 test('job card invoices preserve vehicle technician and service details in both paper formats', function () {
     $user = User::factory()->create();
@@ -150,4 +151,37 @@ test('invoice settings control quotation and bill wording and show the developer
         }
         $this->get(route('sales.invoices.pdf', $invoice))->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
+});
+
+test('generating a job invoice saves renamed service and other charges without a separate job update', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+    Account::ensureSystemAccounts();
+    $customer = Customer::create(['name' => 'Named Charges Customer', 'phone' => '0776000010']);
+    $bike = $customer->bikes()->create(['number' => 'NAME-BILL-100', 'model' => 'Honda Dio']);
+    $intake = $bike->intakes()->create(['intake_number' => 'IN-NAME-BILL', 'complaint' => 'Wiring repair', 'created_by' => $user->id]);
+    $job = JobCard::create(['number' => 'JOB-NAME-BILL', 'bike_intake_id' => $intake->id, 'status' => 'Received', 'priority' => 'Normal', 'service_total' => 1000, 'other_total' => 300, 'created_by' => $user->id]);
+    $this->post(route('jobs.invoice', $job), ['service_name' => 'Engine tune-up', 'other_income_name' => 'Wiring repair', 'paid_amount' => 0, 'payment_method' => 'Credit/Due'])->assertSessionHasNoErrors();
+    $job->refresh();
+    expect($job->service_name)->toBe('Engine tune-up')->and($job->other_income_name)->toBe('Wiring repair');
+    $invoice = $job->invoice;
+    expect(collect(InvoiceDocument::data($invoice)['lines'])->pluck('name')->all())->toBe(['Engine tune-up', 'Wiring repair']);
+    foreach (['a4', 'a5', '80mm'] as $format) {
+        $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))->assertOk()->assertSeeText('Engine tune-up')->assertSeeText('Wiring repair')->assertDontSeeText('Other charges');
+        $this->get(route('sales.invoices.pdf', ['invoice' => $invoice, 'format' => $format]))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    }
+    // A duplicate billing request must not rewrite the labels on the existing bill.
+    $this->post(route('jobs.invoice', $job), ['other_income_name' => 'Changed by duplicate request'])->assertSessionHasErrors('invoice');
+    expect($job->fresh()->other_income_name)->toBe('Wiring repair');
+});
+
+test('invalid renamed charges cannot create an invoice or change the stored label', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+    $customer = Customer::create(['name' => 'Invalid Label Customer', 'phone' => '0776000011']);
+    $bike = $customer->bikes()->create(['number' => 'INVALID-NAME-100', 'model' => 'Honda Dio']);
+    $intake = $bike->intakes()->create(['intake_number' => 'IN-INVALID-NAME', 'complaint' => 'Repair', 'created_by' => $user->id]);
+    $job = JobCard::create(['number' => 'JOB-INVALID-NAME', 'bike_intake_id' => $intake->id, 'status' => 'Received', 'priority' => 'Normal', 'other_total' => 100, 'created_by' => $user->id]);
+    $this->post(route('jobs.invoice', $job), ['other_income_name' => str_repeat('x', 51)])->assertSessionHasErrors('other_income_name');
+    expect($job->fresh()->invoice)->toBeNull()->and($job->fresh()->other_income_name)->toBe('Other');
 });

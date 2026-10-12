@@ -171,8 +171,9 @@
         .note-title { font-weight: bold; margin-bottom: 3px; font-size: 12px; }
         .signature, .document-footer-screen, .document-footer-print { display: none !important; }
         @elseif($format === 'a5')
-        @page { size: A5; margin: 8mm 8mm 16mm; }
-        .sheet { width: 148mm; min-height: 210mm; padding: 30px; }
+        /* A5 portrait: reserve the bottom margin for the repeating footer. */
+        @page { size: 148mm 210mm; margin: 10mm 10mm 18mm; }
+        .sheet { width: 148mm; min-height: 210mm; padding: 10mm 10mm 18mm; }
         .top-rule { margin: 0 0 10px; height: 4px; }
         .toolbar { max-width: 148mm; }
         body { font-size: 12px; line-height: 1.25; }
@@ -208,6 +209,7 @@
         .terms { font-size: 10px; margin-top: 8px; padding: 6px 9px; }
         .note-title { font-size: 11px; }
         .footer { font-size: 9px; }
+        .pdf .document-footer-print { bottom: -12mm; }
         .pdf .top-rule { margin-bottom: 10px; }
         @media print { .sheet { width: auto; min-height: 0; margin: 0; padding: 0; } .top-rule { margin-bottom: 10px; } }
         @endif
