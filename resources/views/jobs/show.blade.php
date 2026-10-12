@@ -104,6 +104,10 @@
             @endif
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold">Rs. {{ number_format($job->invoice->hold_amount,2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) $job->invoice->paid_amount }} - {{ (float) $job->invoice->hold_amount }}))">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Payment status</dt><dd>{{ $job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status }}</dd></div>
+            @endif
+            @if($oldDue > 0)
+            <div class="flex justify-between border-t pt-3 text-sm font-bold" x-show="includePreviousBalance" x-cloak><dt>Total Due Balance</dt><dd class="text-red-600" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) ($job->invoice?->paid_amount ?? 0) }} - {{ (float) ($job->invoice?->hold_amount ?? 0) }}) + {{ (float) $oldDue }})">Rs. {{ number_format(($job->invoice?->due_amount ?? $job->total) + $oldDue,2) }}</dd></div>
             @endif
         </dl>
         <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -115,7 +119,10 @@
             <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $job->invoice ? '.' : ' or Generate invoice.' }}</p>
             <div x-show="includePreviousBalance" x-cloak class="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs">
                 @forelse($previousBalances as $balance)
-                    <div class="flex justify-between gap-3"><span>{{ $balance['reference'] }}<span class="block text-slate-500">{{ $balance['date'] }}</span></span><span class="shrink-0 font-bold">Rs. {{ number_format($balance['amount'],2) }}</span></div>
+                    <div class="flex justify-between gap-3">
+                        <span>{{ $balance['reference'] }}<span class="block text-slate-500">{{ $balance['date'] }}</span><span class="block text-slate-500">{{ $balance['status'] }}</span></span>
+                        <div class="shrink-0 text-right"><span class="block font-bold text-red-600">Rs. {{ number_format($balance['amount'],2) }}</span><x-due-payment-button :invoice-id="$balance['invoice_id']" :due="$balance['amount']" :number="$balance['invoice_number']" :paid="$balance['paid']" :hold="$balance['hold']" class="mt-1"/></div>
+                    </div>
                 @empty
                     <p class="text-slate-500">No previous unpaid bills.</p>
                 @endforelse
@@ -137,10 +144,8 @@
         @if($job->invoice)
         <div class="flex flex-col gap-2 mt-5">
             <a target="_blank" href="{{ route('invoices.public',$job->invoice->public_token) }}" class="btn-primary w-full text-center">View {{ $job->invoice->number }}</a>
-            @if($job->invoice->due_amount > 0)
-            <button type="button" onclick="openDuePaymentModal({{ $job->invoice->id }}, {{ $job->invoice->due_amount }}, '{{ $job->invoice->number }}')" class="btn-primary w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-colors">
-                💰 Pay Bill
-            </button>
+            @if($job->invoice->due_amount > 0 && $job->invoice->status !== 'Cancelled')
+            <x-due-payment-button :invoice-id="$job->invoice->id" :due="$job->invoice->due_amount" :number="$job->invoice->number" :paid="$job->invoice->paid_amount" :hold="$job->invoice->hold_amount" label="Pay Bill" class="w-full"/>
             @endif
         </div>
         @else
@@ -495,43 +500,8 @@ function saveEditedName() {
 }
 </script>
 
-{{-- Due Payment Dialog --}}
-<dialog id="due-payment-dialog" class="m-auto rounded-2xl p-0 shadow-2xl open:animate-in open:fade-in open:zoom-in-95" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important; width: calc(100% - 2rem) !important; max-width: 28rem !important; max-height: 90vh; overflow-y: auto;">
-    <form method="POST" id="due-payment-form" class="p-6">
-        @csrf<x-submission-token/>
-        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
-            <div>
-                <p class="text-xs font-bold uppercase tracking-wider text-red-600">Payment Collection</p>
-                <h2 class="mt-1 text-xl font-black text-slate-900" id="due-payment-title" style="color: #0f172a !important;">Receive Payment</h2>
-            </div>
-            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-slate-500 hover:bg-slate-200">×</button>
-        </div>
-        <div class="mt-4 rounded-2xl bg-red-50 p-4" style="background-color: #fef2f2 !important; border: 1px solid #fee2e2 !important;">
-            <p class="text-xs font-bold text-red-500">Outstanding Due</p>
-            <p class="mt-1 text-2xl font-black text-red-700" id="due-payment-outstanding-label">Rs. 0.00</p>
-        </div>
-        <div class="mt-4"><x-split-payments :accounts="$accounts" :change-total="$job->invoice?->due_amount ?? 0" /></div>
-        <div class="mt-5 flex justify-end gap-2">
-            <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" style="background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important;">Cancel</button>
-            <button class="btn-primary">Save Payment</button>
-        </div>
-    </form>
-</dialog>
-
+<x-job-due-payment-dialog :accounts="$accounts"/>
 <script>
-function openDuePaymentModal(invoiceId, dueAmount, invoiceNumber) {
-    const dialog = document.getElementById('due-payment-dialog');
-    const form = document.getElementById('due-payment-form');
-    
-    form.action = `{{ url('customer-dues') }}/${invoiceId}/payment`;
-    document.getElementById('due-payment-title').textContent = `Pay Bill ${invoiceNumber}`;
-    document.getElementById('due-payment-outstanding-label').textContent = 'Rs. ' + parseFloat(dueAmount).toLocaleString(undefined, {minimumFractionDigits: 2});
-    
-    form.dispatchEvent(new CustomEvent('payment-due-selected', {bubbles: true, detail: {due: Number(dueAmount)}}));
-    
-    dialog.showModal();
-}
-
 function openUnlockModal() {
     document.getElementById('unlock-job-dialog').showModal();
 }

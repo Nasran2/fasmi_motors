@@ -16,6 +16,7 @@ use App\Models\Technician;
 use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -202,9 +203,11 @@ class CustomerBikeController extends Controller
 
     public function receivePayment(Request $request, Invoice $invoice, WorkshopService $service)
     {
+        $validated = $request->validate(['paid_at' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
+        $paidAt = ! empty($validated['paid_at']) ? Carbon::parse($validated['paid_at'])->startOfDay() : now();
         $settlement = app(SettlementService::class);
         $rows = $settlement->rows($request->all());
-        DB::transaction(function () use ($rows, $invoice, $settlement) {
+        DB::transaction(function () use ($rows, $invoice, $settlement, $paidAt) {
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
             if (! $rows || $invoice->status === 'Cancelled' || (float) $invoice->due_amount <= 0) {
                 throw ValidationException::withMessages(['amount' => 'Select an invoice with an outstanding due and enter a payment.']);
@@ -215,7 +218,7 @@ class CustomerBikeController extends Controller
                 throw ValidationException::withMessages(['amount' => 'Non-cash payments cannot exceed the remaining due. Enter excess cash as Cash to calculate change.']);
             }
             foreach (array_merge($nonCashRows, $cashRows) as $row) {
-                $settlement->receive($invoice, $row, allowCashChange: true);
+                $settlement->receive($invoice, $row, $paidAt, allowCashChange: true);
             }
         });
 

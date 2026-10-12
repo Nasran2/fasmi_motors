@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Invoice;
 use App\Models\JobCard;
@@ -24,7 +25,11 @@ class JobCardController extends Controller
 {
     public function index(Request $r)
     {
+        $r->validate(['bike_id' => 'nullable|integer|min:1']);
         $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
+        if ($r->filled('bike_id')) {
+            $q->whereHas('intake', fn ($intake) => $intake->where('bike_id', $r->integer('bike_id')));
+        }
         if ($r->status) {
             if ($r->status === 'Completed') {
                 $q->whereIn('status', ['Completed', 'Billed', 'Delivered']);
@@ -34,7 +39,8 @@ class JobCardController extends Controller
         }
 
         return view('jobs.index', [
-            'jobs' => $q->paginate(15),
+            'jobs' => $q->paginate(15)->withQueryString(),
+            'bikes' => Bike::whereHas('intakes.jobCard')->orderBy('number')->get(['id', 'number']),
             'statuses' => self::statuses(),
             'accounts' => Account::where('active', 1)->get(),
         ]);

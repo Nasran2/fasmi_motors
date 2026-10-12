@@ -1,4 +1,4 @@
-@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0])
+@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'duePreview' => false])
 @php
     $methods = $purchase ? ['Cash','Bank Transfer','Card','Cheque','Party Cheque'] : ['Cash','Card','Bank Transfer','Cheque','QR'];
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
@@ -9,6 +9,13 @@
 <div class="space-y-3 text-slate-800" x-data="{
     rows: {{ Illuminate\Support\Js::from($initial) }}, cheques: {{ Illuminate\Support\Js::from($chequeOptions) }},
     invoiceTotal: {{ Illuminate\Support\Js::from($changeTotal === null ? null : (float) $changeTotal) }},
+    existingPaid: 0, existingHold: 0,
+    remainingDue() { return Math.max(0, Math.round((this.invoiceTotal - this.total()) * 100) / 100); },
+    paymentStatus() {
+        if (this.existingHold + this.hold() > 0) return this.remainingDue() > 0 ? 'Partially Paid / Hold' : 'Hold';
+        if (this.remainingDue() <= 0) return 'Completed';
+        return this.existingPaid + this.total() > 0 ? 'Partially Paid' : 'Unpaid';
+    },
     refreshTotal() {
         const form = this.$el.closest('form');
         const amount = name => Number(form.elements.namedItem(name)?.value || 0);
@@ -21,7 +28,14 @@
     nonCash() { return Math.round(this.rows.filter(r=>r.method!=='Cash').reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
     change() { return this.invoiceTotal !== null && this.nonCash() <= this.invoiceTotal ? Math.max(0, Math.round((this.total()-this.invoiceTotal)*100)/100) : 0; }
 }" @if($totalFromForm) x-init="refreshTotal()" @input.window="if ($el.closest('form').contains($event.target)) refreshTotal()" @endif
-    @if($changeTotal !== null) @payment-due-selected.window="if ($el.closest('form') === $event.target) invoiceTotal = Math.max(0, Number($event.detail.due) || 0)" @endif>
+    @if($changeTotal !== null) @payment-due-selected.window="if ($el.closest('form') === $event.target) {
+        invoiceTotal = Math.max(0, Number($event.detail.due) || 0);
+        if ($event.detail.reset) {
+            existingPaid = Number($event.detail.paid) || 0;
+            existingHold = Number($event.detail.hold) || 0;
+            rows = [{method:'Cash',amount:0,account_id:defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}];
+        }
+    }" @endif>
     <div class="flex items-center justify-between gap-3">
         <div><h3 class="font-extrabold">Payments</h3><p class="mt-1 text-xs text-slate-500">Add cash, bank payments or multiple cheques.</p></div>
         <button type="button" class="btn-secondary text-xs shrink-0" @click="add()">＋ Add Payment</button>
@@ -64,5 +78,11 @@
     </div>
     @if($changeTotal !== null)
     <p x-show="nonCash() > invoiceTotal" x-cloak class="text-xs font-semibold text-red-600">Non-cash payments exceed the bill total. Change can only be returned from cash received.</p>
+    @endif
+    @if($duePreview)
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2" aria-live="polite">
+        <div class="flex justify-between gap-3 font-bold"><span>Remaining Due</span><span id="due-payment-remaining" x-text="'Rs. ' + remainingDue().toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span></div>
+        <div class="flex justify-between gap-3 text-sm"><span>Payment status after saving</span><span id="due-payment-status" class="font-semibold" x-text="nonCash() > invoiceTotal ? 'Check payment amounts' : paymentStatus()"></span></div>
+    </div>
     @endif
 </div>

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 final class PreviousCustomerBalance
 {
-    /** @return Collection<int, array{reference: string, date: non-falsy-string, amount: float}> */
+    /** @return Collection<int, array{reference: string, date: non-falsy-string, amount: float, invoice_id: int, invoice_number: string, paid: float, hold: float, status: string}> */
     public static function forJob(JobCard $job, ?Invoice $current = null): Collection
     {
         $job->loadMissing('intake.bike');
@@ -51,10 +51,15 @@ final class PreviousCustomerBalance
             'reference' => $invoice->jobCard->number ?? $invoice->number,
             'date' => Carbon::parse($completedDates->get($invoice->job_card_id) ?? $invoice->created_at)->format('d M Y'),
             'amount' => (float) $invoice->due_amount,
+            'invoice_id' => $invoice->id,
+            'invoice_number' => $invoice->number,
+            'paid' => (float) $invoice->paid_amount,
+            'hold' => (float) $invoice->hold_amount,
+            'status' => $invoice->status,
         ]);
     }
 
-    /** @param Collection<int, array{reference: string, date: non-falsy-string, amount: float}> $balances */
+    /** @param Collection<int, array{reference: string, date: non-falsy-string, amount: float, invoice_id: int, invoice_number: string, paid: float, hold: float, status: string}> $balances */
     public static function total(Collection $balances): float
     {
         return $balances->sum(fn ($balance) => (int) round($balance['amount'] * 100)) / 100;
