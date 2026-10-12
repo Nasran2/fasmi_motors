@@ -17,7 +17,10 @@
         body { margin: 0; background: #e9edf3; color: #17243a; font-family: Arial, "DejaVu Sans", sans-serif; font-size: 13px; line-height: 1.3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .toolbar { max-width: 794px; margin: 20px auto 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-family: Arial, sans-serif; }
         .toolbar-title { font-size: 13px; font-weight: 700; color: #40516b; }
-        .toolbar-actions { display: flex; gap: 8px; }
+        .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .format-selector { display: flex; flex-wrap: wrap; gap: 6px; }
+        .toolbar .format-option[aria-current="page"] { background: #0b1d36; border-color: #0b1d36; color: #fff; }
+        .format-option:focus-visible { outline: 2px solid #d91e2b; outline-offset: 2px; }
         .action { display: inline-block; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; padding: 10px 14px; color: #16243a; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; }
         .action-primary { border-color: #d91e2b; background: #d91e2b; color: #fff; }
         .sheet { display: flex; flex-direction: column; width: 794px; min-height: 1123px; margin: 0 auto 28px; padding: 45px 45px 38px; background: #fff; box-shadow: 0 14px 45px rgba(13, 28, 50, .15); }
@@ -218,7 +221,7 @@
 </head>
 <body class="{{ $pdfMode ? 'pdf' : '' }}">
 @unless($pdfMode)
-<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions"><button type="button" class="action" onclick="window.print()">Print</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', ['token' => $invoice->public_token, 'format' => $format]) }}">Download PDF</a>@endif</div></div>
+<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions">@include('invoices.partials.format-selector')<button type="button" class="action" onclick="window.print()">Print {{ $format === 'a5' ? 'A5' : 'A4' }}</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', ['token' => $invoice->public_token, 'format' => $format]) }}">Download PDF</a>@endif</div></div>
 @endunless
 <div class="document-footer-print">@include('invoices.partials.footer')</div>
 <main class="sheet">

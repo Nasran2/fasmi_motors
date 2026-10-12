@@ -6,6 +6,9 @@ body { margin:0; color:#000; background:#eef2f6; font:12px/1.4 Arial, "DejaVu Sa
 .toolbar { max-width:520px; margin:20px auto; padding:16px; background:#fff; border-radius:12px; }
 .toolbar p { margin:8px 0 0; color:#475569; font-size:12px; }
 .toolbar button,.toolbar a { display:inline-block; padding:12px 16px; border:1px solid #cbd5e1; background:#fff; border-radius:8px; font-weight:bold; color:#111; cursor:pointer; text-decoration:none; }
+.toolbar-actions,.format-selector { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.toolbar .format-option[aria-current="page"] { background:#0b1d36; border-color:#0b1d36; color:#fff; }
+.format-option:focus-visible { outline:2px solid #d91e2b; outline-offset:2px; }
 .receipt { width:72mm; padding:4mm 2mm; margin:16px auto; background:#fff; overflow-wrap:anywhere; }
 h1 { margin:0; font-size:18px; line-height:1.2; } h2 { margin:8px 0 2px; font-size:14px; }
 p { margin:3px 0; } .center { text-align:center; } .small { font-size:10px; }
@@ -14,7 +17,7 @@ table { width:100%; border-collapse:collapse; table-layout:fixed; } th,td { padd
 @media print { body { background:#fff; } .toolbar { display:none; } .receipt { width:72mm; padding:0 2mm; margin:0; } }
 body.pdf { background:#fff; } .pdf .receipt { width:72mm; padding:0 2mm; margin:0; }
 </style></head><body class="{{ $pdfMode ? 'pdf' : '' }}">
-@unless($pdfMode)<div class="toolbar"><button type="button" onclick="window.print()">Print 80 mm</button>@if($allowPublicPdf)<a href="{{ route('invoices.public.pdf',['token'=>$invoice->public_token,'format'=>'80mm']) }}">Download 80 mm PDF</a>@endif<p>Select your receipt printer, 80 mm paper, 100% scale, and turn off browser headers and footers.</p></div>@endunless
+@unless($pdfMode)<div class="toolbar"><div class="toolbar-actions">@include('invoices.partials.format-selector', ['format' => '80mm'])<button type="button" onclick="window.print()">Print 80 mm</button>@if($allowPublicPdf)<a href="{{ route('invoices.public.pdf',['token'=>$invoice->public_token,'format'=>'80mm']) }}">Download 80 mm PDF</a>@endif</div><p>Select your receipt printer, 80 mm paper, 100% scale, and turn off browser headers and footers.</p></div>@endunless
 <main class="receipt"><header class="center">@if($logo)<img src="{{ $logo }}" alt="" style="max-width:45mm;max-height:16mm;margin-bottom:5px">@endif<h1>{{ $business['business_name'] ?? 'Fasmir Motors' }}</h1><p class="small">{{ $business['business_subtitle'] ?? 'Bike Repair Center' }}</p>@if($business['business_address']??null)<p class="small">{{ $business['business_address'] }}</p>@endif @if($business['business_phone']??null)<p>{{ $business['business_phone'] }}</p>@endif<h2>{{ $isQuotation ? 'QUOTATION' : ($invoice->invoice_type === 'Job Card Bill' ? 'SERVICE RECEIPT' : 'SALES RECEIPT') }}</h2><b>{{ $invoice->number }}</b><p class="small">{{ $invoice->created_at->format('d M Y, h:i A') }}</p></header><hr class="rule">
 <p>Customer: <b>{{ $invoice->customer?->name ?: 'Walk-in Customer' }}</b></p>@if($invoice->customer?->phone)<p class="small">{{ $invoice->customer->phone }}</p>@endif @if($invoice->store)<p class="small">Store: {{ $invoice->store->name }}</p>@endif
 @if($invoice->jobCard)<p class="small">Job: {{ $invoice->jobCard->number }}</p>@endif @if($invoice->bike ?? $invoice->jobCard?->intake?->bike)<p class="small">Bike: {{ ($invoice->bike ?? $invoice->jobCard?->intake?->bike)->number }}</p>@endif
