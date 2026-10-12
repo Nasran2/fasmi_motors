@@ -19,7 +19,7 @@ class JobCard extends Model
 
     protected $guarded = [];
 
-    protected $attributes = ['show_previous_balance_on_bill' => true];
+    protected $attributes = ['show_previous_balance_on_bill' => true, 'discount_percentage' => 0, 'fixed_discount' => 0];
 
     protected function casts(): array
     {
@@ -29,15 +29,26 @@ class JobCard extends Model
     protected static function booted(): void
     {
         static::saving(function (JobCard $job) {
-            if ($job->discount_type === 'percentage') {
-                $job->discount = round($job->subtotal * (float) $job->discount_value / 100, 2);
-            } elseif ($job->isDirty('discount_value') || $job->isDirty('discount_type')) {
-                $job->discount = (float) $job->discount_value;
-            } elseif ($job->isDirty('discount')) {
-                // Preserve callers that still submit a fixed discount amount.
-                $job->discount_value = $job->discount;
+            if (! $job->isDirty('discount_percentage') && ! $job->isDirty('fixed_discount')) {
+                // Preserve existing callers that submit one discount type or a fixed amount.
+                if ($job->isDirty('discount_value') || $job->isDirty('discount_type')) {
+                    $job->discount_percentage = $job->discount_type === 'percentage' ? (float) $job->discount_value : 0;
+                    $job->fixed_discount = $job->discount_type === 'percentage' ? 0 : (float) $job->discount_value;
+                } elseif ($job->isDirty('discount')) {
+                    $job->discount_percentage = 0;
+                    $job->fixed_discount = (float) $job->discount;
+                }
             }
+
+            $job->discount = round($job->percentage_discount_amount + (float) $job->fixed_discount, 2);
+            $job->discount_type = (float) $job->discount_percentage > 0 ? 'percentage' : 'fixed';
+            $job->discount_value = (float) $job->discount_percentage > 0 ? $job->discount_percentage : $job->fixed_discount;
         });
+    }
+
+    public function getPercentageDiscountAmountAttribute(): float
+    {
+        return round($this->subtotal * (float) $this->discount_percentage / 100, 2);
     }
 
     public function getSubtotalAttribute(): float

@@ -18,19 +18,35 @@
 <x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
 <x-flash/>
 @include('jobs.partials.spare-parts')
-<div class="grid gap-5 xl:grid-cols-3"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form id="job-update-form" method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2" x-data="{
-    discountType: @js(old('discount_type', $job->discount_type ?? 'fixed')),
-    discountValue: @js(old('discount_value', $job->discount_value ?? $job->discount)),
+<div class="grid gap-5 xl:grid-cols-3" x-data="{
+    discountPercentage: @js(old('discount_percentage', $job->discount_percentage ?? 0)),
+    fixedDiscount: @js(old('fixed_discount', $job->fixed_discount ?? 0)),
     partsTotal: @js((float) $job->parts_total),
     serviceTotal: @js((float) $job->service_total),
     laborTotal: @js((float) $job->labor_total),
     washingTotal: @js((float) $job->washing_total),
     otherTotal: @js((float) $job->other_total),
+    taxTotal: @js((float) $job->tax),
+    get subtotal() {
+        return this.partsTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
+    },
+    get percentageDiscountAmount() {
+        return Math.round(this.subtotal * (Number(this.discountPercentage) || 0)) / 100;
+    },
     get discountAmount() {
-        const base = this.partsTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
-        return this.discountType === 'percentage' ? Math.round(base * (Number(this.discountValue) || 0)) / 100 : (Number(this.discountValue) || 0);
+        return Math.round((this.percentageDiscountAmount + (Number(this.fixedDiscount) || 0)) * 100) / 100;
+    },
+    get jobTotal() {
+        return Math.max(0, Math.round((this.subtotal - this.discountAmount + (Number(this.taxTotal) || 0)) * 100) / 100);
+    },
+    get hasUnsavedBillChanges() {
+        const saved = @js([(float) $job->service_total, (float) $job->labor_total, (float) $job->washing_total, (float) $job->other_total, (float) $job->discount_percentage, (float) $job->fixed_discount, (float) $job->tax]);
+        return [this.serviceTotal, this.laborTotal, this.washingTotal, this.otherTotal, this.discountPercentage, this.fixedDiscount, this.taxTotal].some((value, index) => (Number(value) || 0) !== saved[index]);
+    },
+    money(amount) {
+        return Number(amount).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
-}">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
+}"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form id="job-update-form" method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
     @foreach($statuses as $s)
         <option @selected($job->status===$s)>{{ $s }}</option>
     @endforeach
@@ -58,19 +74,16 @@
     <input type="number" step=".01" name="other_total" x-model.number="otherTotal" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
 </div>
 
-<div>
-    <label for="job-discount" class="label">Discount <span x-text="discountType === 'percentage' ? '(%)' : '(LKR)'">(LKR)</span></label>
-    <input type="hidden" name="discount_type" :value="discountType" @disabled($isLocked)>
-    <div class="flex items-stretch gap-2">
-        <div class="inline-flex shrink-0 rounded-xl bg-slate-100 p-1" role="group" aria-label="Discount type">
-            <button type="button" class="min-h-10 rounded-lg px-3 text-sm font-bold transition disabled:opacity-50" :class="discountType === 'fixed' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" :aria-pressed="discountType === 'fixed'" @click="discountType = 'fixed'" @disabled($isLocked)>Fixed</button>
-            <button type="button" aria-label="Percentage" class="min-h-10 min-w-10 rounded-lg px-3 text-sm font-bold transition disabled:opacity-50" :class="discountType === 'percentage' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" :aria-pressed="discountType === 'percentage'" @click="discountType = 'percentage'" @disabled($isLocked)>%</button>
-        </div>
-        <input id="job-discount" type="number" step=".01" min="0" :max="discountType === 'percentage' ? 100 : null" name="discount_value" x-model.number="discountValue" value="{{ old('discount_value', $job->discount_value ?? $job->discount) }}" class="field min-w-0 text-right" @disabled($isLocked)>
+<div class="sm:col-span-2 grid gap-4 sm:grid-cols-3">
+    <div>
+        <label for="job-discount-percentage" class="label">Percentage discount (%)</label>
+        <input id="job-discount-percentage" type="number" step=".01" min="0" max="100" name="discount_percentage" x-model.number="discountPercentage" value="{{ old('discount_percentage', $job->discount_percentage ?? 0) }}" class="field text-right" aria-describedby="job-percentage-discount-amount" @disabled($isLocked)>
+        <p id="job-percentage-discount-amount" class="mt-2 rounded-lg bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-700" aria-live="polite">Rs. <span x-text="money(percentageDiscountAmount)">{{ number_format($job->percentage_discount_amount, 2) }}</span> added to discount</p>
     </div>
-    <p x-show="discountType === 'percentage'" x-cloak class="mt-1 text-xs text-slate-500">Discount: Rs. <span x-text="discountAmount.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span></p>
+    <label><span class="label">Fixed discount (LKR)</span><input type="number" step=".01" min="0" max="999999999999.99" name="fixed_discount" x-model.number="fixedDiscount" value="{{ old('fixed_discount', $job->fixed_discount ?? 0) }}" class="field text-right" @disabled($isLocked)></label>
+    <label><span class="label">Tax (LKR)</span><input type="number" step=".01" name="tax" x-model.number="taxTotal" value="{{ $job->tax }}" class="field" @disabled($isLocked)></label>
+    <p class="sm:col-span-3 text-sm font-bold text-slate-700" aria-live="polite">Total discount: Rs. <span x-text="discountAmount.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})">{{ number_format($job->discount, 2) }}</span></p>
 </div>
-<label><span class="label">Tax (LKR)</span><input type="number" step=".01" name="tax" value="{{ $job->tax }}" class="field" @disabled($isLocked)></label>
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
@@ -78,11 +91,11 @@
         <h2 class="mb-4 font-bold">Bill summary</h2>
         <dl class="space-y-2 text-sm">
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
-            <div class="flex justify-between"><dt>Service & labor</dt><dd>Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
-            <div class="flex justify-between"><dt>Discount</dt><dd>- Rs. {{ number_format($job->discount,2) }}</dd></div>
-            <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd>Rs. {{ number_format($job->total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Service & labor</dt><dd x-text="'Rs. ' + money(subtotal - partsTotal)">Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
             <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
-            <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd>Rs. {{ number_format($job->total + $oldDue,2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd id="job-summary-grand-total" x-text="'Rs. ' + money(jobTotal + {{ (float) $oldDue }})">Rs. {{ number_format($job->total + $oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
             @if($job->invoice->change_amount > 0)
@@ -90,7 +103,7 @@
             <div class="flex justify-between text-xs font-semibold text-violet-700"><dt>Change to return</dt><dd class="font-bold">Rs. {{ number_format($job->invoice->change_amount,2) }}</dd></div>
             @endif
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold">Rs. {{ number_format($job->invoice->hold_amount,2) }}</dd></div>
-            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) $job->invoice->paid_amount }} - {{ (float) $job->invoice->hold_amount }}))">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
             @endif
         </dl>
         <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -131,7 +144,7 @@
             @endif
         </div>
         @else
-        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3">
+        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-effect="$dispatch('payment-due-selected', {due: jobTotal})">
             @csrf<x-submission-token/>
             <input type="hidden" name="show_previous_balance_on_bill" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <x-split-payments :accounts="$accounts" :change-total="$job->total" />
@@ -144,7 +157,8 @@
                     @endforeach
                 </select>
             </div>
-            <button class="btn-primary w-full mt-3">Generate invoice</button>
+            <p x-show="hasUnsavedBillChanges" x-cloak class="text-xs font-semibold text-amber-700">Save these changes with Update job before generating the invoice.</p>
+            <button class="btn-primary w-full mt-3 disabled:opacity-50" :disabled="hasUnsavedBillChanges">Generate invoice</button>
         </form>
         @endif
     </div>

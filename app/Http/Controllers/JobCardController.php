@@ -134,6 +134,8 @@ class JobCardController extends Controller
                     'discount' => 'nullable|numeric|min:0',
                     'discount_type' => 'nullable|in:fixed,percentage',
                     'discount_value' => 'required_with:discount_type|nullable|numeric|min:0|max:999999999999.99',
+                    'discount_percentage' => 'nullable|numeric|decimal:0,2|min:0|max:100',
+                    'fixed_discount' => 'nullable|numeric|decimal:0,2|min:0|max:999999999999.99',
                     'tax' => 'nullable|numeric|min:0',
                     'show_washing_on_bill' => 'nullable|boolean',
                     'show_labor_on_bill' => 'nullable|boolean',
@@ -141,14 +143,25 @@ class JobCardController extends Controller
                     'other_income_name' => 'nullable|string|max:50',
                 ]);
 
-                if (($v['discount_type'] ?? null) === 'percentage' && (float) $v['discount_value'] > 100) {
-                    throw ValidationException::withMessages(['discount_value' => 'Percentage discount must be between 0 and 100.']);
-                }
-                if (isset($v['discount_type'])) {
+                if ($r->hasAny(['discount_percentage', 'fixed_discount'])) {
+                    unset($v['discount_type'], $v['discount_value'], $v['discount']);
+                    foreach (['discount_percentage', 'fixed_discount'] as $field) {
+                        if (array_key_exists($field, $v)) {
+                            $v[$field] ??= 0;
+                        }
+                    }
+                } elseif (isset($v['discount_type'])) {
+                    if ($v['discount_type'] === 'percentage' && (float) $v['discount_value'] > 100) {
+                        throw ValidationException::withMessages(['discount_value' => 'Percentage discount must be between 0 and 100.']);
+                    }
+                    $v['discount_percentage'] = $v['discount_type'] === 'percentage' ? $v['discount_value'] : 0;
+                    $v['fixed_discount'] = $v['discount_type'] === 'percentage' ? 0 : $v['discount_value'];
                     unset($v['discount']);
                 } elseif (isset($v['discount'])) {
                     $v['discount_type'] = 'fixed';
                     $v['discount_value'] = $v['discount'];
+                    $v['discount_percentage'] = 0;
+                    $v['fixed_discount'] = $v['discount'];
                 } else {
                     unset($v['discount_type'], $v['discount_value'], $v['discount']);
                 }

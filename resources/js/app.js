@@ -30,6 +30,15 @@ document.addEventListener('click', selectNumericValue);
 // Never reselect after the user has already started typing, even if the value is still zero.
 document.addEventListener('input', (event) => pendingNumericSelections.delete(event.target));
 
+// Prevent wheel stepping without cancelling normal page or panel scrolling.
+// Delegation also covers number inputs added later in payment rows and dialogs.
+document.addEventListener('wheel', (event) => {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && input.type === 'number' && document.activeElement === input) {
+        input.blur();
+    }
+}, { capture: true, passive: true });
+
 window.workshopNotify = (message) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'workshop-dialog';
