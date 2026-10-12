@@ -168,6 +168,7 @@
         @endif
     </div>
 
+    @include('jobs.partials.payment-receipts')
     <div class="panel">
         <h2 class="mb-4 font-bold text-slate-800">👤 Customer & Vehicle</h2>
         <div class="space-y-3 text-xs leading-relaxed">
@@ -212,10 +213,11 @@
     </h2>
     <div class="flow-root">
         <ul role="list" class="-mb-8">
-            @forelse($statusLogs as $index => $log)
+            @forelse($history as $index => $entry)
+            @php($log = $entry['record'])
             <li>
                 <div class="relative pb-8">
-                    @if($index !== count($statusLogs) - 1)
+                    @if($index !== count($history) - 1)
                     <span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true"></span>
                     @endif
                     <div class="relative flex space-x-3">
@@ -226,6 +228,17 @@
                         </div>
                         <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
                             <div>
+                                @if($entry['kind'] === 'payment')
+                                <p class="text-xs font-bold text-slate-700">Payment corrected by {{ $log->changer?->name ?: 'System' }} · {{ $log->before['invoice_number'] }}</p>
+                                <div class="mt-2 space-y-1 text-xs text-slate-600">
+                                    @foreach(['before' => 'Before', 'after' => 'After'] as $key => $label)
+                                    @php($details = $log->$key)
+                                    <p><b>{{ $label }}:</b> {{ $details['number'] }} · {{ $details['method'] }} · Received Rs. {{ number_format($details['received_amount'], 2) }} · Applied Rs. {{ number_format($details['amount'], 2) }} · Change Rs. {{ number_format($details['change_amount'], 2) }} · {{ $details['paid_at'] }} · {{ $details['account_name'] }}</p>
+                                    @if($details['cheque_id'])<p class="text-amber-700">Cheque {{ $details['cheque_number'] }} · {{ $details['bank_name'] }} · {{ $details['cheque_date'] }} · {{ $details['status'] }}</p>@endif
+                                    @endforeach
+                                    <p class="rounded border border-slate-200 bg-slate-50 p-2"><b>Reason:</b> {{ $log->reason }}</p>
+                                </div>
+                                @else
                                 <p class="text-xs text-slate-600">
                                     Status changed from <span class="font-extrabold text-slate-500">{{ $log->old_status }}</span> to <span class="font-extrabold text-emerald-600">{{ $log->new_status }}</span> by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>
                                 </p>
@@ -233,6 +246,7 @@
                                 <p class="mt-1 text-[11px] font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded p-1.5 inline-block">
                                     Note: {{ $log->note }}
                                 </p>
+                                @endif
                                 @endif
                             </div>
                             <div class="whitespace-nowrap text-right text-[10px] font-bold text-slate-400">
@@ -501,6 +515,7 @@ function saveEditedName() {
 </script>
 
 <x-job-due-payment-dialog :accounts="$accounts"/>
+@include('jobs.partials.payment-edit-dialog')
 <script>
 function openUnlockModal() {
     document.getElementById('unlock-job-dialog').showModal();

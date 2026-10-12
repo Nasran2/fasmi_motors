@@ -7,6 +7,7 @@ use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Invoice;
 use App\Models\JobCard;
+use App\Models\PaymentCorrection;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Store;
@@ -17,6 +18,7 @@ use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use App\Support\PreviousCustomerBalance;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -38,8 +40,12 @@ class JobCardController extends Controller
             }
         }
 
+        $jobs = $q->paginate(15)->withQueryString();
+        $previousBalancesByJob = $jobs->getCollection()->mapWithKeys(fn (JobCard $job) => [$job->id => PreviousCustomerBalance::forJob($job)]);
+
         return view('jobs.index', [
-            'jobs' => $q->paginate(15)->withQueryString(),
+            'jobs' => $jobs,
+            'previousBalancesByJob' => $previousBalancesByJob,
             'bikes' => Bike::whereHas('intakes.jobCard')->orderBy('number')->get(['id', 'number']),
             'statuses' => self::statuses(),
             'accounts' => Account::where('active', 1)->get(),
@@ -98,11 +104,21 @@ class JobCardController extends Controller
         $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments');
         $previousBalances = PreviousCustomerBalance::forJob($job);
         $oldDue = PreviousCustomerBalance::total($previousBalances);
+        $relatedInvoiceIds = PreviousCustomerBalance::forJob($job, includeSettled: true)->pluck('invoice_id')->push($job->invoice?->id)->filter();
+        $paymentInvoices = Invoice::with('payments.cheque', 'payments.account', 'payments.invoice')->whereIn('id', $relatedInvoiceIds)->where('status', '!=', 'Cancelled')->get();
+        $paymentChanges = PaymentCorrection::with('changer')->where(function ($query) use ($job) {
+            $query->where('job_card_id', $job->id)->orWhereIn('invoice_id', Invoice::where('job_card_id', $job->id)->select('id'));
+        })->get();
+        $history = $statusLogs->map(fn ($log) => ['kind' => 'status', 'record' => $log])
+            ->merge($paymentChanges->map(fn ($change) => ['kind' => 'payment', 'record' => $change]))
+            ->sortByDesc(fn ($entry) => Carbon::parse($entry['record']->created_at)->getTimestamp())->values();
 
         return view('jobs.show', [
             'job' => $job,
             'oldDue' => $oldDue,
             'previousBalances' => $previousBalances,
+            'paymentInvoices' => $paymentInvoices,
+            'history' => $history,
             'technicians' => Technician::where('active', 1)->get(),
             'products' => $products,
             'productBatchOptions' => $productBatchOptions,

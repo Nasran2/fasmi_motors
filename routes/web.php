@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccidentQuotationController;
 use App\Http\Controllers\Accounts\AccountExportController;
 use App\Http\Controllers\Accounts\AccountTransferController;
 use App\Http\Controllers\Accounts\BankAccountController;
@@ -11,25 +12,29 @@ use App\Http\Controllers\Accounts\OpeningBalanceController;
 use App\Http\Controllers\Accounts\SparePartsAccountController;
 use App\Http\Controllers\BikeIntakeController;
 use App\Http\Controllers\CustomerBikeController;
+use App\Http\Controllers\CustomerDueSmsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DataManagementController;
 use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\JobPaymentController;
 use App\Http\Controllers\JobPreviousBalanceController;
 use App\Http\Controllers\LeaveHolidaySettingController;
 use App\Http\Controllers\LiveBoardController;
+use App\Http\Controllers\PartsSaleController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SalesBillingController;
-use App\Http\Controllers\AccidentQuotationController;
 use App\Http\Controllers\ServiceReminderController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\SmsCenterController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\WorkshopNotificationController;
 use App\Http\Controllers\WorkspacePageController;
 use Illuminate\Support\Facades\Route;
 
@@ -38,7 +43,7 @@ Route::redirect('/', '/login')->name('home');
 Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('search', GlobalSearchController::class)->name('search');
-    Route::post('notifications/clear', [\App\Http\Controllers\WorkshopNotificationController::class, 'clear'])->name('notifications.clear');
+    Route::post('notifications/clear', [WorkshopNotificationController::class, 'clear'])->name('notifications.clear');
     Route::get('live-bike-status', [LiveBoardController::class, 'index'])->name('live-board.index');
     Route::get('live-bike-status/technicians', [LiveBoardController::class, 'technicians'])->name('live-board.technicians');
     Route::get('workshop/live-board', [LiveBoardController::class, 'fullscreen'])->name('live-board.fullscreen');
@@ -58,8 +63,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('bikes', [CustomerBikeController::class, 'bikeStore'])->name('customers.bikes.store');
     Route::get('bikes/{bike}', [CustomerBikeController::class, 'bikeShow'])->name('customers.bikes.show');
     Route::get('customer-dues', [CustomerBikeController::class, 'dues'])->name('customers.dues');
-    Route::post('customer-dues/sms/preview', [\App\Http\Controllers\CustomerDueSmsController::class, 'preview'])->name('customers.dues.sms.preview');
-    Route::post('customer-dues/sms/send', [\App\Http\Controllers\CustomerDueSmsController::class, 'send'])->name('customers.dues.sms.send');
+    Route::post('customer-dues/sms/preview', [CustomerDueSmsController::class, 'preview'])->name('customers.dues.sms.preview');
+    Route::post('customer-dues/sms/send', [CustomerDueSmsController::class, 'send'])->name('customers.dues.sms.send');
     Route::post('customer-dues/{invoice}/payment', [CustomerBikeController::class, 'receivePayment'])->name('customers.dues.payment');
     Route::get('service-history', [CustomerBikeController::class, 'serviceHistory'])->name('customers.service-history');
     Route::get('bike-ownership', [CustomerBikeController::class, 'ownership'])->name('customers.ownership');
@@ -74,6 +79,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::post('job-cards/{job}/previous-balance', JobPreviousBalanceController::class)->name('jobs.previous-balance.store');
+    Route::put('job-cards/{job}/payments/{payment}', JobPaymentController::class)->name('jobs.payments.update');
     Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');
     Route::resource('job-cards', JobCardController::class)->parameters(['job-cards' => 'job'])->only(['index', 'create', 'store', 'show', 'update'])->names('jobs');
     Route::get('products/references', [ProductController::class, 'references'])->name('products.references');
@@ -119,12 +125,12 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('sales/job-billing/{job}', [SalesBillingController::class, 'billJob'])->name('sales.job-billing.store');
     Route::get('sales/parts', [SalesBillingController::class, 'partsSales'])->name('sales.parts');
     Route::post('sales/parts', [SalesBillingController::class, 'partsStore'])->name('sales.parts.store');
-    Route::get('sales/parts/list', [\App\Http\Controllers\PartsSaleController::class, 'index'])->name('sales.parts.index');
-    Route::get('sales/parts/{invoice}/edit', [\App\Http\Controllers\PartsSaleController::class, 'edit'])->name('sales.parts.edit');
-    Route::put('sales/parts/{invoice}', [\App\Http\Controllers\PartsSaleController::class, 'update'])->name('sales.parts.update');
-    Route::get('sales/parts/{invoice}/return', [\App\Http\Controllers\PartsSaleController::class, 'returnForm'])->name('sales.parts.return');
-    Route::post('sales/parts/{invoice}/return', [\App\Http\Controllers\PartsSaleController::class, 'returnStore'])->name('sales.parts.return.store');
-    Route::delete('sales/parts/{invoice}', [\App\Http\Controllers\PartsSaleController::class, 'destroy'])->name('sales.parts.destroy');
+    Route::get('sales/parts/list', [PartsSaleController::class, 'index'])->name('sales.parts.index');
+    Route::get('sales/parts/{invoice}/edit', [PartsSaleController::class, 'edit'])->name('sales.parts.edit');
+    Route::put('sales/parts/{invoice}', [PartsSaleController::class, 'update'])->name('sales.parts.update');
+    Route::get('sales/parts/{invoice}/return', [PartsSaleController::class, 'returnForm'])->name('sales.parts.return');
+    Route::post('sales/parts/{invoice}/return', [PartsSaleController::class, 'returnStore'])->name('sales.parts.return.store');
+    Route::delete('sales/parts/{invoice}', [PartsSaleController::class, 'destroy'])->name('sales.parts.destroy');
     Route::get('sales/quotations', [SalesBillingController::class, 'quotations'])->name('sales.quotations');
     Route::get('sales/accident-quotations/create', [AccidentQuotationController::class, 'create'])->name('sales.accident-quotations.create');
     Route::post('sales/accident-quotations', [AccidentQuotationController::class, 'store'])->name('sales.accident-quotations.store');
@@ -367,7 +373,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
         return redirect()->back();
     })->name('shop.switch');
 
-    Route::get('data-management', [\App\Http\Controllers\DataManagementController::class, 'index'])->name('data-management.index');
+    Route::get('data-management', [DataManagementController::class, 'index'])->name('data-management.index');
 });
 
 Route::get('invoice/{token}', PublicInvoiceController::class)->name('invoices.public');

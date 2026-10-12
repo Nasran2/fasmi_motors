@@ -9,11 +9,12 @@ use Illuminate\Support\Facades\Schema;
 class ResetDataCommand extends Command
 {
     protected $signature = 'app:reset-data';
+
     protected $description = 'Resets all transactions and sets product stock to 0 while keeping core data.';
 
     public function handle()
     {
-        if (!$this->confirm('Are you sure you want to delete all transactions and reset stock to 0? This cannot be undone!')) {
+        if (! $this->confirm('Are you sure you want to delete all transactions and reset stock to 0? This cannot be undone!')) {
             return;
         }
 
@@ -35,6 +36,7 @@ class ResetDataCommand extends Command
             'invoices',
             'job_card_parts',
             'job_card_services',
+            'payment_corrections',
             'job_card_status_logs',
             'job_card_technicians',
             'job_cards',

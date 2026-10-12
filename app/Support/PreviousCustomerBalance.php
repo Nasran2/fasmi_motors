@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 final class PreviousCustomerBalance
 {
     /** @return Collection<int, array{reference: string, date: non-falsy-string, amount: float, invoice_id: int, invoice_number: string, paid: float, hold: float, status: string}> */
-    public static function forJob(JobCard $job, ?Invoice $current = null): Collection
+    public static function forJob(JobCard $job, ?Invoice $current = null, bool $includeSettled = false): Collection
     {
         $job->loadMissing('intake.bike');
         $current ??= $job->invoice;
@@ -25,7 +25,7 @@ final class PreviousCustomerBalance
             ->where('customer_id', $job->intake->bike->customer_id)
             ->where('status', '!=', 'Cancelled')
             ->where('invoice_type', '!=', 'Quotation')
-            ->where('due_amount', '>', 0)
+            ->when(! $includeSettled, fn ($query) => $query->where('due_amount', '>', 0))
             ->when($current, function ($query) use ($current) {
                 // Reopening a bill must not include bills issued after it.
                 $query->where(function ($query) use ($current) {
