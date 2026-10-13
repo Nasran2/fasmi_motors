@@ -126,7 +126,15 @@ class ProductController extends Controller
         if ($request->routeIs('jobs.products.store')) {
             $request->validate(['job_store_id' => 'required|exists:stores,id']);
         }
-        $mainStore = $request->routeIs('jobs.products.store') ? Store::where('active', true)->findOrFail($request->integer('job_store_id')) : Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first();
+        $isPos = $request->routeIs('sales.parts.products.store');
+        if ($isPos) {
+            $request->validate(['store_id' => ['required', 'integer', Rule::exists('stores', 'id')->where('active', true)]]);
+        }
+        $mainStore = match (true) {
+            $isPos => Store::where('active', true)->findOrFail($request->integer('store_id')),
+            $request->routeIs('jobs.products.store') => Store::where('active', true)->findOrFail($request->integer('job_store_id')),
+            default => Store::where('is_default', true)->first() ?? Store::where('name', 'Main Store')->first(),
+        };
         if (! $mainStore) {
             throw ValidationException::withMessages(['opening_quantity' => 'Main Store must be configured before adding products.']);
         }
@@ -146,6 +154,16 @@ class ProductController extends Controller
 
             return $product;
         });
+
+        if ($isPos) {
+            return response()->json(['success' => true, 'product' => [
+                'id' => $product->id, 'name' => $product->name, 'sku' => $product->code, 'barcode' => $product->barcode,
+                'price' => (float) $product->selling_price, 'cost_price' => (float) $product->cost_price,
+                'unit' => $product->unit, 'category_id' => (int) $product->category_id,
+                'posPinned' => false, 'posPinOrder' => null,
+                'stocks' => [['store_id' => $storeId, 'quantity' => $opening]], 'batches' => [],
+            ]], 201);
+        }
 
         if ($request->routeIs('jobs.products.store')) {
             return redirect(route('jobs.show', ['job' => $request->route('job'), 'product' => $product->id, 'store' => $storeId]).'#spare-parts')->with('success', $product->name.' added to inventory and selected for this job.');

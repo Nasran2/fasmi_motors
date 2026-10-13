@@ -132,6 +132,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('sales/job-billing/{job}', [SalesBillingController::class, 'billJob'])->name('sales.job-billing.store');
     Route::get('sales/parts', [SalesBillingController::class, 'partsSales'])->name('sales.parts');
     Route::post('sales/parts', [SalesBillingController::class, 'partsStore'])->name('sales.parts.store');
+    Route::post('sales/parts/products', [ProductController::class, 'store'])->name('sales.parts.products.store');
     Route::get('sales/parts/list', [PartsSaleController::class, 'index'])->name('sales.parts.index');
     Route::get('sales/parts/{invoice}/edit', [PartsSaleController::class, 'edit'])->name('sales.parts.edit');
     Route::put('sales/parts/{invoice}', [PartsSaleController::class, 'update'])->name('sales.parts.update');

@@ -81,6 +81,7 @@ return [
         'sales.parts.return.store' => 'sales.cancel_invoice',
         'sales.parts.destroy' => 'sales.cancel_invoice',
         'sales.parts.store' => 'sales.parts_sales',
+        'sales.parts.products.store' => 'product.add',
         'sales.parts' => 'sales.parts_sales',
         'sales.quotations' => 'sales.view_invoices',
         'sales.accident-quotations.*' => 'sales.parts_sales',

@@ -1,8 +1,8 @@
 <x-layouts::pos title="POS - Parts Sales">
     @section('pos-search')
     <div class="relative w-full max-w-2xl" x-data="{ query: '' }">
-        <svg class="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-        <input id="pos-search-input" type="text" x-model="query" @input.debounce.100ms="$dispatch('search-products', query)" @keydown.enter.prevent="$dispatch('scan-product', query)" placeholder="Enter product name / SKU / Scan barcode (Alt+S)" class="h-12 w-full rounded-2xl border-2 border-slate-700 bg-[#0b2447] pl-12 pr-12 text-[15px] font-semibold text-white placeholder-slate-400 outline-none transition focus:border-red-500 focus:bg-[#06162f] focus:ring-4 focus:ring-red-500/20" autofocus>
+        <svg class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input id="pos-search-input" type="text" aria-label="Search products" x-model="query" @input.debounce.100ms="$dispatch('search-products', query)" @keydown.enter.prevent="$dispatch('scan-product', query)" placeholder="Enter product name / SKU / Scan barcode (Alt+S)" class="noinput h-12 w-full rounded-2xl border-2 border-slate-700 bg-[#0b2447] pl-12 pr-12 text-[15px] font-semibold text-white placeholder-slate-400 outline-none transition focus:border-red-500 focus:bg-[#06162f] focus:ring-4 focus:ring-red-500/20" autofocus>
         <button type="button" title="Focus barcode search (Alt+S)" aria-label="Focus barcode search (Alt+S)" onclick="document.getElementById('pos-search-input').focus()" class="absolute right-3 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white transition">
             <kbd class="pos-header-key">Alt+S</kbd>
             <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
@@ -55,6 +55,13 @@
                         <span>Held bills (<span x-text="heldCarts.length"></span>)</span><span class="rounded bg-violet-100 px-1.5 py-0.5 text-[10px]">Alt+M</span>
                     </button>
 
+                    @if(auth()->user()->canAccess('product.add'))
+                    <button type="button" @click="openNewProduct()" class="inline-flex h-10 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-extrabold text-blue-800 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                        Add product
+                    </button>
+                    @endif
+
                     <div class="text-slate-500 font-bold text-sm tracking-wider flex items-center gap-2 ml-auto">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         <span x-text="currentTime"></span>
@@ -66,7 +73,7 @@
                     <button data-pos-category type="button" title="All categories (Alt+G, then arrow keys)" class="relative snap-start shrink-0 rounded-full px-5 py-2.5 text-sm font-bold transition-all border-2" style="padding-right: 3.5rem"
                         :class="activeCategory === null ? 'bg-red-600 border-red-600 text-white shadow-md shadow-red-500/20' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'"
                         @click="activeCategory = null">
-                        <kbd class="pos-key">Alt+G</kbd>All <span class="ml-1 opacity-70">({{ count($products) }})</span>
+                        <kbd class="pos-key">Alt+G</kbd>All <span class="ml-1 opacity-70">(<span x-text="productsData.length"></span>)</span>
                     </button>
                     @foreach($categories as $cat)
                     <button data-pos-category type="button" title="Use arrow keys to change category" class="snap-start shrink-0 rounded-full px-5 py-2.5 text-sm font-bold transition-all border-2 flex items-center gap-2"
@@ -131,7 +138,12 @@
                         </button>
                     </template>
                 </div>
-                <div x-show="filteredProducts.length === 0" x-cloak class="py-12 text-center text-sm font-semibold text-slate-500">No products match this search.</div>
+                <div x-show="filteredProducts.length === 0" x-cloak class="py-12 text-center text-sm font-semibold text-slate-500">
+                    <p>No products match this search.</p>
+                    @if(auth()->user()->canAccess('product.add'))
+                    <button type="button" class="btn-primary mt-4" @click="openNewProduct()">＋ Add new product</button>
+                    @endif
+                </div>
                 <div x-show="visibleProductCount < filteredProducts.length" x-cloak class="mt-6 text-center">
                     <button type="button" @click="showMoreProducts()" class="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-300 hover:text-red-600">Load more products</button>
                     <p class="mt-2 text-xs text-slate-500" x-text="`Showing ${Math.min(visibleProductCount, filteredProducts.length)} of ${filteredProducts.length}`"></p>
@@ -592,6 +604,10 @@
             </div>
         </dialog>
 
+        @if(auth()->user()->canAccess('product.add'))
+            @include('sales.partials.pos-new-product')
+        @endif
+
         <dialog id="pos-pin-modal" class="m-auto w-[min(94vw,30rem)] max-h-[85vh] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/50" @close="pinOrderDraft = []">
             <div class="border-b border-slate-100 px-5 py-4"><h2 class="text-lg font-black">Arrange pinned products</h2><p class="mt-1 text-sm text-slate-500">Pinned products appear first in POS. Use the arrows to set their order.</p></div>
             <div class="max-h-[55vh] space-y-2 overflow-y-auto p-5">
@@ -724,6 +740,11 @@
                 itemDraft: { name: '', sku: '', qty: 1, unit_price: 0 },
                 pinOrderDraft: [],
                 isSavingPins: false,
+                isSavingProduct: false,
+                newProductErrors: [],
+                newProductName: '',
+                newProductStoreId: '',
+                newProductToken: '',
 
                 paymentMethod: 'Cash',
                 accountId: '',
@@ -1067,6 +1088,53 @@
                     this.selectedStoreId = this.storeId;
                     localStorage.setItem('pos_store_id', this.storeId);
                     this.recalculateStocks();
+                },
+
+                openNewProduct() {
+                    if (this.isSavingProduct) return;
+                    const modal = document.getElementById('pos-new-product-modal');
+                    if (!modal) return;
+                    modal.querySelector('form').reset();
+                    this.newProductErrors = [];
+                    this.newProductName = this.query.trim();
+                    this.newProductStoreId = String(this.storeId);
+                    this.newProductToken = crypto.randomUUID();
+                    modal.showModal();
+                    this.$nextTick(() => document.getElementById('pos-new-product-name')?.focus());
+                },
+
+                async saveNewProduct(event) {
+                    if (this.isSavingProduct) return;
+                    const form = event.target;
+                    const payload = new FormData(form);
+                    this.isSavingProduct = true;
+                    this.newProductErrors = [];
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST', headers: { Accept: 'application/json' }, body: payload,
+                        });
+                        const data = await response.json();
+                        if (!response.ok || !data.success) {
+                            this.newProductErrors = data.errors ? Object.values(data.errors).flat() : [data.message || 'Product could not be saved. Please try again.'];
+                            return;
+                        }
+                        if (!this.productsData.some(product => product.id === data.product.id)) this.productsData.unshift(data.product);
+                        this.recalculateStocks();
+                        this.activeCategory = null;
+                        this.query = data.product.sku;
+                        const input = document.getElementById('pos-search-input');
+                        if (input) {
+                            input.value = data.product.sku;
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                        this.closeDialog('pos-new-product-modal');
+                        this.focusSearch();
+                        workshopNotify(data.product.name + ' added to inventory.');
+                    } catch (error) {
+                        this.newProductErrors = ['Product could not be saved. Check your connection and try again.'];
+                    } finally {
+                        this.isSavingProduct = false;
+                    }
                 },
 
                 openNewCustomer() {
