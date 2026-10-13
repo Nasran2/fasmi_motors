@@ -29,6 +29,7 @@ class CustomerBikeController extends Controller
     {
         $query = Customer::query()->withCount('bikes')
             ->selectSub($this->customerJobsSubquery(), 'jobs_count')
+            ->selectSub($this->customerDueSubquery('total'), 'total_bill_value')
             ->selectSub($this->customerDueSubquery(), 'due_amount')
             ->selectSub($this->customerDueSubquery('hold_amount'), 'hold_amount')
             ->selectSub($this->customerLastVisitSubquery(), 'last_visit')

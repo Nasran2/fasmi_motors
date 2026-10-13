@@ -28,7 +28,7 @@ test('customer profile shows all bills opening balances and legacy job bills wit
     $intake = $bike->intakes()->create(['intake_number' => 'IN-HISTORY', 'complaint' => 'Repair', 'created_by' => auth()->id()]);
     $job = JobCard::create(['number' => 'JOB-HISTORY', 'bike_intake_id' => $intake->id, 'status' => 'Billed', 'priority' => 'Normal', 'created_by' => auth()->id()]);
     $paid = customerProfileBill($this->customer, ['status' => 'Paid', 'paid_amount' => 1000, 'due_amount' => 0]);
-    $partial = customerProfileBill($this->customer, ['status' => 'Partially Paid', 'paid_amount' => 750, 'due_amount' => 250]);
+    $partial = customerProfileBill($this->customer, ['subtotal' => 1500, 'discount' => 500, 'status' => 'Partially Paid', 'paid_amount' => 750, 'due_amount' => 250]);
     $hold = customerProfileBill($this->customer, ['status' => 'Hold', 'hold_amount' => 1000, 'due_amount' => 0]);
     $opening = customerProfileBill($this->customer, ['invoice_type' => 'Opening Due', 'bike_id' => $bike->id]);
     $legacyOpening = customerProfileBill($this->customer, ['invoice_type' => 'Opening Balance']);
@@ -51,6 +51,11 @@ test('customer profile shows all bills opening balances and legacy job bills wit
     expect((float) $response->viewData('dueAmount'))->toBe(3250.0)
         ->and((float) $response->viewData('customer')->bikes->sole()->due_amount)->toBe(2000.0);
     $response->assertDontSeeText($quotation->number)->assertDontSeeText($otherShop->number)->assertDontSeeText($otherBill->number);
+
+    $list = $this->get(route('customers.index', ['q' => $this->customer->name]))->assertOk()
+        ->assertSeeText('Total Bill Value')->assertSeeText('Rs. 6,000.00')->assertSeeText('Rs. 3,250.00');
+    expect((float) $list->viewData('customers')->sole()->total_bill_value)->toBe(6000.0)
+        ->and((float) $list->viewData('customers')->sole()->due_amount)->toBe(3250.0);
 });
 
 test('bill history remains available when a customer has no bike', function () {
@@ -89,4 +94,6 @@ test('view-only users see customer bills without payment controls and can use en
 test('customers without bills have a clear empty history', function () {
     $this->get(route('customers.show', $this->customer))->assertOk()
         ->assertSeeText('Customer Bills')->assertSeeText('No bills recorded for this customer.');
+    $response = $this->get(route('customers.index'))->assertOk()->assertSeeText('Total Bill Value');
+    expect((float) $response->viewData('customers')->sole()->total_bill_value)->toBe(0.0);
 });
