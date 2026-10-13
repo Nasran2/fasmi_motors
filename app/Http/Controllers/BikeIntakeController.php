@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Customer;
-use App\Models\Invoice;
 use App\Models\Technician;
+use App\Services\OpeningBalanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -58,7 +58,7 @@ class BikeIntakeController extends Controller
 
     public function store(Request $r)
     {
-        $v = $r->validate(['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'chassis_number' => ['nullable', 'string', 'max:100'], 'phone' => 'nullable|string|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'opening_balance' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
+        $v = $r->validate(OpeningBalanceService::rules() + ['bike_number' => 'required|max:30', 'bike_model' => 'required|max:100', 'chassis_number' => ['nullable', 'string', 'max:100'], 'phone' => 'nullable|string|max:30', 'complaint' => 'required', 'customer_name' => 'nullable|max:150', 'estimated_amount' => 'nullable|numeric|min:0', 'advance_payment' => 'nullable|numeric|min:0', 'current_mileage' => 'nullable|integer|min:0', 'next_service_km' => 'nullable|integer|min:0', 'next_service_date' => 'nullable|date', 'technician_id' => 'nullable|required_if:is_technician_bike,1|exists:technicians,id']);
         $intake = DB::transaction(function () use ($r, $v) {
             $phone = $v['phone'] ?? '';
             $bike = Bike::with('customer')->where('number', strtoupper($v['bike_number']))->first();
@@ -75,21 +75,7 @@ class BikeIntakeController extends Controller
                 $bike = Bike::create(['customer_id' => $customer->id, 'number' => strtoupper($v['bike_number']), 'model' => $v['bike_model'], 'chassis_number' => $v['chassis_number'] ?? null, 'brand' => $r->brand, 'color' => $r->color, 'last_mileage' => $r->current_mileage, 'is_technician_bike' => $r->boolean('is_technician_bike'), 'technician_id' => $r->technician_id]);
             }
 
-            if ($r->opening_balance > 0) {
-                Invoice::create([
-                    'number' => 'OP-'.now()->format('ymd').'-'.Str::upper(Str::random(4)),
-                    'invoice_type' => 'Opening Balance',
-                    'customer_id' => $bike->customer_id,
-                    'bike_id' => $bike->id,
-                    'subtotal' => $r->opening_balance,
-                    'total' => $r->opening_balance,
-                    'due_amount' => $r->opening_balance,
-                    'paid_amount' => 0,
-                    'status' => 'Unpaid',
-                    'public_token' => Str::random(32),
-                    'created_by' => auth()->id(),
-                ]);
-            }
+            app(OpeningBalanceService::class)->record($bike->customer, $v, $bike);
 
             return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
         });

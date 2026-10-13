@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\ShopScoped;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -34,6 +35,19 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function isOpeningDue(): bool
+    {
+        return in_array($this->invoice_type, ['Opening Due', 'Opening Balance'], true);
+    }
+
+    /** @param Builder<Invoice> $query */
+    public function scopeCustomerAccount(Builder $query, int $customerId): void
+    {
+        $query->where(fn (Builder $query) => $query->where('customer_id', $customerId)
+            ->orWhere(fn (Builder $query) => $query->whereNull('customer_id')
+                ->whereHas('jobCard.intake.bike', fn (Builder $bike) => $bike->where('customer_id', $customerId))));
     }
 
     public function getReceivedAmountAttribute(): float

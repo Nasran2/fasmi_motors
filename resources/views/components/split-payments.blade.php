@@ -1,4 +1,4 @@
-@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'duePreview' => false])
+@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'duePreview' => false, 'allowCashChange' => true])
 @php
     $methods = $purchase ? ['Cash','Bank Transfer','Card','Cheque','Party Cheque'] : ['Cash','Card','Bank Transfer','Cheque','QR'];
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
@@ -10,6 +10,8 @@
     rows: {{ Illuminate\Support\Js::from($initial) }}, cheques: {{ Illuminate\Support\Js::from($chequeOptions) }},
     invoiceTotal: {{ Illuminate\Support\Js::from($changeTotal === null ? null : (float) $changeTotal) }},
     existingPaid: 0, existingHold: 0,
+    allowCashChange: @js($allowCashChange),
+    exceedsDue() { return (this.allowCashChange ? this.nonCash() : this.total()) > this.invoiceTotal; },
     remainingDue() { return Math.max(0, Math.round((this.invoiceTotal - this.total()) * 100) / 100); },
     paymentStatus() {
         if (this.existingHold + this.hold() > 0) return this.remainingDue() > 0 ? 'Partially Paid / Hold' : 'Hold';
@@ -26,7 +28,7 @@
     total() { return Math.round(this.rows.reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
     hold() { return Math.round(this.rows.filter(r=>['Cheque','Party Cheque'].includes(r.method)).reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
     nonCash() { return Math.round(this.rows.filter(r=>r.method!=='Cash').reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
-    change() { return this.invoiceTotal !== null && this.nonCash() <= this.invoiceTotal ? Math.max(0, Math.round((this.total()-this.invoiceTotal)*100)/100) : 0; }
+    change() { return this.allowCashChange && this.invoiceTotal !== null && this.nonCash() <= this.invoiceTotal ? Math.max(0, Math.round((this.total()-this.invoiceTotal)*100)/100) : 0; }
 }" @if($totalFromForm) x-init="refreshTotal()" @input.window="if ($el.closest('form').contains($event.target)) refreshTotal()" @endif
     @if($changeTotal !== null) @payment-due-selected.window="if ($el.closest('form') === $event.target) {
         invoiceTotal = Math.max(0, Number($event.detail.due) || 0);
@@ -48,7 +50,7 @@
             </div>
             <div class="payment-fields">
                 <label><span class="label">Method</span><select class="field" x-model="row.method" @change="row.account_id=defaultAccount(row.method)" :name="`payments[${index}][method]`">@foreach($methods as $method)<option>{{ $method }}</option>@endforeach</select></label>
-                <label><span class="label" @if($changeTotal !== null) x-text="row.method === 'Cash' ? 'Cash received' : 'Amount'" @endif>Amount</span><input class="field" type="number" min="0" step=".01" x-model.number="row.amount" :readonly="row.method==='Party Cheque'" :name="`payments[${index}][amount]`" required></label>
+                <label><span class="label" @if($changeTotal !== null && $allowCashChange) x-text="row.method === 'Cash' ? 'Cash received' : 'Amount'" @endif>Amount</span><input class="field" type="number" min="0" step=".01" x-model.number="row.amount" :readonly="row.method==='Party Cheque'" :name="`payments[${index}][amount]`" required></label>
                 <label x-show="row.method !== 'Party Cheque'"><span class="label">{{ $purchase ? 'Paid From Account' : 'Receiving Account' }}</span><select class="field" x-model="row.account_id" :name="`payments[${index}][account_id]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'"><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
             </div>
             <template x-if="row.method==='Cheque'">
@@ -72,17 +74,17 @@
         @endif
         <span class="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700">Paid: Rs. <span x-text="(total()-hold()-change()).toFixed(2)"></span></span>
         <span class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">Cheque Hold: Rs. <span x-text="hold().toFixed(2)"></span></span>
-        @if($changeTotal !== null)
+        @if($changeTotal !== null && $allowCashChange)
         <span class="rounded-lg bg-violet-50 px-3 py-2 text-violet-700">Change to return: Rs. <span x-text="change().toFixed(2)"></span></span>
         @endif
     </div>
     @if($changeTotal !== null)
-    <p x-show="nonCash() > invoiceTotal" x-cloak class="text-xs font-semibold text-red-600">Non-cash payments exceed the bill total. Change can only be returned from cash received.</p>
+    <p x-show="exceedsDue()" x-cloak class="text-xs font-semibold text-red-600">{{ $allowCashChange ? 'Non-cash payments exceed the bill total. Change can only be returned from cash received.' : 'Payment amounts cannot exceed the outstanding customer due.' }}</p>
     @endif
     @if($duePreview)
     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2" aria-live="polite">
         <div class="flex justify-between gap-3 font-bold"><span>Remaining Due</span><span id="due-payment-remaining" x-text="'Rs. ' + remainingDue().toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span></div>
-        <div class="flex justify-between gap-3 text-sm"><span>Payment status after saving</span><span id="due-payment-status" class="font-semibold" x-text="nonCash() > invoiceTotal ? 'Check payment amounts' : paymentStatus()"></span></div>
+        <div class="flex justify-between gap-3 text-sm"><span>Payment status after saving</span><span id="due-payment-status" class="font-semibold" x-text="exceedsDue() ? 'Check payment amounts' : paymentStatus()"></span></div>
     </div>
     @endif
 </div>

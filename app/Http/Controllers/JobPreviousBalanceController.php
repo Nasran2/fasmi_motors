@@ -19,7 +19,7 @@ class JobPreviousBalanceController extends Controller
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             $job->load('intake.bike', 'invoice');
             if ($job->status === 'Cancelled' || $job->invoice?->status === 'Cancelled') {
-                throw ValidationException::withMessages(['previous_balance_amount' => 'Previous balances cannot be added from a cancelled job or bill.']);
+                throw ValidationException::withMessages(['previous_balance_amount' => 'Opening balances cannot be added from a cancelled job or bill.']);
             }
             $latestDate = min(today()->toDateString(), $job->invoice?->created_at->toDateString() ?? today()->toDateString());
             $data = $request->validate([
@@ -36,12 +36,12 @@ class JobPreviousBalanceController extends Controller
                 'bike_id' => $job->intake->bike_id,
                 'subtotal' => $amount, 'total' => $amount, 'due_amount' => $amount, 'paid_amount' => 0,
                 'status' => 'Unpaid', 'public_token' => Str::random(48),
-                'internal_note' => 'Forgotten previous balance recorded from '.$job->number,
+                'internal_note' => 'Opening balance recorded from '.$job->number,
                 'created_at' => $date, 'updated_at' => now(), 'created_by' => $request->user()->id,
             ]);
             $job->update(['show_previous_balance_on_bill' => true]);
         });
 
-        return redirect()->route('jobs.show', $job)->with('success', 'Previous balance added to the customer’s dues and included on this bill.');
+        return redirect()->route('jobs.show', $job)->with('success', 'Opening balance added to the customer’s dues and included on this bill.');
     }
 }

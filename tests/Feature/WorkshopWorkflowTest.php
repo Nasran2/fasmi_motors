@@ -121,7 +121,7 @@ test('job bill summary shows previous customer due after total', function () {
 
     $this->get(route('jobs.show', $job))
         ->assertOk()
-        ->assertSeeText('Old Due')
+        ->assertSeeText('Earlier unpaid balances')
         ->assertSeeText('Rs. 1,250.00');
 });
 

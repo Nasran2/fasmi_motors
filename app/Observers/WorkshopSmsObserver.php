@@ -21,7 +21,7 @@ class WorkshopSmsObserver
             if ($record->main_technician_id) {
                 $this->schedule('assigned', $record);
             }
-        } elseif ($record instanceof Invoice && ! in_array($record->invoice_type, ['Quotation', 'Opening Balance'], true)) {
+        } elseif ($record instanceof Invoice && $record->invoice_type !== 'Quotation' && ! $record->isOpeningDue()) {
             $this->schedule('billed', $record);
         } elseif ($record instanceof Payment && $this->isReceipt($record)) {
             $this->schedule('payment', $record);

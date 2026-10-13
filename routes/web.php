@@ -55,6 +55,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('customers/import', [CustomerBikeController::class, 'import'])->name('customers.excel.import');
     Route::get('customers/create', [CustomerBikeController::class, 'customerCreate'])->name('customers.create');
     Route::post('customers', [CustomerBikeController::class, 'customerStore'])->name('customers.store');
+    Route::post('customers/{customer}/payment', \App\Http\Controllers\CustomerPaymentController::class)->name('customers.payment');
     Route::get('customers/{customer}', [CustomerBikeController::class, 'customerShow'])->name('customers.show');
     Route::put('customers/{customer}', [CustomerBikeController::class, 'customerUpdate'])->name('customers.update');
     Route::delete('customers/{customer}', [CustomerBikeController::class, 'customerDeactivate'])->name('customers.deactivate');

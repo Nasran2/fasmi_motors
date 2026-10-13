@@ -31,7 +31,7 @@
                         <label><span class="label">Chassis number</span><input id="chassis_number" name="chassis_number" value="{{ old('chassis_number') }}" class="field" maxlength="100" placeholder="Enter chassis / frame number">@error('chassis_number')<span class="mt-1 block text-xs text-red-600">{{ $message }}</span>@enderror</label>
                         <label><span class="label">NIC</span><input id="nic" name="nic" value="{{ old('nic') }}" class="field" placeholder="National ID"></label>
                         <label><span class="label">Current mileage</span><input type="number" name="current_mileage" value="{{ old('current_mileage') }}" class="field" placeholder="Current KM"></label>
-                        <label><span class="label">Opening balance (Old due)</span><input type="number" step=".01" name="opening_balance" value="{{ old('opening_balance') }}" class="field" placeholder="0.00"></label>
+                        <div class="md:col-span-2"><x-opening-balance-fields /></div>
                         <label class="md:col-span-2"><span class="label">Complaint / customer issue <em class="not-italic text-red-500">*</em></span><textarea name="complaint" class="field min-h-24" rows="3" required placeholder="Describe the repair issue clearly...">{{ old('complaint') }}</textarea></label>
                     </div>
                 </section>
@@ -149,7 +149,7 @@
             const container = document.getElementById('lookup-results-container');
             let dueHtml = '';
             if (type === 'bike' && item.total_due && parseFloat(item.total_due) > 0) {
-                dueHtml = `<div class="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-500/20"><svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Previous Due: Rs. ${parseFloat(item.total_due).toFixed(2)}</div>`;
+                dueHtml = `<div class="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-500/20"><svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Outstanding Due: Rs. ${parseFloat(item.total_due).toFixed(2)}</div>`;
             }
             
             container.innerHTML = `

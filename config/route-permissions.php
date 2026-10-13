@@ -18,6 +18,7 @@ return [
         'customers.update' => 'customer.edit',
         'customers.deactivate' => 'customer.delete',
         'customers.dues.payment' => 'sales.receive_payments',
+        'customers.payment' => 'sales.receive_payments',
         'customers.dues' => 'customer.view_due',
         'customers.ownership.store' => 'bike.change_ownership',
         'customers.ownership' => 'bike.change_ownership',

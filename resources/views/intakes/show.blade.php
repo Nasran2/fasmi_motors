@@ -182,7 +182,7 @@
                     $totalDue = $intake->bike->intakes->flatMap(fn($x)=>$x->jobCard?->invoice ? [$x->jobCard->invoice] : [])->sum('due_amount');
                 @endphp
                 <div class="panel border-t-4 {{ $totalDue > 0 ? 'border-t-red-500 bg-red-50/30' : 'border-t-emerald-500' }}">
-                    <h2 class="mb-1 text-sm font-bold {{ $totalDue > 0 ? 'text-red-900' : 'text-slate-700' }}">Previous Due Balance</h2>
+                    <h2 class="mb-1 text-sm font-bold {{ $totalDue > 0 ? 'text-red-900' : 'text-slate-700' }}">Outstanding Due Balance</h2>
                     <p class="text-xs {{ $totalDue > 0 ? 'text-red-600/80' : 'text-slate-500' }}">Total outstanding from past invoices</p>
                     
                     <div class="mt-4 flex items-baseline gap-1">

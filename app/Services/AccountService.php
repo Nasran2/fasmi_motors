@@ -202,12 +202,14 @@ class AccountService
     public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): void
     {
         $total = (int) round((float) $invoice->total * 100);
-        $parts = min($total, (int) round((float) $invoice->parts_amount * 100));
+        // Opening dues have no reliable parts/service breakdown and belong entirely to MAIN.
+        $parts = $invoice->isOpeningDue() ? 0 : min($total, (int) round((float) $invoice->parts_amount * 100));
         $amount = (int) round((float) $payment->amount * 100);
         $share = $total > 0 ? (int) round($amount * $parts / $total) : 0;
         foreach (['spare_parts' => $share, 'main' => $amount - $share] as $type => $cents) {
             if ($cents > 0) {
-                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at), $type === 'main' ? 'service' : 'parts');
+                $category = $invoice->isOpeningDue() ? 'opening_due' : ($type === 'main' ? 'service' : 'parts');
+                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at), $category);
             }
         }
         if ($postBank && $payment->method !== 'Cash') {
@@ -222,7 +224,7 @@ class AccountService
         $previousParts = 0;
         foreach ($invoice->payments()->where('status', 'Completed')->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->orderBy('id')->get() as $payment) {
             $cumulative += (int) round((float) $payment->amount * 100);
-            $targetParts = (float) $invoice->total > 0 ? (int) round($cumulative * min(1, (float) $invoice->parts_amount / (float) $invoice->total)) : 0;
+            $targetParts = ! $invoice->isOpeningDue() && (float) $invoice->total > 0 ? (int) round($cumulative * min(1, (float) $invoice->parts_amount / (float) $invoice->total)) : 0;
             $parts = ($targetParts - $previousParts) / 100;
             $previousParts = $targetParts;
             foreach (['spare_parts' => $parts, 'main' => round((float) $payment->amount - $parts, 2)] as $type => $expected) {

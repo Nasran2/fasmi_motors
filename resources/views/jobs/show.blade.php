@@ -96,7 +96,7 @@
             <div class="flex justify-between"><dt>Service & labor</dt><dd x-text="'Rs. ' + money(subtotal - partsTotal)">Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
-            <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Old Due</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
+            <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Earlier unpaid balances</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd id="job-summary-grand-total" x-text="'Rs. ' + money(jobTotal + {{ (float) $oldDue }})">Rs. {{ number_format($job->total + $oldDue,2) }}</dd></div>
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
@@ -116,7 +116,7 @@
             <input type="hidden" name="show_previous_balance_on_bill" form="job-update-form" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <label class="flex items-start gap-2 text-sm font-semibold text-slate-700">
                 <input type="checkbox" x-model="includePreviousBalance" class="mt-0.5 size-4 accent-red-600" @checked(old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill))>
-                <span>Include previous balance on bill</span>
+                <span>Include outstanding balances on bill</span>
             </label>
             <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $job->invoice ? '.' : ' or Generate invoice.' }}</p>
             <div x-show="includePreviousBalance" x-cloak class="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs">
@@ -133,13 +133,13 @@
         @if(auth()->user()->canAccess('job_card.edit') && $job->status !== 'Cancelled' && $job->invoice?->status !== 'Cancelled')
         @php($previousBalanceLatestDate = min(today()->toDateString(), $job->invoice?->created_at->toDateString() ?? today()->toDateString()))
         <details class="mt-3 rounded-xl border border-slate-200 p-3" @if($errors->has('previous_balance_amount') || $errors->has('previous_balance_date')) open @endif>
-            <summary class="cursor-pointer text-sm font-bold text-blue-600">+ Add forgotten previous balance</summary>
-            <p class="mt-2 text-xs text-slate-500">Forgot to enter an old balance when adding the customer or intake? Add the missing amount here. Amounts already listed above are included automatically.</p>
+            <summary class="cursor-pointer text-sm font-bold text-blue-600">+ Add opening balance</summary>
+            <p class="mt-2 text-xs text-slate-500">Forgot to enter the opening balance when adding the customer or intake? Add only the missing amount here. Existing unpaid bills are included automatically.</p>
             <form method="POST" action="{{ route('jobs.previous-balance.store', $job) }}" class="mt-3 space-y-3">
                 @csrf<x-submission-token/>
-                <label class="block"><span class="label">Previous balance amount (LKR)</span><input type="number" name="previous_balance_amount" min="0.01" max="999999999999.99" step="0.01" value="{{ old('previous_balance_amount') }}" placeholder="0.00" class="field" required></label>
-                <label class="block"><span class="label">Previous job / balance date</span><input type="date" name="previous_balance_date" max="{{ $previousBalanceLatestDate }}" value="{{ old('previous_balance_date', $previousBalanceLatestDate) }}" class="field" required></label>
-                <button class="btn-secondary w-full">Add previous balance</button>
+                <label class="block"><span class="label">Opening balance amount (LKR)</span><input type="number" name="previous_balance_amount" min="0.01" max="999999999999.99" step="0.01" value="{{ old('previous_balance_amount') }}" placeholder="0.00" class="field" required></label>
+                <label class="block"><span class="label">Opening balance date</span><input type="date" name="previous_balance_date" max="{{ $previousBalanceLatestDate }}" value="{{ old('previous_balance_date', $previousBalanceLatestDate) }}" class="field" required></label>
+                <button class="btn-secondary w-full">Add opening balance</button>
             </form>
         </details>
         @endif

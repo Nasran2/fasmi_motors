@@ -13,6 +13,7 @@ use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Technician;
+use App\Services\OpeningBalanceService;
 use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class CustomerBikeController extends Controller
         $query = Customer::query()->withCount('bikes')
             ->selectSub($this->customerJobsSubquery(), 'jobs_count')
             ->selectSub($this->customerDueSubquery(), 'due_amount')
+            ->selectSub($this->customerDueSubquery('hold_amount'), 'hold_amount')
             ->selectSub($this->customerLastVisitSubquery(), 'last_visit')
             ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")->orWhereHas('bikes', fn ($b) => $b->where('number', 'like', "%{$term}%"))))
             ->when($request->filter === 'due', fn ($q) => $q->whereExists($this->customerDueExistsSubquery()))
@@ -41,6 +43,7 @@ class CustomerBikeController extends Controller
 
         return view('customers.index', [
             'customers' => $query->paginate(15)->withQueryString(),
+            'accounts' => Account::where('active', true)->get(),
             'stats' => [
                 'total' => Customer::count(), 'active' => Customer::where('active', true)->count(),
                 'due' => Customer::whereExists($this->customerDueExistsSubquery())->count(),
@@ -56,7 +59,7 @@ class CustomerBikeController extends Controller
 
     public function customerStore(Request $request)
     {
-        $data = $request->validate([
+        $data = $request->validate(OpeningBalanceService::rules() + [
             'name' => ['required', 'max:150'], 'phone' => ['required', 'max:30'], 'alternative_phone' => ['nullable', 'max:30'],
             'address' => ['nullable', 'max:500'], 'nic' => ['nullable', 'max:30'], 'email' => ['nullable', 'email', 'max:150'],
             'customer_type' => ['required', Rule::in(['Normal Customer', 'Regular Customer', 'Credit Customer', 'Technician Bike Owner'])],
@@ -82,6 +85,7 @@ class CustomerBikeController extends Controller
                     'engine_number' => $data['engine_number'] ?? null, 'last_mileage' => $data['current_km'] ?? null,
                 ]);
             }
+            app(OpeningBalanceService::class)->record($customer, $data, $bike);
 
             return [$customer, $bike];
         });
@@ -99,7 +103,9 @@ class CustomerBikeController extends Controller
     {
         $customer->load('bikes.intakes.jobCard.invoice.payments');
 
-        return view('customers.show', compact('customer'));
+        $dueAmount = Invoice::customerAccount($customer->id)->where('status', '!=', 'Cancelled')->where('invoice_type', '!=', 'Quotation')->sum('due_amount');
+
+        return view('customers.show', compact('customer', 'dueAmount'));
     }
 
     public function customerUpdate(Request $request, Customer $customer)
@@ -316,9 +322,9 @@ class CustomerBikeController extends Controller
         return JobCard::selectRaw('count(*)')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->whereColumn('bikes.customer_id', 'customers.id');
     }
 
-    private function customerDueSubquery()
+    private function customerDueSubquery(string $column = 'due_amount')
     {
-        return Invoice::selectRaw('coalesce(sum(invoices.due_amount),0)')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
+        return Invoice::selectRaw("coalesce(sum(invoices.{$column}),0)")->where('invoices.status', '!=', 'Cancelled')->where('invoices.invoice_type', '!=', 'Quotation')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
     }
 
     private function customerLastVisitSubquery()
@@ -328,17 +334,17 @@ class CustomerBikeController extends Controller
 
     private function customerDueExistsSubquery()
     {
-        return Invoice::selectRaw('1')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where('invoices.due_amount', '>', 0)->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
+        return Invoice::selectRaw('1')->where('invoices.status', '!=', 'Cancelled')->where('invoices.invoice_type', '!=', 'Quotation')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->where('invoices.due_amount', '>', 0)->where(fn ($q) => $q->whereColumn('invoices.customer_id', 'customers.id')->orWhere(fn ($x) => $x->whereNull('invoices.customer_id')->whereColumn('bikes.customer_id', 'customers.id')));
     }
 
     private function bikeDueSubquery()
     {
-        return Invoice::selectRaw('coalesce(sum(invoices.due_amount),0)')->join('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->whereColumn('bike_intakes.bike_id', 'bikes.id');
+        return Invoice::selectRaw('coalesce(sum(invoices.due_amount),0)')->where('invoices.status', '!=', 'Cancelled')->where('invoices.invoice_type', '!=', 'Quotation')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->where(fn ($q) => $q->whereColumn('invoices.bike_id', 'bikes.id')->orWhere(fn ($q) => $q->whereNull('invoices.bike_id')->whereColumn('bike_intakes.bike_id', 'bikes.id')));
     }
 
     private function bikeDueExistsSubquery()
     {
-        return DB::table('invoices')->selectRaw('1')->join('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->whereColumn('bike_intakes.bike_id', 'bikes.id')->where('invoices.due_amount', '>', 0);
+        return Invoice::selectRaw('1')->where('invoices.status', '!=', 'Cancelled')->where('invoices.invoice_type', '!=', 'Quotation')->leftJoin('job_cards', 'job_cards.id', '=', 'invoices.job_card_id')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->where(fn ($q) => $q->whereColumn('invoices.bike_id', 'bikes.id')->orWhere(fn ($q) => $q->whereNull('invoices.bike_id')->whereColumn('bike_intakes.bike_id', 'bikes.id')))->where('invoices.due_amount', '>', 0);
     }
 
     public function export()

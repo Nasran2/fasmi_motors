@@ -289,7 +289,7 @@
         @if($invoice->return_amount>0)<tr><td>Returned credit</td><td>Rs. {{ number_format($invoice->return_amount,2) }}</td></tr>@endif
         <tr class="{{ $showPreviousBalance ? '' : 'grand' }}"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
         @if($showPreviousBalance)
-            <tr><td>Previous Balance</td><td>Rs. {{ number_format($previousBalance,2) }}</td></tr>
+            <tr><td>Earlier unpaid balances</td><td>Rs. {{ number_format($previousBalance,2) }}</td></tr>
             <tr class="grand"><td>Grand Total</td><td>Rs. {{ number_format($grandTotal,2) }}</td></tr>
         @endif
         @unless($isQuotation)

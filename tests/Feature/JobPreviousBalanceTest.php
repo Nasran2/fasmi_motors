@@ -33,7 +33,7 @@ beforeEach(function () {
 test('previous balance preference defaults on and saves on both editable and billed jobs', function () {
     expect($this->job->fresh()->show_previous_balance_on_bill)->toBeTrue();
     $this->get(route('jobs.show', $this->job))->assertOk()
-        ->assertSeeText('Include previous balance on bill')->assertSeeText('Rs. 10,150.00');
+        ->assertSeeText('Include outstanding balances on bill')->assertSeeText('Rs. 10,150.00');
     $this->put(route('jobs.update', $this->job), ['status' => 'Received', 'show_previous_balance_on_bill' => 1])
         ->assertSessionHasNoErrors();
     expect($this->job->fresh()->show_previous_balance_on_bill)->toBeTrue();
@@ -59,7 +59,7 @@ test('selected previous balances show dated jobs and correct totals in every bil
         ->and((float) $invoice->total)->toBe(5500.0)->and((float) $invoice->due_amount)->toBe(5000.0);
     foreach (['a4', 'a5', '80mm'] as $format) {
         $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
-            ->assertOk()->assertSeeText('Previous Balance')->assertSeeText('Grand Total')
+            ->assertOk()->assertSeeText('Earlier unpaid balances')->assertSeeText('Grand Total')
             ->assertSeeText('JOB-OLD-DATED')->assertSeeText('15 Sep 2026')
             ->assertSeeText('15,650.00')->assertSeeText('15,150.00');
         $this->get(route('invoices.public.pdf', ['token' => $invoice->public_token, 'format' => $format]))
@@ -69,7 +69,7 @@ test('selected previous balances show dated jobs and correct totals in every bil
         ->assertSessionHasNoErrors();
     foreach (['a4', '80mm'] as $format) {
         $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
-            ->assertOk()->assertDontSeeText('Previous Balance')->assertDontSeeText('Grand Total')
+            ->assertOk()->assertDontSeeText('Earlier unpaid balances')->assertDontSeeText('Grand Total')
             ->assertDontSeeText('JOB-OLD-DATED')->assertDontSeeText('15 Sep 2026')->assertSeeText('5,500.00');
     }
 });
@@ -121,7 +121,7 @@ test('invalid preferences and failed invoice creation do not change the saved op
 
 test('a forgotten previous balance joins customer dues and the bill without changing current job charges', function () {
     $this->job->update(['show_previous_balance_on_bill' => false]);
-    $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Add forgotten previous balance');
+    $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Add opening balance');
     $payload = [
         'previous_balance_amount' => '1234.56', 'previous_balance_date' => '2026-09-20',
         '_submission_token' => (string) Str::uuid(), 'customer_id' => 999999,
@@ -201,7 +201,7 @@ test('forgotten balances cannot be dated after the current bill or added from a 
 test('viewing jobs does not grant permission to add previous debt', function () {
     $role = Role::create(['name' => 'Job balance viewer', 'permissions' => ['job_card.view']]);
     $this->actingAs(User::factory()->create(['role_id' => $role->id]));
-    $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('Add forgotten previous balance');
+    $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('Add opening balance');
     $this->post(route('jobs.previous-balance.store', $this->job), [
         'previous_balance_amount' => 100, 'previous_balance_date' => '2026-09-20',
     ])->assertForbidden();

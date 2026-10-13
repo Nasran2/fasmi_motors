@@ -45,7 +45,7 @@
                         @endif
                         @foreach($olderBalances as $balance)
                         <div class="mt-2 border-t border-slate-100 pt-2 text-xs">
-                            <span class="block text-slate-500">Previous balance · {{ $balance['reference'] }}</span>
+                            <span class="block text-slate-500">Earlier unpaid balance · {{ $balance['reference'] }}</span>
                             <span class="block text-slate-500">{{ $balance['date'] }} · Rs. {{ number_format($balance['amount'], 2) }}</span>
                             <x-due-payment-button :invoice-id="$balance['invoice_id']" :due="$balance['amount']" :number="$balance['invoice_number']" :paid="$balance['paid']" :hold="$balance['hold']" class="mt-1"/>
                         </div>

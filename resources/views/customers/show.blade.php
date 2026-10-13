@@ -39,8 +39,6 @@
         <x-flash/>
 
         @php
-            $invoices = $customer->bikes->flatMap->intakes->map(fn($i) => $i->jobCard?->invoice)->filter();
-            $dueAmount = $invoices->sum('due_amount');
             $totalVisits = $customer->bikes->sum(fn($b) => $b->intakes->count());
         @endphp
 
