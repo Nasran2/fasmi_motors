@@ -9,6 +9,7 @@ use App\Models\JobCard;
 use App\Models\Payment;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\OpeningBalanceService;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -39,7 +40,7 @@ test('bike and status filters combine and persist across job list pages', functi
 
 test('job list shows due after total and popup defaults to today with a live preview', function () {
     $this->get(route('jobs.index'))->assertOk()->assertSeeInOrder(['<th>Total</th>', '<th>Due Balance</th>'], false)
-        ->assertSee('data-invoice-id="'.$this->invoice->id.'"', false)->assertSee('data-due="1000.00"', false)
+        ->assertSee('data-job-id="'.$this->job->id.'"', false)->assertSee('data-due="1000"', false)
         ->assertSee('name="paid_at" value="'.today()->toDateString().'"', false)
         ->assertSeeText('Remaining Due')->assertSeeText('Payment status after saving')->assertSee('remainingDue()', false);
 });
@@ -53,7 +54,7 @@ test('partial and final receipts update due status ledger date and keep workshop
         ->and($this->invoice->status)->toBe('Partially Paid')->and($receipt->paid_at->toDateString())->toBe($date)
         ->and((float) $receipt->balance_after)->toBe(700.0)
         ->and(AccountTransaction::where('reference_id', $receipt->id)->firstOrFail()->transaction_date->toDateString())->toBe($date);
-    $this->get(route('jobs.index'))->assertOk()->assertSeeText('Partially Paid')->assertSee('data-due="700.00"', false);
+    $this->get(route('jobs.index'))->assertOk()->assertSeeText('Partially Paid')->assertSee('data-due="700"', false);
     $this->post(route('customers.dues.payment', $this->invoice), ['paid_at' => today()->toDateString(), 'payments' => [array_replace($this->payment, ['amount' => 700])]])->assertSessionHasNoErrors();
     expect((float) $this->invoice->fresh()->due_amount)->toBe(0.0)->and($this->invoice->fresh()->status)->toBe('Paid')
         ->and($this->job->fresh()->status)->toBe('Billed')->and(Account::systemAccount('main')->balance)->toBe(1000.0);
@@ -96,3 +97,81 @@ test('users without collection permission can view dues but cannot receive payme
     $this->post(route('customers.dues.payment', $this->invoice), ['payments' => [$this->payment]])->assertForbidden();
     expect(Payment::count())->toBe(0);
 });
+
+test('job list keeps bill details inside the popup and pays only selected bills', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 500, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $response = $this->get(route('jobs.index'))->assertOk()->assertSeeText('Select all bills')->assertSeeText('Selected due:')
+        ->assertSee('data-due="1500"', false)->assertDontSeeText('Earlier unpaid balance ·');
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+    $xpath = new DOMXPath($document);
+    expect($xpath->query('//table/tbody/tr/td[7]//button')->length)->toBe(1);
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => [$this->invoice->id], 'payments' => [$this->payment]])->assertSessionHasNoErrors();
+    expect((float) $this->invoice->fresh()->due_amount)->toBe(700.0)
+        ->and((float) $opening->fresh()->due_amount)->toBe(500.0)->and($opening->payments()->count())->toBe(0);
+});
+
+test('selected bills share a partial payment oldest first and keep opening receipts in main account', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 500, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $date = today()->subDay()->toDateString();
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => $date, 'invoice_ids' => [$this->invoice->id, $opening->id], 'payments' => [array_replace($this->payment, ['amount' => 800])]])->assertSessionHasNoErrors();
+    expect($opening->fresh()->status)->toBe('Paid')->and((float) $this->invoice->fresh()->due_amount)->toBe(700.0)
+        ->and($this->invoice->fresh()->status)->toBe('Partially Paid')->and(Account::systemAccount('main')->balance)->toBe(800.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)
+        ->and($opening->payments()->sole()->paid_at->toDateString())->toBe($date);
+});
+
+test('selected cheque payments use one cheque and stay held until clearing', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 500, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $row = array_replace($this->payment, ['amount' => 1500, 'method' => 'Cheque', 'account_id' => Account::systemAccount('bank')->id, 'cheque_date' => today()->toDateString(), 'cheque_number' => 'SELECT-BILLS', 'bank_name' => 'Test Bank']);
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => [$opening->id, $this->invoice->id], 'payments' => [$row]])->assertSessionHasNoErrors();
+    $cheque = $opening->payments()->sole()->cheque;
+    expect($this->invoice->payments()->sole()->cheque_id)->toBe($cheque->id)->and($opening->fresh()->status)->toBe('Hold')
+        ->and($this->invoice->fresh()->status)->toBe('Hold')->and(AccountTransaction::count())->toBe(0);
+    $this->patch(route('accounts.cheques.status', $cheque), ['status' => 'Cleared', 'realized_date' => today()->toDateString()])->assertSessionHasNoErrors();
+    expect($opening->fresh()->status)->toBe('Paid')->and($this->invoice->fresh()->status)->toBe('Paid')
+        ->and(Account::systemAccount('main')->balance)->toBe(1500.0);
+    $this->patch(route('accounts.cheques.status', $cheque), ['status' => 'Returned', 'reason' => 'Bank rejection'])->assertSessionHasNoErrors();
+    expect((float) $opening->fresh()->due_amount)->toBe(500.0)->and((float) $this->invoice->fresh()->due_amount)->toBe(1000.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0);
+});
+
+test('bill selection rejects empty duplicate and unrelated invoices without recording payments', function ($selection) {
+    $ids = match ($selection) {
+        'empty' => [],
+        'duplicate' => [$this->invoice->id, $this->invoice->id],
+        default => [$this->invoice->id + 999],
+    };
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => $ids, 'payments' => [$this->payment]])->assertSessionHasErrors();
+    expect(Payment::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
+})->with(['empty', 'duplicate', 'unrelated']);
+
+test('payment cannot exceed selected dues or use a bill settled after the popup opened', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 100, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $payload = ['paid_at' => today()->toDateString(), 'invoice_ids' => [$opening->id], 'payments' => [$this->payment]];
+    $this->post(route('jobs.dues.payment', $this->job), $payload)->assertSessionHasErrors('amount');
+    $opening->update(['paid_amount' => 100, 'due_amount' => 0, 'status' => 'Paid']);
+    $this->post(route('jobs.dues.payment', $this->job), $payload)->assertSessionHasErrors('invoice_ids.0');
+    expect(Payment::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
+});
+
+test('the selected bill payment route requires collection permission', function () {
+    $role = Role::create(['name' => 'Selected Job Viewer', 'permissions' => ['job_card.view']]);
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->get(route('jobs.index'))->assertOk()->assertDontSee('data-job-id="'.$this->job->id.'"', false);
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => [$this->invoice->id], 'payments' => [$this->payment]])->assertForbidden();
+    expect(Payment::count())->toBe(0);
+});
+
+test('bill selection cannot pay another customer or a later invoice not shown in the row', function ($otherCustomer) {
+    $invoice = $this->invoice->replicate(['number', 'public_token', 'job_card_id']);
+    $invoice->number = 'INV-NOT-SHOWN';
+    $invoice->public_token = Str::random(48);
+    $invoice->created_at = $this->invoice->created_at->copy()->addDay();
+    if ($otherCustomer) {
+        $invoice->customer_id = Customer::create(['name' => 'Foreign Customer', 'phone' => '0779009999'])->id;
+    }
+    $invoice->save();
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => [$invoice->id], 'payments' => [$this->payment]])->assertSessionHasErrors('invoice_ids.0');
+    expect(Payment::count())->toBe(0)->and((float) $invoice->fresh()->due_amount)->toBe(1000.0);
+})->with([true, false]);

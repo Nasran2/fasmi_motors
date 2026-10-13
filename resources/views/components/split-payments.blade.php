@@ -32,9 +32,9 @@
 }" @if($totalFromForm) x-init="refreshTotal()" @input.window="if ($el.closest('form').contains($event.target)) refreshTotal()" @endif
     @if($changeTotal !== null) @payment-due-selected.window="if ($el.closest('form') === $event.target) {
         invoiceTotal = Math.max(0, Number($event.detail.due) || 0);
+        if ($event.detail.reset || $event.detail.paid !== undefined) existingPaid = Number($event.detail.paid) || 0;
+        if ($event.detail.reset || $event.detail.hold !== undefined) existingHold = Number($event.detail.hold) || 0;
         if ($event.detail.reset) {
-            existingPaid = Number($event.detail.paid) || 0;
-            existingHold = Number($event.detail.hold) || 0;
             rows = [{method:'Cash',amount:0,account_id:defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}];
         }
     }" @endif>
@@ -79,7 +79,7 @@
         @endif
     </div>
     @if($changeTotal !== null)
-    <p x-show="exceedsDue()" x-cloak class="text-xs font-semibold text-red-600">{{ $allowCashChange ? 'Non-cash payments exceed the bill total. Change can only be returned from cash received.' : 'Payment amounts cannot exceed the outstanding customer due.' }}</p>
+    <p x-show="exceedsDue()" x-cloak class="text-xs font-semibold text-red-600">{{ $allowCashChange ? 'Non-cash payments exceed the bill total. Change can only be returned from cash received.' : 'Payment amounts cannot exceed the outstanding due.' }}</p>
     @endif
     @if($duePreview)
     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2" aria-live="polite">

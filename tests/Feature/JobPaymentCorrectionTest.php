@@ -124,9 +124,15 @@ test('cleared and forwarded cheques cannot be changed in the payment editor', fu
 
 test('paid current job still shows and collects the dated previous due from its list row', function () {
     $old = Invoice::create(['number' => 'OP-VO-1783', 'invoice_type' => 'Opening Due', 'customer_id' => $this->invoice->customer_id, 'bike_id' => $this->invoice->bike_id, 'total' => 10000, 'subtotal' => 10000, 'due_amount' => 10000, 'status' => 'Unpaid', 'public_token' => Str::random(48), 'created_at' => today()->subDays(5), 'created_by' => $this->user->id]);
-    $this->get(route('jobs.index', ['bike_id' => $this->job->intake->bike_id]))->assertOk()->assertSeeText('Current bill: Completed')->assertSeeText('Rs. 10,000.00')
-        ->assertSeeText('OP-VO-1783')->assertSee('data-invoice-id="'.$old->id.'"', false)->assertDontSee('data-invoice-id="'.$this->invoice->id.'"', false);
-    $this->post(route('customers.dues.payment', $old), ['payments' => [['method' => 'Cash', 'amount' => 10000, 'account_id' => Account::systemAccount('main')->id]]])->assertSessionHasNoErrors();
+    $response = $this->get(route('jobs.index', ['bike_id' => $this->job->intake->bike_id]))->assertOk()->assertSeeText('Current bill: Completed')->assertSeeText('Rs. 10,000.00')
+        ->assertDontSeeText('OP-VO-1783')->assertSee('data-job-id="'.$this->job->id.'"', false);
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+    $button = (new DOMXPath($document))->query('//button[@data-job-id="'.$this->job->id.'"]')->item(0);
+    $bills = json_decode($button->getAttribute('data-bills'), true);
+    expect(array_column($bills, 'invoice_id'))->toBe([$old->id])
+        ->and($bills[0]['date'])->toBe(today()->subDays(5)->format('d M Y'));
+    $this->post(route('jobs.dues.payment', $this->job), ['paid_at' => today()->toDateString(), 'invoice_ids' => [$old->id], 'payments' => [['method' => 'Cash', 'amount' => 10000, 'account_id' => Account::systemAccount('main')->id]]])->assertSessionHasNoErrors();
     $oldReceipt = $old->payments()->firstOrFail();
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSee('data-edit-payment="'.$oldReceipt->id.'"', false);
     $this->put(route('jobs.payments.update', [$this->job, $oldReceipt]), $this->correction)->assertSessionHasNoErrors();

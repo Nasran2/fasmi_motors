@@ -9,14 +9,18 @@ use Illuminate\Validation\ValidationException;
 
 class CustomerReceiptService
 {
-    public function receive(Customer $customer, array $rows, string $paidAt, ?int $invoiceId = null): void
+    public function receive(Customer $customer, array $rows, string $paidAt, ?int $invoiceId = null, ?array $invoiceIds = null): void
     {
-        DB::transaction(function () use ($customer, $rows, $paidAt, $invoiceId) {
+        DB::transaction(function () use ($customer, $rows, $paidAt, $invoiceId, $invoiceIds) {
             $settlement = app(SettlementService::class);
             $invoices = Invoice::customerAccount($customer->id)->where('status', '!=', 'Cancelled')
                 ->where('invoice_type', '!=', 'Quotation')->where('due_amount', '>', 0)
                 ->when($invoiceId, fn ($query) => $query->whereKey($invoiceId))
+                ->when($invoiceIds !== null, fn ($query) => $query->whereKey($invoiceIds))
                 ->orderBy('created_at')->orderBy('id')->lockForUpdate()->get();
+            if ($invoiceIds !== null && $invoices->count() !== count(array_unique($invoiceIds))) {
+                throw ValidationException::withMessages(['invoice_ids' => 'A selected bill is no longer payable. Refresh the list and select the bills again.']);
+            }
             if (! $rows || $invoices->isEmpty() || $settlement->total($rows) > round((float) $invoices->sum('due_amount'), 2)) {
                 throw ValidationException::withMessages(['amount' => 'Enter an amount up to the customer’s outstanding due.']);
             }
