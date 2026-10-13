@@ -74,6 +74,40 @@ test('selected previous balances show dated jobs and correct totals in every bil
     }
 });
 
+test('new invoice printing hides only total balance due while later viewing still shows it', function () {
+    $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 500, 'payment_method' => 'Cash'])
+        ->assertSessionHasNoErrors();
+    $invoice = $this->job->fresh()->invoice;
+    $this->get(route('jobs.show', $this->job))->assertOk()
+        ->assertSee(route('invoices.public.pdf', ['token' => $invoice->public_token, 'hide_total_balance_due' => 1]))
+        ->assertSee('format=${format}&hide_total_balance_due=1', false)
+        ->assertSee(route('invoices.public', $invoice->public_token));
+
+    foreach (['a4', 'a5', '80mm'] as $format) {
+        $response = $this->get(route('invoices.public', [
+            'token' => $invoice->public_token, 'format' => $format, 'hide_total_balance_due' => 1,
+        ]))->assertOk()->assertDontSeeText('Total balance due')
+            ->assertSeeText('Earlier unpaid balances')->assertSeeText('Grand Total')
+            ->assertSeeText('JOB-OLD-DATED')->assertSeeText('15,650.00')->assertSeeText('5,000.00')
+            ->assertSee(route('invoices.public.pdf', [
+                'token' => $invoice->public_token, 'format' => $format, 'hide_total_balance_due' => 1,
+            ]));
+        foreach (['a4', 'a5', '80mm'] as $paper) {
+            $response->assertSee(route('invoices.public', [
+                'token' => $invoice->public_token, 'format' => $paper, 'hide_total_balance_due' => 1,
+            ]));
+        }
+        $view = $format === '80mm' ? 'invoices.thermal' : 'invoices.public';
+        $pdfHtml = view($view, InvoiceDocument::data($invoice, pdfMode: true, showTotalBalanceDue: false))->render();
+        expect($pdfHtml)->not->toContain('Total balance due')->toContain('Grand Total');
+        $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
+            ->assertOk()->assertSeeText('Total balance due')->assertSeeText('15,150.00');
+    }
+    expect($this->job->fresh()->show_previous_balance_on_bill)->toBeTrue()
+        ->and((float) $invoice->fresh()->due_amount)->toBe(5000.0)
+        ->and((float) $this->previous->fresh()->due_amount)->toBe(10150.0);
+});
+
 test('previous balance excludes other customers shops quotations cancelled settled and later bills', function () {
     $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 0, 'payment_method' => 'Credit/Due', 'show_previous_balance_on_bill' => 1])
         ->assertSessionHasNoErrors();

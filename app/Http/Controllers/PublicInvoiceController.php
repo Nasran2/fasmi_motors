@@ -17,19 +17,24 @@ class PublicInvoiceController extends Controller
     {
         $invoice = $this->openInvoice($request, $token);
 
-        return view($request->query('format') === '80mm' ? 'invoices.thermal' : 'invoices.public', InvoiceDocument::data($invoice, allowPublicPdf: filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL)));
+        return view($request->query('format') === '80mm' ? 'invoices.thermal' : 'invoices.public', InvoiceDocument::data(
+            $invoice,
+            allowPublicPdf: filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL),
+            showTotalBalanceDue: ! $request->boolean('hide_total_balance_due'),
+        ));
     }
 
     public function pdf(Request $request, string $token)
     {
         abort_unless(filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL), 403);
         $invoice = $this->openInvoice($request, $token);
+        $data = InvoiceDocument::data($invoice, pdfMode: true, showTotalBalanceDue: ! $request->boolean('hide_total_balance_due'));
 
         if ($request->query('format') === '80mm') {
-            return ThermalReceipt::pdf(InvoiceDocument::data($invoice, pdfMode: true))->download($this->filename($invoice));
+            return ThermalReceipt::pdf($data)->download($this->filename($invoice));
         }
 
-        return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))
+        return Pdf::loadView('invoices.public', $data)
             ->setPaper($request->query('format') === 'a5' ? 'a5' : 'a4')->download($this->filename($invoice));
     }
 

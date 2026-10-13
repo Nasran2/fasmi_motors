@@ -221,7 +221,7 @@
 </head>
 <body class="{{ $pdfMode ? 'pdf' : '' }}">
 @unless($pdfMode)
-<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions">@include('invoices.partials.format-selector')<button type="button" class="action" onclick="window.print()">Print {{ $format === 'a5' ? 'A5' : 'A4' }}</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', ['token' => $invoice->public_token, 'format' => $format]) }}">Download PDF</a>@endif</div></div>
+<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions">@include('invoices.partials.format-selector')<button type="button" class="action" onclick="window.print()">Print {{ $format === 'a5' ? 'A5' : 'A4' }}</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', array_merge(['token' => $invoice->public_token, 'format' => $format], $presentationQuery)) }}">Download PDF</a>@endif</div></div>
 @endunless
 <div class="document-footer-print">@include('invoices.partials.footer')</div>
 <main class="sheet">
@@ -302,7 +302,7 @@
                 @if((float) $invoice->hold_amount > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $invoice->hold_amount, 2) }}</td></tr>@endif
                 <tr class="balance"><td>{{ $showPreviousBalance ? 'Current bill due' : 'Balance due' }}</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
             @endif
-            @if($showPreviousBalance)<tr class="balance"><td>Total balance due</td><td>Rs. {{ number_format($totalBalanceDue,2) }}</td></tr>@endif
+            @if($showPreviousBalance && $showTotalBalanceDue)<tr class="balance"><td>Total balance due</td><td>Rs. {{ number_format($totalBalanceDue,2) }}</td></tr>@endif
         @endunless
     </table></div>
     @if($compactClosing)</td></tr></table>@else @include('invoices.partials.notes') @endif

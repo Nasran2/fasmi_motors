@@ -617,7 +617,7 @@ function openUnlockModal() {
             <div class="flex gap-3">
                 <button onclick="document.getElementById('print-invoice-dialog').close()" type="button" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition text-sm"><span class="block text-[9px]">Esc</span>Close</button>
                 <button onclick="openPrint('a4')" type="button" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition text-sm"><span class="block text-[9px]">Alt+P</span>Print A4</button>
-                <a href="{{ route('invoices.public.pdf', session('print_invoice')) }}" target="_blank" onclick="document.getElementById('print-invoice-dialog').close()" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition text-sm flex flex-col items-center justify-center"><span class="block text-[9px]">Alt+D</span>PDF</a>
+                <a href="{{ route('invoices.public.pdf', ['token' => session('print_invoice'), 'hide_total_balance_due' => 1]) }}" target="_blank" onclick="document.getElementById('print-invoice-dialog').close()" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition text-sm flex flex-col items-center justify-center"><span class="block text-[9px]">Alt+D</span>PDF</a>
             </div>
         </div>
     </div>
@@ -628,7 +628,7 @@ function openUnlockModal() {
     });
     function openPrint(format) {
         const token = "{{ session('print_invoice') }}";
-        const url = `{{ url('invoice') }}/${token}?print=1&format=${format}`;
+        const url = `{{ url('invoice') }}/${token}?print=1&format=${format}&hide_total_balance_due=1`;
         window.open(url, '_blank');
         document.getElementById('print-invoice-dialog').close();
     }

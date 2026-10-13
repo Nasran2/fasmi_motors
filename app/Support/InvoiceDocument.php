@@ -16,7 +16,7 @@ final class InvoiceDocument
 
     public const BILL_INTRO_TEXT = 'Please check the items and amounts above. Keep this invoice for your records.';
 
-    public static function data(Invoice $invoice, bool $pdfMode = false, bool $allowPublicPdf = false): array
+    public static function data(Invoice $invoice, bool $pdfMode = false, bool $allowPublicPdf = false, bool $showTotalBalanceDue = true): array
     {
         $invoice->loadMissing([
             'customer', 'bike', 'store', 'jobCard.intake.bike', 'jobCard.technician',
@@ -140,6 +140,8 @@ final class InvoiceDocument
             'isQuotation' => $isQuotation,
             'wording' => $wording,
             'showPreviousBalance' => $showPreviousBalance,
+            'showTotalBalanceDue' => $showTotalBalanceDue,
+            'presentationQuery' => $showTotalBalanceDue ? [] : ['hide_total_balance_due' => 1],
             'previousBalances' => $previousBalances,
             'previousBalance' => $previousBalance,
             'grandTotal' => round((float) $invoice->total + $previousBalance, 2),
