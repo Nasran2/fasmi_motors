@@ -1,4 +1,4 @@
-@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'duePreview' => false, 'allowCashChange' => true])
+@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'previousBalance' => 0, 'duePreview' => false, 'allowCashChange' => true])
 @php
     $methods = $purchase ? ['Cash','Bank Transfer','Card','Cheque','Party Cheque'] : ['Cash','Card','Bank Transfer','Cheque','QR'];
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
@@ -21,7 +21,8 @@
     refreshTotal() {
         const form = this.$el.closest('form');
         const amount = name => Number(form.elements.namedItem(name)?.value || 0);
-        this.invoiceTotal = Math.max(0, Math.round(({{ (float) $partsTotal }} + amount('service_total') + amount('labor_total') + amount('washing_total') + amount('other_total') - amount('discount') + amount('tax')) * 100) / 100);
+        const previous = form.querySelector('input[type=checkbox][name=include_previous_balance]')?.checked ? {{ (float) $previousBalance }} : 0;
+        this.invoiceTotal = Math.max(0, Math.round(({{ (float) $partsTotal }} + amount('service_total') + amount('labor_total') + amount('washing_total') + amount('other_total') - amount('discount') + amount('tax')) * 100) / 100) + previous;
     },
     defaultAccount(method) { return ['Cheque','Card','Bank Transfer','QR'].includes(method) ? {{ Illuminate\Support\Js::from($bankAccountId) }} : {{ Illuminate\Support\Js::from($cashAccountId) }}; },
     add() { this.rows.push({method:'Cash',amount:0,account_id:this.defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}); },

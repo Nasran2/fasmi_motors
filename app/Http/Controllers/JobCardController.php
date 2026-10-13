@@ -30,7 +30,8 @@ class JobCardController extends Controller
         $r->validate(['bike_id' => 'nullable|integer|min:1']);
         $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
         if ($r->filled('bike_id')) {
-            $q->whereHas('intake', fn ($intake) => $intake->where('bike_id', $r->integer('bike_id')));
+            $q->where(fn ($query) => $query->where('quick_bike_id', $r->integer('bike_id'))
+                ->orWhereHas('intake', fn ($intake) => $intake->where('bike_id', $r->integer('bike_id'))));
         }
         if ($r->status) {
             if ($r->status === 'Completed') {
@@ -46,7 +47,8 @@ class JobCardController extends Controller
         return view('jobs.index', [
             'jobs' => $jobs,
             'previousBalancesByJob' => $previousBalancesByJob,
-            'bikes' => Bike::whereHas('intakes.jobCard')->orderBy('number')->get(['id', 'number']),
+            'bikes' => Bike::where(fn ($query) => $query->whereHas('intakes.jobCard')
+                ->orWhereIn('id', JobCard::whereNotNull('quick_bike_id')->select('quick_bike_id')))->orderBy('number')->get(['id', 'number']),
             'statuses' => self::statuses(),
             'accounts' => Account::where('active', 1)->get(),
         ]);
@@ -106,6 +108,9 @@ class JobCardController extends Controller
         $oldDue = PreviousCustomerBalance::total($previousBalances);
         $relatedInvoiceIds = PreviousCustomerBalance::forJob($job, includeSettled: true)->pluck('invoice_id')->push($job->invoice?->id)->filter();
         $paymentInvoices = Invoice::with('payments.cheque', 'payments.account', 'payments.invoice')->whereIn('id', $relatedInvoiceIds)->where('status', '!=', 'Cancelled')->get();
+        $paymentSummary = \App\Support\JobPaymentSummary::data($job);
+        $receiptGroups = $paymentInvoices->flatMap(fn ($invoice) => $invoice->payments)->sortBy('id')
+            ->groupBy(fn ($receipt) => $receipt->receipt_group_id ?: 'legacy-'.$receipt->id);
         $paymentChanges = PaymentCorrection::with('changer')->where(function ($query) use ($job) {
             $query->where('job_card_id', $job->id)->orWhereIn('invoice_id', Invoice::where('job_card_id', $job->id)->select('id'));
         })->get();
@@ -118,6 +123,8 @@ class JobCardController extends Controller
             'oldDue' => $oldDue,
             'previousBalances' => $previousBalances,
             'paymentInvoices' => $paymentInvoices,
+            'paymentSummary' => $paymentSummary,
+            'receiptGroups' => $receiptGroups,
             'history' => $history,
             'technicians' => Technician::where('active', 1)->get(),
             'products' => $products,
@@ -332,10 +339,11 @@ class JobCardController extends Controller
     {
         $labels = $r->validate([
             'show_previous_balance_on_bill' => 'sometimes|required|boolean',
+            'include_previous_balance' => 'sometimes|required|boolean',
             'service_name' => 'sometimes|required|string|max:50',
             'other_income_name' => 'sometimes|required|string|max:50',
         ]);
-        unset($labels['show_previous_balance_on_bill']);
+        unset($labels['show_previous_balance_on_bill'], $labels['include_previous_balance']);
         $settlement = app(SettlementService::class);
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
@@ -349,7 +357,7 @@ class JobCardController extends Controller
                 $job->update(['show_previous_balance_on_bill' => $r->boolean('show_previous_balance_on_bill')]);
             }
 
-            return $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id);
+            return $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id, $r->boolean('include_previous_balance', true));
         });
 
         return redirect()->route('jobs.show', $job)->with([

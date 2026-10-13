@@ -26,15 +26,15 @@
                 @forelse($tech->jobCards as $job)
                 <div class="rounded-lg border border-slate-100 bg-slate-50 p-3 relative hover:border-indigo-200 transition-colors">
                     <div class="flex justify-between items-start mb-1">
-                        <span class="font-bold text-sm text-slate-700">{{ $job->intake->bike->number ?? 'N/A' }}</span>
+                        <span class="font-bold text-sm text-slate-700">{{ $job->bike?->number ?? 'N/A' }}</span>
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600">
                             {{ $job->number }}
                         </span>
                     </div>
                     <div class="text-xs text-slate-600 mb-2">
-                        {{ $job->intake->bike->model ?? 'Unknown Model' }}
-                        @if($job->intake->bike->customer)
-                            &bull; {{ $job->intake->bike->customer->name }}
+                        {{ $job->bike?->model ?? 'Unknown Model' }}
+                        @if($job->customer)
+                            &bull; {{ $job->customer?->name }}
                         @endif
                     </div>
                     

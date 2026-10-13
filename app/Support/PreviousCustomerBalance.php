@@ -16,13 +16,14 @@ final class PreviousCustomerBalance
     {
         $job->loadMissing('intake.bike');
         $current ??= $job->invoice;
-        if (! $job->intake->bike->customer_id) {
+        $customerId = $current?->customer_id ?? $job->customer_id;
+        if (! $customerId) {
             return collect();
         }
         $invoices = Invoice::withoutGlobalScope(ShopScope::class)
             ->with('jobCard')
             ->where('shop_type', $current->shop_type ?? 'workshop')
-            ->where('customer_id', $job->intake->bike->customer_id)
+            ->where('customer_id', $customerId)
             ->where('status', '!=', 'Cancelled')
             ->where('invoice_type', '!=', 'Quotation')
             ->when(! $includeSettled, fn ($query) => $query->where('due_amount', '>', 0))

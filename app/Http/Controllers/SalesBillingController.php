@@ -45,13 +45,15 @@ class SalesBillingController extends Controller
     {
         $settlement = app(SettlementService::class);
         $rows = $settlement->rows($request->all());
+        $request->validate(['include_previous_balance' => ['sometimes', 'required', 'boolean']]);
+        $includePrevious = $request->boolean('include_previous_balance', true);
         $request->merge(['paid_amount' => $settlement->total($rows), 'payment_method' => count($rows) > 1 ? 'Cash' : ($rows[0]['method'] ?? 'Credit/Due')]);
         $data = $request->validate(['service_total' => ['nullable', 'numeric', 'min:0'], 'labor_total' => ['nullable', 'numeric', 'min:0'], 'washing_total' => ['nullable', 'numeric', 'min:0'], 'other_total' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'tax' => ['nullable', 'numeric', 'min:0'], 'paid_amount' => ['required', 'numeric', 'min:0'], 'payment_method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR', 'Credit/Due'])], 'account_id' => ['nullable', 'exists:accounts,id']]);
-        $invoice = DB::transaction(function () use ($job, $data, $service, $rows) {
+        $invoice = DB::transaction(function () use ($job, $data, $service, $rows, $includePrevious) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             $job->update(['service_total' => $data['service_total'] ?? 0, 'labor_total' => $data['labor_total'] ?? 0, 'washing_total' => $data['washing_total'] ?? 0, 'other_total' => $data['other_total'] ?? 0, 'discount' => $data['discount'] ?? 0, 'tax' => $data['tax'] ?? 0]);
 
-            return $service->invoice($job->fresh(), (float) $data['paid_amount'], $data['payment_method'], ($data['account_id'] ?? null) ? (int) $data['account_id'] : null, $rows);
+            return $service->invoice($job->fresh(), (float) $data['paid_amount'], $data['payment_method'], ($data['account_id'] ?? null) ? (int) $data['account_id'] : null, $rows, includePrevious: $includePrevious);
         });
 
         return redirect()->route('sales.invoices.show', $invoice)->with('success', 'Job card invoice generated with account split and secure public link.');

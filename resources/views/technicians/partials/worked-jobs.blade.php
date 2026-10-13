@@ -27,8 +27,8 @@
                 <tr>
                     <td class="whitespace-nowrap"><a href="{{ route('jobs.show', $job) }}" class="text-red-600">{{ $job->number }}</a></td>
                     <td class="whitespace-nowrap font-bold">Rs. {{ number_format($jobCommissions->get($job->id, 0), 2) }}</td>
-                    <td>{{ $job->intake->bike->number }}</td>
-                    <td>{{ $job->intake->bike->customer->name }}</td>
+                    <td>{{ $job->bike?->number }}</td>
+                    <td>{{ $job->customer?->name }}</td>
                     <td class="whitespace-nowrap">{{ $job->created_at->format('d M Y') }}</td>
                     <td class="whitespace-nowrap">Rs. {{ number_format($job->invoice?->total ?? 0, 2) }}</td>
                     <td>{{ $job->status }}</td>

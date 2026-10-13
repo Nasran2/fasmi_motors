@@ -196,6 +196,7 @@
     .search-dropdown.focus .ts-control { border-color:#ed142b !important; box-shadow:0 0 0 3px #ed142b15 !important; }
     .search-dropdown .ts-control .item { padding:0 !important; background:transparent !important; border:0 !important; border-radius:0 !important; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
     .search-dropdown .ts-control input { min-height:0 !important; height:auto !important; padding:0 !important; border:0 !important; background:transparent !important; box-shadow:none !important; border-radius:0 !important; font-size:14px !important; }
+    .search-filter.has-query .ts-control .item { display:none; }
     .search-dropdown-menu { z-index:10000; background:#fff; color:#1e293b; border-radius:8px !important; margin:0 !important; }
     .search-dropdown-menu .ts-dropdown-content { max-height:240px; overscroll-behavior:contain; }
     .search-dropdown-menu .option { padding:11px 14px !important; color:#334155; overflow-wrap:anywhere; line-height:1.45; border-bottom:1px solid #f1f5f9; }
@@ -287,10 +288,26 @@
             if (!elements || elements.length === 0) return;
             Array.from(elements).forEach(el => {
                 if(!el.tomselect) {
-                    new TomSelect(el, {
-                        plugins: ['remove_button'],
+                    const searchableFilter = el.hasAttribute('data-search-filter');
+                    const control = new TomSelect(el, {
+                        plugins: searchableFilter ? [] : ['remove_button'],
                         maxOptions: null,
+                        ...(searchableFilter ? {
+                            allowEmptyOption: true,
+                            create: false,
+                            placeholder: el.dataset.placeholder,
+                            wrapperClass: 'ts-wrapper search-dropdown search-filter',
+                            dropdownClass: 'ts-dropdown search-dropdown-menu',
+                            copyClassesToDropdown: false,
+                            onType(query) { this.wrapper.classList.toggle('has-query', Boolean(query)); },
+                            onChange() { this.wrapper.classList.remove('has-query'); },
+                            onBlur() { this.wrapper.classList.remove('has-query'); },
+                        } : {}),
                     });
+                    if (searchableFilter) {
+                        control.control_input.classList.add('noinput');
+                        control.control_input.setAttribute('aria-label', el.getAttribute('aria-label'));
+                    }
                 }
             });
         };

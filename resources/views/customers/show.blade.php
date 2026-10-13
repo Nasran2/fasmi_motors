@@ -39,7 +39,7 @@
         <x-flash/>
 
         @php
-            $totalVisits = $customer->bikes->sum(fn($b) => $b->intakes->count());
+            $totalVisits = $customer->bikes->sum(fn($b) => $b->intakes->count()) + $quickVisits;
         @endphp
 
         <!-- Stats Grid -->
@@ -180,13 +180,13 @@
                             
                             @php
                                 $bikeDue = (float) $bike->due_amount;
-                                $lastIntake = $bike->intakes->sortByDesc('created_at')->first();
+                                $lastIntake = $bike->intakes->toBase()->concat($bike->quickJobs)->sortByDesc('created_at')->first();
                             @endphp
                             
                             <div class="mt-5 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4">
                                 <div>
                                     <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Visits</p>
-                                    <p class="mt-1 text-lg font-bold text-slate-700">{{ $bike->intakes->count() }}</p>
+                                    <p class="mt-1 text-lg font-bold text-slate-700">{{ $bike->intakes->count() + $bike->quickJobs->count() }}</p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Last Visit</p>

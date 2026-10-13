@@ -50,8 +50,29 @@ test('intake and job creation send separate customer and technician messages aft
     Http::assertSentCount(3);
     expect(SmsLog::where('message_type', 'event:received')->first()->message)->toContain('IN-SMS-100')
         ->and(SmsLog::where('message_type', 'event:job_created')->first()->formatted_phone)->toBe('94771234567')
-        ->and(SmsLog::where('message_type', 'event:assigned')->first()->formatted_phone)->toBe('94712345678');
+        ->and(SmsLog::where('message_type', 'event:assigned')->first()->formatted_phone)->toBe('94712345678')
+        ->and(SmsLog::where('message_type', 'event:assigned')->first()->message)->toContain('Model: Honda')->not->toContain('Priority:', '{bike_model}');
 });
+
+test('saved assignment templates replace priority with the bike model in settings and messages', function () {
+    Setting::updateOrCreate(['key' => 'sms_tmpl_assigned'], ['group' => 'sms', 'value' => 'Hello {technician_name}. Priority: {priority}. Complaint: {complaint}. Keep your tools ready.']);
+    $this->get(route('system-settings.sms-settings'))->assertOk()
+        ->assertSeeText('Model: {bike_model}. Complaint: {complaint}. Keep your tools ready.')
+        ->assertDontSeeText('Priority: {priority}');
+    $technician = Technician::create(['name' => 'Assigned Staff', 'phone' => '0712345678', 'active' => true]);
+    $job = smsTestJob();
+    $job->update(['main_technician_id' => $technician->id]);
+    expect(SmsLog::where('message_type', 'event:assigned')->firstOrFail()->message)
+        ->toBe('Hello Assigned Staff. Model: Honda. Complaint: Engine service. Keep your tools ready.');
+});
+
+test('quick job assignment uses the optional bike model or a clear missing model label', function (?string $model, string $expected) {
+    $technician = Technician::create(['name' => 'Quick Staff', 'phone' => '0712345678', 'active' => true]);
+    JobCard::create(['number' => 'JOB-QUICK-SMS', 'is_quick_job' => true, 'quick_bike_details' => ['model' => $model],
+        'quick_complaint' => 'Washing', 'main_technician_id' => $technician->id, 'status' => 'Assigned', 'created_by' => auth()->id()]);
+    expect(SmsLog::where('message_type', 'event:assigned')->firstOrFail()->message)
+        ->toContain('Model: '.$expected, 'Complaint: Washing')->not->toContain('Priority:', '{bike_model}');
+})->with([['Yamaha Ray ZR', 'Yamaha Ray ZR'], [null, 'Not recorded']]);
 
 test('rolled back intake never sends SMS', function () {
     try {

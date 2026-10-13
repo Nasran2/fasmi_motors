@@ -107,6 +107,8 @@ class ReportController extends Controller
             ->when($r->technician, fn ($q, $v) => $q->where('main_technician_id', $v))
             ->when($r->search, fn ($q, $s) => $q->where(fn ($x) => $x->where('number', 'like', "%{$s}%")
                 ->orWhereHas('intake.bike.customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$s}%"))
+                ->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$s}%"))
                 ->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$s}%"))
             ))
             ->latest()->paginate($r->has('print') ? 9999 : 25)->withQueryString();

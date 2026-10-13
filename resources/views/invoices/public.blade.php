@@ -239,8 +239,8 @@
             <table class="meta">
                 <tr><td>Date</td><td>{{ $invoice->created_at->format('d M Y') }}</td></tr>
                 @if(!$isQuotation)
-                    @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
-                        <tr><td>Status</td><td>{{ $invoice->status }}</td></tr>
+                    @if((float) $summaryPaid > 0 || (float) $summaryHold > 0 || $invoice->status === 'Paid')
+                        <tr><td>Status</td><td>{{ $summaryStatus }}</td></tr>
                     @endif
                 @endif
                 @if($business['business_registration_no'] ?? null)<tr><td>BRN</td><td>{{ $business['business_registration_no'] }}</td></tr>@endif
@@ -254,7 +254,7 @@
         @endforeach
     </div>
     <div class="divider"></div>
-    @php($documentBike = $invoice->bike ?? $invoice->jobCard?->intake?->bike)
+    @php($documentBike = $invoiceBike)
     <table class="party"><tr>
         <td><p class="eyebrow">Prepared for</p><div class="party-name">{{ $invoice->customer?->name ?: 'Walk-in Customer' }}</div>@if($invoice->customer?->phone)<div class="detail-line muted">{{ $invoice->customer->phone }}</div>@endif</td>
         <td><p class="eyebrow">{{ $invoice->jobCard ? 'Vehicle & Job Card' : 'Sale Details' }}</p><div class="party-name">{{ $documentBike?->number ?? 'Counter Sale' }}</div>
@@ -289,17 +289,17 @@
         @if($invoice->return_amount>0)<tr><td>Returned credit</td><td>Rs. {{ number_format($invoice->return_amount,2) }}</td></tr>@endif
         <tr class="{{ $showPreviousBalance ? '' : 'grand' }}"><td>{{ $isQuotation ? 'Quoted total' : 'Total' }}</td><td>Rs. {{ number_format((float) $invoice->total, 2) }}</td></tr>
         @if($showPreviousBalance)
-            <tr><td>Earlier unpaid balances</td><td>Rs. {{ number_format($previousBalance,2) }}</td></tr>
+            <tr><td>{{ $previousBalanceLabel }}</td><td>Rs. {{ number_format($previousBalance,2) }}</td></tr>
             <tr class="grand"><td>Grand Total</td><td>Rs. {{ number_format($grandTotal,2) }}</td></tr>
         @endif
         @unless($isQuotation)
-            @if((float) $invoice->paid_amount > 0 || (float) $invoice->hold_amount > 0 || $invoice->status === 'Paid')
-                <tr><td>Paid</td><td>Rs. {{ number_format((float) $invoice->paid_amount, 2) }}</td></tr>
-                @if($invoice->change_amount > 0)
-                <tr><td>Amount received</td><td>Rs. {{ number_format($invoice->received_amount, 2) }}</td></tr>
-                <tr><td>Change to return</td><td>Rs. {{ number_format($invoice->change_amount, 2) }}</td></tr>
+            @if((float) $summaryPaid > 0 || (float) $summaryHold > 0 || $invoice->status === 'Paid')
+                <tr><td>Paid</td><td>Rs. {{ number_format((float) $summaryPaid, 2) }}</td></tr>
+                @if($summaryChange > 0)
+                <tr><td>Amount received</td><td>Rs. {{ number_format($summaryReceived, 2) }}</td></tr>
+                <tr><td>Change to return</td><td>Rs. {{ number_format($summaryChange, 2) }}</td></tr>
                 @endif
-                @if((float) $invoice->hold_amount > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $invoice->hold_amount, 2) }}</td></tr>@endif
+                @if((float) $summaryHold > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $summaryHold, 2) }}</td></tr>@endif
                 <tr class="balance"><td>{{ $showPreviousBalance ? 'Current bill due' : 'Balance due' }}</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
             @endif
             @if($showPreviousBalance && $showTotalBalanceDue)<tr class="balance"><td>Total balance due</td><td>Rs. {{ number_format($totalBalanceDue,2) }}</td></tr>@endif

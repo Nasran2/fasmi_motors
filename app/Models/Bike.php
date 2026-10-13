@@ -34,6 +34,11 @@ class Bike extends Model
         return $this->hasMany(BikeIntake::class);
     }
 
+    public function quickJobs(): HasMany
+    {
+        return $this->hasMany(JobCard::class, 'quick_bike_id');
+    }
+
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);

@@ -1,4 +1,4 @@
-<x-layouts::app title="{{ $job->intake->bike->number }} · {{ $job->technician?->name ?: 'Unassigned' }} · {{ $job->number }}">
+<x-layouts::app title="{{ $job->bike?->number ?: 'Quick Job' }} · {{ $job->technician?->name ?: 'Unassigned' }} · {{ $job->number }}">
 @php
   $statusColors = [
       'Received'          => 'bg-slate-100 text-slate-700 border border-slate-200',
@@ -48,7 +48,7 @@
     money(amount) {
         return Number(amount).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
-}"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->intake->complaint }}</p></div><form id="job-update-form" method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
+}"><div class="panel xl:col-span-2"><h2 class="mb-4 font-bold">Work details</h2><div class="rounded-xl p-4 border border-slate-200" style="background-color: #f8fafc !important; color: #1e293b !important;"><span class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer Complaint</span><p class="text-sm font-semibold text-slate-800" style="color: #1e293b !important;">{{ $job->complaint }}</p></div><form id="job-update-form" method="POST" action="{{ route('jobs.update',$job) }}" class="mt-4 grid gap-4 sm:grid-cols-2">@csrf<x-submission-token/> @method('PUT')<label><span class="label">Status</span><select name="status" class="field">
     @foreach($statuses as $s)
         <option @selected($job->status===$s)>{{ $s }}</option>
     @endforeach
@@ -89,24 +89,23 @@
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
-    <div class="panel" x-data="{ includePreviousBalance: @js((bool) old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill)) }">
+    <div class="panel" x-data="{ includePreviousBalance: @js((bool) old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill)), includePaymentBalance: @js((bool) old('include_previous_balance', true)) }">
         <h2 class="mb-4 font-bold">Bill summary</h2>
         <dl class="space-y-2 text-sm">
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Service & labor</dt><dd x-text="'Rs. ' + money(subtotal - partsTotal)">Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
-            <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>Earlier unpaid balances</dt><dd class="font-bold text-red-600">Rs. {{ number_format($oldDue,2) }}</dd></div>
-            <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd id="job-summary-grand-total" x-text="'Rs. ' + money(jobTotal + {{ (float) $oldDue }})">Rs. {{ number_format($job->total + $oldDue,2) }}</dd></div>
+            <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>{{ $paymentSummary['previousBalance'] > $oldDue ? 'Earlier balances included' : 'Earlier unpaid balances' }}</dt><dd class="font-bold text-red-600">Rs. {{ number_format($paymentSummary['previousBalance'],2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-lg font-bold" x-show="includePreviousBalance" x-cloak><dt>Grand Total</dt><dd id="job-summary-grand-total" x-text="'Rs. ' + money(jobTotal + {{ (float) $paymentSummary['previousBalance'] }})">Rs. {{ number_format($job->total + $paymentSummary['previousBalance'],2) }}</dd></div>
             @if($job->invoice)
-            <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold">Rs. {{ number_format($job->invoice->paid_amount,2) }}</dd></div>
-            @if($job->invoice->change_amount > 0)
-            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Amount received</dt><dd class="font-bold">Rs. {{ number_format($job->invoice->received_amount,2) }}</dd></div>
-            <div class="flex justify-between text-xs font-semibold text-violet-700"><dt>Change to return</dt><dd class="font-bold">Rs. {{ number_format($job->invoice->change_amount,2) }}</dd></div>
-            @endif
-            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold">Rs. {{ number_format($job->invoice->hold_amount,2) }}</dd></div>
+            <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['paid'] }} : {{ (float) $job->invoice->paid_amount }})">Rs. {{ number_format($paymentSummary['paid'],2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Amount received</dt><dd class="font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['received'] }} : {{ $job->invoice->received_amount }})">Rs. {{ number_format($paymentSummary['received'],2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-violet-700"><dt>Change to return</dt><dd class="font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['change'] }} : {{ $job->invoice->change_amount }})">Rs. {{ number_format($paymentSummary['change'],2) }}</dd></div>
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['hold'] }} : {{ (float) $job->invoice->hold_amount }})">Rs. {{ number_format($paymentSummary['hold'],2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) $job->invoice->paid_amount }} - {{ (float) $job->invoice->hold_amount }}))">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
-            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Payment status</dt><dd>{{ $job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status }}</dd></div>
+            @php($combinedPaymentStatus = $paymentSummary['hold'] > 0 ? ($paymentSummary['due'] > 0 ? 'Partially Paid / Hold' : 'Hold') : ($paymentSummary['due'] <= 0 ? 'Completed' : ($paymentSummary['paid'] > 0 ? 'Partially Paid' : 'Unpaid')))
+            <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Payment status</dt><dd x-text="includePreviousBalance ? @js($combinedPaymentStatus) : @js($job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status)">{{ $job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status }}</dd></div>
             @endif
             @if($oldDue > 0)
             <div class="flex justify-between border-t pt-3 text-sm font-bold" x-show="includePreviousBalance" x-cloak><dt>Total Due Balance</dt><dd class="text-red-600" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) ($job->invoice?->paid_amount ?? 0) }} - {{ (float) ($job->invoice?->hold_amount ?? 0) }}) + {{ (float) $oldDue }})">Rs. {{ number_format(($job->invoice?->due_amount ?? $job->total) + $oldDue,2) }}</dd></div>
@@ -146,17 +145,20 @@
         @if($job->invoice)
         <div class="flex flex-col gap-2 mt-5">
             <a target="_blank" href="{{ route('invoices.public',$job->invoice->public_token) }}" class="btn-primary w-full text-center">View {{ $job->invoice->number }}</a>
-            @if($job->invoice->due_amount > 0 && $job->invoice->status !== 'Cancelled')
-            <x-due-payment-button :invoice-id="$job->invoice->id" :due="$job->invoice->due_amount" :number="$job->invoice->number" :paid="$job->invoice->paid_amount" :hold="$job->invoice->hold_amount" label="Pay Bill" class="w-full"/>
+            @if($paymentSummary['due'] > 0 && $job->invoice->status !== 'Cancelled')
+            <x-job-balances-payment-button :job="$job" :balances="$previousBalances" :due="$paymentSummary['due']"/>
             @endif
         </div>
         @else
-        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-effect="$dispatch('payment-due-selected', {due: jobTotal})">
+        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-effect="$dispatch('payment-due-selected', {due: jobTotal + (includePaymentBalance ? {{ (float) $oldDue }} : 0)})">
             @csrf<x-submission-token/>
             <input type="hidden" name="service_name" :value="serviceName" value="{{ old('service_name', $job->service_name ?: 'Service') }}">
             <input type="hidden" name="other_income_name" :value="otherIncomeName" value="{{ old('other_income_name', $job->other_income_name ?: 'Other Income') }}">
             <input type="hidden" name="show_previous_balance_on_bill" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
-            <x-split-payments :accounts="$accounts" :change-total="$job->total" />
+            <input type="hidden" name="include_previous_balance" value="0">
+            <label class="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePaymentBalance" @checked(old('include_previous_balance', true))><span>Include old balances in this payment</span></label>
+            <p class="text-xs text-slate-500">Pays this bill first, then earlier unpaid balances. Cash change is calculated after both.</p>
+            <x-split-payments :accounts="$accounts" :change-total="$job->total + $oldDue" due-preview />
             <div class="mt-3">
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Parts Commission (Optional)</label>
                 <select name="parts_technician_id" class="field">
@@ -178,34 +180,34 @@
         <div class="space-y-3 text-xs leading-relaxed">
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Name</span>
-                <span class="font-extrabold text-slate-800">{{ $job->intake->bike->customer->name ?: 'Walk-in Customer' }}</span>
+                <span class="font-extrabold text-slate-800">{{ $job->customer?->name ?: 'Walk-in Customer' }}</span>
             </div>
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Phone Number</span>
-                <span class="font-extrabold text-slate-800">{{ $job->intake->bike->customer->phone ?: 'N/A' }}</span>
+                <span class="font-extrabold text-slate-800">{{ $job->customer?->phone ?: 'N/A' }}</span>
             </div>
-            @if($job->intake->bike->customer->address)
+            @if($job->customer?->address)
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Address</span>
-                <span class="font-semibold text-slate-700">{{ $job->intake->bike->customer->address }}</span>
+                <span class="font-semibold text-slate-700">{{ $job->customer?->address }}</span>
             </div>
             @endif
             <hr class="border-slate-100 my-2">
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vehicle Details</span>
-                <span class="font-extrabold text-red-600 text-sm">{{ $job->intake->bike->number }}</span>
-                <span class="block text-slate-600 font-bold mt-0.5">{{ $job->intake->bike->brand }} {{ $job->intake->bike->model }} ({{ $job->intake->bike->year ?: 'N/A' }})</span>
+                <span class="font-extrabold text-red-600 text-sm">{{ $job->bike?->number }}</span>
+                <span class="block text-slate-600 font-bold mt-0.5">{{ $job->bike?->brand }} {{ $job->bike?->model }} ({{ $job->bike?->year ?: 'N/A' }})</span>
             </div>
-            @if($job->intake->bike->chassis_number)
+            @if($job->bike?->chassis_number)
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Chassis Number</span>
-                <span class="font-mono text-slate-700">{{ $job->intake->bike->chassis_number }}</span>
+                <span class="font-mono text-slate-700">{{ $job->bike?->chassis_number }}</span>
             </div>
             @endif
-            @if($job->intake->bike->engine_number)
+            @if($job->bike?->engine_number)
             <div>
                 <span class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Engine Number</span>
-                <span class="font-mono text-slate-700">{{ $job->intake->bike->engine_number }}</span>
+                <span class="font-mono text-slate-700">{{ $job->bike?->engine_number }}</span>
             </div>
             @endif
         </div>
@@ -239,6 +241,10 @@
                                     @php($details = $log->$key)
                                     <p><b>{{ $label }}:</b> {{ $details['number'] }} · {{ $details['method'] }} · Received Rs. {{ number_format($details['received_amount'], 2) }} · Applied Rs. {{ number_format($details['amount'], 2) }} · Change Rs. {{ number_format($details['change_amount'], 2) }} · {{ $details['paid_at'] }} · {{ $details['account_name'] }}</p>
                                     @if($details['cheque_id'])<p class="text-amber-700">Cheque {{ $details['cheque_number'] }} · {{ $details['bank_name'] }} · {{ $details['cheque_date'] }} · {{ $details['status'] }}</p>@endif
+                                    @foreach($details['allocations'] ?? [] as $allocation)
+                                    <p>{{ $allocation['invoice_number'] }} · Applied Rs. {{ number_format($allocation['amount'], 2) }}</p>
+                                    @endforeach
+                                    @if(array_key_exists('include_previous_balance', $details))<p>Include old balances: {{ $details['include_previous_balance'] ? 'Yes' : 'No' }}</p>@endif
                                     @endforeach
                                     <p class="rounded border border-slate-200 bg-slate-50 p-2"><b>Reason:</b> {{ $log->reason }}</p>
                                 </div>
@@ -519,7 +525,7 @@ function saveEditedName() {
 }
 </script>
 
-<x-job-due-payment-dialog :accounts="$accounts"/>
+<x-job-due-payment-dialog :accounts="$accounts" select-bills />
 @include('jobs.partials.payment-edit-dialog')
 <script>
 function openUnlockModal() {

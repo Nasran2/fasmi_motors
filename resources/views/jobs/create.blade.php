@@ -5,6 +5,7 @@
             <p class="mb-1 text-[10px] font-bold uppercase tracking-[.18em] text-red-600">Workshop Operations</p>
             <h1 class="page-title">Create Job Card</h1>
             <p class="page-subtitle">Find an unassigned bike intake and send it to the workshop.</p>
+            <a href="{{ route('jobs.quick.create') }}" class="btn-secondary mt-3">+ Quick Job</a>
         </div>
 
         <x-flash/>

@@ -171,7 +171,9 @@ class WorkspacePageController extends Controller
             $query->where(function (Builder $builder) use ($term) {
                 $builder->where('number', 'like', "%{$term}%")
                     ->orWhereHas('intake.bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%"))
-                    ->orWhereHas('intake.bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
+                    ->orWhereHas('intake.bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
+                    ->orWhereHas('quickBike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%"))
+                    ->orWhereHas('quickCustomer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
             });
         }
 

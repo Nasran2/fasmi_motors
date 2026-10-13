@@ -383,8 +383,8 @@ $ledgerRoutes=[
                 @forelse($bills as $bill)
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="px-5 py-3 font-medium text-slate-900">{{ $bill->number }}</td>
-                    <td class="px-5 py-3 text-slate-600 text-xs">{{ $bill->customer?->name ?: $bill->jobCard?->intake?->bike?->customer?->name ?: 'Walk-in' }}</td>
-                    <td class="px-5 py-3 text-slate-500 text-xs">{{ $bill->bike?->number ?: $bill->jobCard?->intake?->bike?->number ?: '—' }}</td>
+                    <td class="px-5 py-3 text-slate-600 text-xs">{{ $bill->customer?->name ?: $bill->jobCard?->customer?->name ?: 'Walk-in' }}</td>
+                    <td class="px-5 py-3 text-slate-500 text-xs">{{ $bill->bike?->number ?: $bill->jobCard?->bike?->number ?: '—' }}</td>
                     <td class="px-5 py-3 font-bold text-slate-900 text-right">{{ number_format($bill->total, 2) }}</td>
                     <td class="px-5 py-3">
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">{{ $bill->payment_method ?: 'Due' }}</span>

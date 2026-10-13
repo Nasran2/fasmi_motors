@@ -129,9 +129,12 @@ final class InvoiceDocument
         $showPreviousBalance = ! $isQuotation && (bool) $invoice->jobCard?->show_previous_balance_on_bill;
         $previousBalances = $showPreviousBalance ? PreviousCustomerBalance::forJob($invoice->jobCard, $invoice) : collect();
         $previousBalance = PreviousCustomerBalance::total($previousBalances);
+        $paymentSummary = $showPreviousBalance ? JobPaymentSummary::data($invoice->jobCard, $invoice) : null;
+        $previousBalance = $paymentSummary['previousBalance'] ?? $previousBalance;
 
         return [
             'invoice' => $invoice,
+            'invoiceBike' => $invoice->bike ?? $invoice->jobCard?->bike,
             'business' => $settings,
             'lines' => $lines,
             'logo' => $logo,
@@ -145,7 +148,13 @@ final class InvoiceDocument
             'previousBalances' => $previousBalances,
             'previousBalance' => $previousBalance,
             'grandTotal' => round((float) $invoice->total + $previousBalance, 2),
-            'totalBalanceDue' => round((float) $invoice->due_amount + $previousBalance, 2),
+            'totalBalanceDue' => $paymentSummary['due'] ?? (float) $invoice->due_amount,
+            'summaryPaid' => $paymentSummary['paid'] ?? (float) $invoice->paid_amount,
+            'summaryHold' => $paymentSummary['hold'] ?? (float) $invoice->hold_amount,
+            'summaryReceived' => $paymentSummary['received'] ?? $invoice->received_amount,
+            'summaryChange' => $paymentSummary['change'] ?? $invoice->change_amount,
+            'previousBalanceLabel' => ($paymentSummary['previousBalance'] ?? 0) > ($paymentSummary['previousDue'] ?? 0) ? 'Earlier balances included' : 'Earlier unpaid balances',
+            'summaryStatus' => $paymentSummary && $invoice->status !== 'Cancelled' ? ($paymentSummary['hold'] > 0 ? ($paymentSummary['due'] > 0 ? 'Partially Paid / Hold' : 'Hold') : ($paymentSummary['due'] <= 0 ? 'Paid' : ($paymentSummary['paid'] > 0 ? 'Partially Paid' : 'Unpaid'))) : $invoice->status,
         ];
     }
 

@@ -12,7 +12,7 @@
             <tbody>
                 @forelse($bills as $bill)
                     @php
-                        $billBike = $bill->bike ?? $bill->jobCard?->intake?->bike;
+                        $billBike = $bill->bike ?? $bill->jobCard?->bike;
                         $cancelled = $bill->status === 'Cancelled';
                         $statusLabel = $bill->status === 'Paid' ? 'Completed' : $bill->status;
                         $statusTone = match ($bill->status) {

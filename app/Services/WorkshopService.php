@@ -39,9 +39,9 @@ class WorkshopService
         );
     }
 
-    public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null, ?array $payments = null, ?int $partsTechnicianId = null): Invoice
+    public function invoice(JobCard $job, float $paid, string $method, ?int $accountId = null, ?array $payments = null, ?int $partsTechnicianId = null, bool $includePrevious = true): Invoice
     {
-        return DB::transaction(function () use ($job, $paid, $method, $accountId, $payments, $partsTechnicianId) {
+        return DB::transaction(function () use ($job, $paid, $method, $accountId, $payments, $partsTechnicianId, $includePrevious) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             if ($job->invoice) {
                 throw ValidationException::withMessages(['invoice' => 'This job card is already billed.']);
@@ -53,8 +53,8 @@ class WorkshopService
             $invoice = $job->invoice()->create([
                 'number' => InvoiceNumber::next('Job Card Bill'),
                 'invoice_type' => 'Job Card Bill',
-                'customer_id' => $job->intake->bike->customer_id,
-                'bike_id' => $job->intake->bike_id,
+                'customer_id' => $job->customer_id,
+                'bike_id' => $job->bike?->id,
                 'subtotal' => $total + (float) $job->discount - (float) $job->tax, 'discount' => $job->discount, 'tax' => $job->tax,
                 'parts_amount' => $job->parts_total, 'service_amount' => $job->service_total, 'labor_amount' => $job->labor_total,
                 'washing_amount' => $job->washing_total, 'other_amount' => $job->other_total, 'payment_method' => $method,
@@ -64,15 +64,12 @@ class WorkshopService
             ]);
             $settlement = app(SettlementService::class);
             $rows = $payments ?? $settlement->rows(['paid_amount' => $paid, 'payment_method' => $method, 'account_id' => $accountId ?? Account::systemAccount('main')->id]);
-            $nonCashRows = array_values(array_filter($rows, fn ($row) => $row['method'] !== 'Cash'));
-            $cashRows = array_values(array_filter($rows, fn ($row) => $row['method'] === 'Cash'));
-            if ($settlement->total($nonCashRows) > round($total, 2)) {
-                throw ValidationException::withMessages(['paid_amount' => 'Non-cash payments cannot exceed the invoice total. Enter excess cash as Cash to calculate change.']);
+            $job->setRelation('invoice', $invoice);
+            $available = $total + ($includePrevious ? \App\Support\PreviousCustomerBalance::total(\App\Support\PreviousCustomerBalance::forJob($job)) : 0);
+            if ($settlement->total(array_filter($rows, fn ($row) => $row['method'] !== 'Cash')) > round($available, 2)) {
+                throw ValidationException::withMessages(['paid_amount' => 'Non-cash payments cannot exceed the available bill balances.']);
             }
-            // Apply fixed bank/card/cheque amounts before calculating cash change.
-            foreach (array_merge($nonCashRows, $cashRows) as $row) {
-                $settlement->receive($invoice, $row, allowCashChange: true);
-            }
+            app(JobPaymentAllocationService::class)->receive($job, $invoice, $rows, includePrevious: $includePrevious);
             $invoice->refresh();
             $invoice->payment_method = count($rows) > 1 ? 'Mixed' : $method;
             $settlement->saveStatus($invoice);

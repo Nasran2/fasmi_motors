@@ -43,8 +43,8 @@
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->created_at->format("d M Y") }}</td>
 <td class="px-4 py-3">{{ $row->number }}</td>
-<td class="px-4 py-3">{{ $row->intake?->bike?->number }}</td>
-<td class="px-4 py-3">{{ $row->intake?->bike?->customer?->name }}</td>
+<td class="px-4 py-3">{{ $row->bike?->number }}</td>
+<td class="px-4 py-3">{{ $row->customer?->name }}</td>
 <td class="px-4 py-3">{{ $row->technician?->name }}</td>
 <td class="px-4 py-3">
   @php

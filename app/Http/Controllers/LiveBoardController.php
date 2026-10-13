@@ -79,7 +79,9 @@ class LiveBoardController extends Controller
                     $nested->where('number', 'like', $term)
                         ->orWhereHas('technician', fn ($technician) => $technician->where('name', 'like', $term))
                         ->orWhereHas('intake.bike', fn ($bike) => $bike->where('number', 'like', $term)->orWhere('model', 'like', $term))
-                        ->orWhereHas('intake.bike.customer', fn ($customer) => $customer->where('name', 'like', $term)->orWhere('phone', 'like', $term));
+                        ->orWhereHas('intake.bike.customer', fn ($customer) => $customer->where('name', 'like', $term)->orWhere('phone', 'like', $term))
+                        ->orWhereHas('quickBike', fn ($bike) => $bike->where('number', 'like', $term)->orWhere('model', 'like', $term))
+                        ->orWhereHas('quickCustomer', fn ($customer) => $customer->where('name', 'like', $term)->orWhere('phone', 'like', $term));
                 });
             })
             ->oldest()
@@ -89,7 +91,7 @@ class LiveBoardController extends Controller
             $invoiceDue = (float) ($job->invoice?->due_amount ?? 0);
             $boardStatus = $this->boardStatus($job, $invoiceDue);
             $intake = $job->intake;
-            $bike = $intake?->bike;
+            $bike = $job->bike;
 
             return [
                 'id' => $job->id,
@@ -97,9 +99,9 @@ class LiveBoardController extends Controller
                 'number' => $job->number,
                 'bike_number' => $bike?->number ?? 'Unknown bike',
                 'model' => $bike?->model ?? 'Model not recorded',
-                'customer' => $bike?->customer?->name ?? 'Walk-in customer',
-                'phone' => $bike?->customer?->phone,
-                'complaint' => $intake?->complaint ?? 'No complaint recorded',
+                'customer' => $job->customer?->name ?? 'Walk-in customer',
+                'phone' => $job->customer?->phone,
+                'complaint' => $job->complaint ?: 'No complaint recorded',
                 'technician' => $job->technician?->name ?? 'Unassigned',
                 'technician_initial' => mb_strtoupper(mb_substr($job->technician?->name ?? 'U', 0, 1)),
                 'customer_stage' => match (true) {

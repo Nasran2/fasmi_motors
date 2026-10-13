@@ -11,7 +11,7 @@ return [
     'groups' => [
         ['slug' => 'dashboard', 'title' => 'Dashboard', 'icon' => 'dashboard', 'children' => $items(['Overview', 'Today Summary', 'Workshop Performance'])],
         ['slug' => 'bike-intake', 'title' => 'Bike Intake', 'icon' => 'bike', 'children' => $items(['New Bike Intake', 'Intake List', 'Pending Intakes', 'Service Jobs', 'Technician Bikes', 'Due Bike Records'])],
-        ['slug' => 'job-cards', 'title' => 'Job Cards', 'icon' => 'clipboard', 'children' => $items(['Create Job Card', 'All Job Cards', 'Assigned Jobs', 'In Progress Jobs', 'Waiting for Parts', 'Completed Jobs', 'Delivered Jobs', 'Cancelled Jobs'])],
+        ['slug' => 'job-cards', 'title' => 'Job Cards', 'icon' => 'clipboard', 'children' => $items(['Quick Job', 'Create Job Card', 'All Job Cards', 'Assigned Jobs', 'In Progress Jobs', 'Waiting for Parts', 'Completed Jobs', 'Delivered Jobs', 'Cancelled Jobs'])],
         ['slug' => 'customers-bikes', 'title' => 'Customers & Bikes', 'icon' => 'customers', 'children' => $items(['Customer List', 'Add Customer', 'Bike List', 'Add Bike', 'Customer Due', 'Service History', 'Bike Ownership Change'])],
         ['slug' => 'products-stock', 'title' => 'Products / Stock', 'icon' => 'stock', 'children' => $items(['Product List', 'Add Product', 'Suppliers', 'Import Products', 'Barcode Print', 'Categories', 'Brands', 'Units', 'Stores', 'Store Stock', 'Stock Transfer', 'Stock Adjustment', 'Low Stock', 'Damage / Write-off'])],
         ['slug' => 'purchases', 'title' => 'Purchases', 'icon' => 'purchase', 'children' => $items(['Purchase List', 'Add Purchase', 'Purchase Returns', 'Supplier List', 'Add Supplier', 'Supplier Payments', 'Purchase Due'])],
@@ -33,6 +33,7 @@ return [
         'bike-intake.new-bike-intake' => ['route' => 'intakes.create'],
         'bike-intake.intake-list' => ['route' => 'intakes.index', 'active' => ['intakes.index', 'intakes.show']],
         'job-cards.create-job-card' => ['route' => 'jobs.create'],
+        'job-cards.quick-job' => ['route' => 'jobs.quick.create'],
         'job-cards.all-job-cards' => ['route' => 'jobs.index', 'active' => ['jobs.index', 'jobs.show']],
         'customers-bikes.customer-list' => ['route' => 'customers.index', 'active' => ['customers.index', 'customers.show', 'customers.update', 'customers.deactivate']],
         'customers-bikes.add-customer' => ['route' => 'customers.create'],

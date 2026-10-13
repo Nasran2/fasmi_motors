@@ -20,7 +20,7 @@ class WorkshopSmsService
         return [
             'received' => ['label' => 'Bike intake received', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, we received your bike {bike_no}. Intake: {intake_no}. - {business_name}'],
             'job_created' => ['label' => 'Job card created', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, job card {job_no} was created for bike {bike_no}. - {business_name}'],
-            'assigned' => ['label' => 'Technician assigned or reassigned', 'recipient' => 'Technician', 'default' => 1, 'template' => 'Dear {technician_name}, job {job_no}, bike {bike_no}, is assigned to you. Priority: {priority}. Complaint: {complaint}. - {business_name}'],
+            'assigned' => ['label' => 'Technician assigned or reassigned', 'recipient' => 'Technician', 'default' => 1, 'template' => 'Dear {technician_name}, job {job_no}, bike {bike_no}, is assigned to you. Model: {bike_model}. Complaint: {complaint}. - {business_name}'],
             'progress' => ['label' => 'Repair progress updated', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}: {status}. - {business_name}'],
             'completed' => ['label' => 'Repair completed / ready for pickup', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}, is ready for pickup. - {business_name}'],
             'billed' => ['label' => 'Invoice issued with bill link', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, bill {invoice_no}: Rs. {bill_amount}. Balance: Rs. {due_amount}. View bill: {bill_link} - {business_name}'],
@@ -28,6 +28,18 @@ class WorkshopSmsService
             'delivered' => ['label' => 'Bike handed over', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}, has been handed over. Thank you. - {business_name}'],
             'cancelled' => ['label' => 'Job cancelled', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, job {job_no} for bike {bike_no} has been cancelled. - {business_name}'],
         ];
+    }
+
+    public static function normalizeTemplate(string $event, string $template): string
+    {
+        if ($event !== 'assigned') {
+            return $template;
+        }
+
+        // Existing saved assignment templates must use the model too.
+        $template = preg_replace('/\bPriority\s*[:\-]?\s*\{priority\}/i', 'Model: {bike_model}', $template);
+
+        return str_replace('{priority}', '{bike_model}', $template);
     }
 
     public static function publicBaseUrl(): string
@@ -61,8 +73,8 @@ class WorkshopSmsService
         $job = $record instanceof JobCard ? $record : ($record instanceof Invoice ? $record->jobCard : null);
         $invoice = $record instanceof Invoice ? $record : ($record instanceof Payment ? $record->invoice : $job?->invoice);
         $intake = $record instanceof BikeIntake ? $record : $job?->intake;
-        $bike = $intake?->bike ?? $invoice?->bike;
-        $customer = $bike?->customer ?? $invoice?->customer;
+        $bike = $job?->bike ?? $intake?->bike ?? $invoice?->bike;
+        $customer = $job?->customer ?? $bike?->customer ?? $invoice?->customer;
         $recipient = $event === 'assigned' ? $job?->technician : $customer;
         $phone = (string) ($recipient?->phone ?? '');
         $status = (string) ($job?->status ?? '');
@@ -78,15 +90,16 @@ class WorkshopSmsService
             $values = [
                 '{customer_name}' => $customer?->name ?? 'Customer', '{technician_name}' => $job?->technician?->name ?? '',
                 '{bike_no}' => $bike?->number ?? '', '{intake_no}' => $intake?->intake_number ?? '', '{job_no}' => $job?->number ?? '',
+                '{bike_model}' => $bike?->model ?: 'Not recorded',
                 '{invoice_no}' => $invoice?->number ?? '', '{receipt_no}' => $record instanceof Payment ? $record->number : '',
                 '{bill_amount}' => number_format((float) ($invoice?->total ?? $job?->total ?? 0), 2),
                 '{paid_amount}' => number_format((float) ($record instanceof Payment ? $record->amount : $invoice?->paid_amount), 2),
                 '{due_amount}' => number_format((float) ($record instanceof Payment ? $record->balance_after : $invoice?->due_amount), 2),
-                '{priority}' => $job?->priority ?? '', '{complaint}' => $intake?->complaint ?? '', '{status}' => $status,
+                '{priority}' => $job?->priority ?? '', '{complaint}' => $job?->complaint ?? $intake?->complaint ?? '', '{status}' => $status,
                 '{business_name}' => Setting::valueFor('business_name', 'Fasmir Motors'),
                 '{bill_link}' => $invoice?->public_token ? self::publicBaseUrl().route('invoices.public', $invoice->public_token, false) : '',
             ];
-            $template = (string) Setting::valueFor('sms_tmpl_'.$event, $definition['template']);
+            $template = self::normalizeTemplate($event, (string) Setting::valueFor('sms_tmpl_'.$event, $definition['template']));
             if ($event === 'billed' && ! str_contains($template, '{bill_link}')) {
                 $template .= ' View bill: {bill_link}';
             }

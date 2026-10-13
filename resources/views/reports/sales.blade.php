@@ -49,7 +49,7 @@
 <td class="px-4 py-3">{{ $row->number }}</td>
 <td class="px-4 py-3">{{ $row->invoice_type }}</td>
 <td class="px-4 py-3">{{ $row->bike?->customer?->name }}</td>
-<td class="px-4 py-3">{{ $row->bike?->number ?? $row->jobCard?->intake?->bike?->number }}</td>
+<td class="px-4 py-3">{{ $row->bike?->number ?? $row->jobCard?->bike?->number }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->total, 2) }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->paid_amount, 2) }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->due_amount, 2) }}</td>

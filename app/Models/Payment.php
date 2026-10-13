@@ -33,7 +33,10 @@ class Payment extends Model
             if (! $cheque || $cheque->trashed() || ! in_array($cheque->status, ['Pending', 'Deposited'], true) || $this->status !== 'Hold') {
                 return 'A settled cheque must be handled in the cheque register.';
             }
-            if ($cheque->forwarded_supplier_id || $cheque->supplierPayments()->exists() || $cheque->payments()->count() !== 1) {
+            $sharedOutsideReceipt = $this->receipt_group_id
+                ? $cheque->payments()->where(fn ($query) => $query->whereNull('receipt_group_id')->orWhere('receipt_group_id', '!=', $this->receipt_group_id))->exists()
+                : $cheque->payments()->count() !== 1;
+            if ($cheque->forwarded_supplier_id || $cheque->supplierPayments()->exists() || $sharedOutsideReceipt) {
                 return 'A forwarded or shared cheque must be handled in the cheque register.';
             }
         }

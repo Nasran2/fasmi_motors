@@ -114,7 +114,7 @@
                 <details class="border-b border-slate-100 pb-3" @if(in_array($event, ['received', 'billed'])) open @endif>
                   <summary class="cursor-pointer text-sm font-semibold text-slate-700">{{ $definition['label'] }} <span class="font-normal text-slate-400">({{ $definition['recipient'] }})</span></summary>
                   <label class="sr-only" for="sms-tmpl-{{ $event }}">{{ $definition['label'] }} template</label>
-                  <textarea id="sms-tmpl-{{ $event }}" name="sms_tmpl_{{ $event }}" rows="3" required maxlength="1000" class="w-full text-xs font-mono mt-3">{{ old('sms_tmpl_'.$event, $settings['sms_tmpl_'.$event] ?? $definition['template']) }}</textarea>
+                  <textarea id="sms-tmpl-{{ $event }}" name="sms_tmpl_{{ $event }}" rows="3" required maxlength="1000" class="w-full text-xs font-mono mt-3">{{ \App\Services\Sms\WorkshopSmsService::normalizeTemplate($event, old('sms_tmpl_'.$event, $settings['sms_tmpl_'.$event] ?? $definition['template'])) }}</textarea>
                   @php preg_match_all('/\{[a-z_]+\}/', $definition['template'], $markers); @endphp
                   <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-500">@foreach(array_unique($markers[0]) as $marker)<code>{{ $marker }}</code>@endforeach</div>
                 </details>

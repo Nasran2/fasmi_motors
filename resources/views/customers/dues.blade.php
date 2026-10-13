@@ -9,7 +9,7 @@
     <thead><tr><th><input type="checkbox" data-due-sms-all aria-label="Select all invoices on this page"></th><th>Customer</th><th>Phone</th><th>Bike</th><th>Invoice</th><th>Total Bill</th><th>Paid</th><th>Cheque Hold</th><th>Due</th><th>Due Date</th><th>Last Payment</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>
       @forelse($invoices as $invoice)
-        @php($bike=$invoice->bike ?? $invoice->jobCard?->intake?->bike)
+        @php($bike=$invoice->bike ?? $invoice->jobCard?->bike)
         @php($customer=$invoice->customer ?? $bike?->customer)
         <tr>
           <td><input type="checkbox" data-due-sms-select value="{{ $invoice->id }}" aria-label="Select invoice {{ $invoice->number }}"></td>

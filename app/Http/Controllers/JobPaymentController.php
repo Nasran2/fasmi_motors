@@ -14,6 +14,7 @@ class JobPaymentController extends Controller
     {
         $data = $request->validate([
             'reason' => 'required|string|min:5|max:500',
+            'include_previous_balance' => 'sometimes|required|boolean',
             'method' => 'required|in:Cash,Card,Bank Transfer,Cheque,QR',
             'amount' => 'required|numeric|decimal:0,2|min:0.01|max:999999999999.99',
             'paid_at' => 'required|date_format:Y-m-d|before_or_equal:today',

@@ -1,6 +1,6 @@
 @props(['accounts', 'customerMode' => false, 'selectBills' => false])
 <dialog id="due-payment-dialog" class="m-auto w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl" aria-labelledby="due-payment-title">
-    <form method="POST" id="due-payment-form" class="p-6" @if($selectBills) x-data="dueBillSelection()" @payment-bills-selected="loadBills($event.detail.bills)" @submit="if (!selectedBills().length) $event.preventDefault()" @endif>
+    <form method="POST" id="due-payment-form" class="p-6" @if($selectBills) x-data="dueBillSelection()" @payment-bills-selected="loadBills($event.detail.bills, $event.detail.hasJob)" @submit="if (!selectedBills().length) $event.preventDefault()" @endif>
         @csrf<x-submission-token/>
         <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
@@ -10,6 +10,10 @@
             <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary" aria-label="Close payment popup">×</button>
         </div>
         @if($selectBills)
+        <div class="mt-4" x-show="hasJob" x-cloak>
+            <input type="hidden" name="include_previous_balance" value="0" :disabled="!hasJob">
+            <label class="flex items-center gap-2 text-sm font-bold"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePrevious" :disabled="!hasJob" @change="togglePrevious()">Include old balances in this payment</label>
+        </div>
         <div class="mt-4 rounded-xl border border-slate-200" id="due-payment-bills">
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-3">
                 <label class="flex items-center gap-2 text-sm font-bold"><input type="checkbox" :checked="bills.length > 0 && selectedBills().length === bills.length" @change="selectAll($event.target.checked)">Select all bills</label>
@@ -19,7 +23,7 @@
                 <template x-for="bill in bills" :key="bill.invoice_id">
                     <label class="flex cursor-pointer items-center justify-between gap-3 p-3">
                         <div class="flex items-center gap-3">
-                            <input type="checkbox" name="invoice_ids[]" :value="bill.invoice_id" x-model="selectedIds" @change="$nextTick(() => updateDue())">
+                            <input type="checkbox" name="invoice_ids[]" :value="bill.invoice_id" x-model="selectedIds" :disabled="hasJob && !includePrevious && !bill.is_current" @change="$nextTick(() => updateDue())">
                             <div><span class="block text-sm font-bold" x-text="bill.reference"></span><span class="block text-xs text-slate-500" x-text="(bill.invoice_number !== bill.reference ? bill.invoice_number + ' · ' : '') + bill.date"></span><span class="block text-xs text-slate-500" x-text="bill.status"></span></div>
                         </div>
                         <span class="shrink-0 text-sm font-bold text-red-600" x-text="money(bill.amount)"></span>
@@ -51,12 +55,13 @@
 @if($selectBills)
 function dueBillSelection() {
     return {
-        bills: [], selectedIds: [],
+        bills: [], selectedIds: [], includePrevious: true, hasJob: false,
         money(value) { return 'Rs. ' + Number(value).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2}); },
         selectedBills() { return this.bills.filter(bill => this.selectedIds.map(Number).includes(Number(bill.invoice_id))); },
         selectedTotal() { return Math.round(this.selectedBills().reduce((total, bill) => total + Number(bill.amount), 0) * 100) / 100; },
-        loadBills(bills) { this.bills = bills; this.selectAll(true); },
-        selectAll(checked) { this.selectedIds = checked ? this.bills.map(bill => String(bill.invoice_id)) : []; this.updateDue(); },
+        loadBills(bills, hasJob = false) { this.bills = bills; this.hasJob = hasJob; this.includePrevious = true; this.selectAll(true); },
+        selectAll(checked) { this.selectedIds = checked ? this.bills.filter(bill => !this.hasJob || this.includePrevious || bill.is_current).map(bill => String(bill.invoice_id)) : []; this.updateDue(); },
+        togglePrevious() { this.selectedIds = this.selectedIds.filter(id => this.bills.find(bill => String(bill.invoice_id) === String(id))?.is_current); if (this.includePrevious) this.selectedIds.push(...this.bills.filter(bill => !bill.is_current).map(bill => String(bill.invoice_id))); this.updateDue(); },
         updateDue() {
             this.$el.closest('form').dispatchEvent(new CustomEvent('payment-due-selected', {bubbles: true, detail: {
                 due: this.selectedTotal(),
@@ -76,7 +81,9 @@ function openDuePaymentModal(button) {
     form.elements.namedItem('paid_at').value = @js(today()->toDateString());
     form.elements.namedItem('note').value = '';
     form.dispatchEvent(new CustomEvent('payment-due-selected', {bubbles: true, detail: {due: Number(due), paid: Number(paid), hold: Number(hold), reset: true}}));
-    if (jobId) form.dispatchEvent(new CustomEvent('payment-bills-selected', {detail: {bills: JSON.parse(bills)}}));
+    @if($selectBills)
+    form.dispatchEvent(new CustomEvent('payment-bills-selected', {detail: {bills: jobId ? JSON.parse(bills) : [{invoice_id:Number(invoiceId), invoice_number:invoiceNumber, reference:invoiceNumber, date:'', amount:Number(due), paid:Number(paid), hold:Number(hold), status:'', is_current:true}], hasJob:Boolean(jobId)}}));
+    @endif
     document.getElementById('due-payment-dialog').showModal();
 }
 </script>

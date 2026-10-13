@@ -142,7 +142,7 @@ class JobPartService
         }
         $amount = $this->totalCost((float) $part->cost_price, (float) $part->quantity);
         $job->loadMissing('intake.bike');
-        $reference = $job->number.' / '.$job->intake->bike->number;
+        $reference = $job->number.' / '.($job->bike?->number ?? $job->number);
         $description = 'Outer product: '.$part->bill_name.' · '.$reference;
         $method = $account->code === Account::systemCode('bank') || $account->type === 'bank' ? 'Bank Transfer' : 'Cash';
         $expense = $part->expense()->lockForUpdate()->first();

@@ -104,7 +104,7 @@ class CustomerBikeController extends Controller
     {
         $customer->load([
             'bikes' => fn ($query) => $query->select('bikes.*')->selectSub($this->bikeDueSubquery()->customerAccount($customer->id), 'due_amount'),
-            'bikes.intakes',
+            'bikes.intakes', 'bikes.quickJobs',
         ]);
 
         $billQuery = Invoice::customerAccount($customer->id)->where('invoice_type', '!=', 'Quotation');
@@ -113,7 +113,9 @@ class CustomerBikeController extends Controller
             ->paginate(20, ['*'], 'bills_page')->withQueryString()->fragment('customer-bills');
         $accounts = Account::where('active', true)->get();
 
-        return view('customers.show', compact('customer', 'dueAmount', 'bills', 'accounts'));
+        $quickVisits = JobCard::where('quick_customer_id', $customer->id)->count();
+
+        return view('customers.show', compact('customer', 'dueAmount', 'bills', 'accounts', 'quickVisits'));
     }
 
     public function customerUpdate(Request $request, Customer $customer)
@@ -193,7 +195,7 @@ class CustomerBikeController extends Controller
 
     public function bikeShow(Bike $bike)
     {
-        $bike->load('customer', 'technician', 'intakes.jobCard.technician', 'intakes.jobCard.invoice');
+        $bike->load('customer', 'technician', 'intakes.jobCard.technician', 'intakes.jobCard.invoice', 'quickJobs.technician', 'quickJobs.invoice');
 
         return view('customers.bike-show', compact('bike'));
     }
@@ -242,9 +244,9 @@ class CustomerBikeController extends Controller
     public function serviceHistory(Request $request)
     {
         $jobs = JobCard::query()->with(['intake.bike.customer', 'technician', 'invoice'])
-            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")))))
+            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")))->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$term}%"))->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))))
             ->when($request->type === 'service', fn ($q) => $q->whereHas('intake', fn ($i) => $i->where('is_service', true)))
-            ->when($request->type === 'repair', fn ($q) => $q->whereHas('intake', fn ($i) => $i->where('is_service', false)))
+            ->when($request->type === 'repair', fn ($q) => $q->where(fn ($jobs) => $jobs->where('is_quick_job', true)->orWhereHas('intake', fn ($i) => $i->where('is_service', false))))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->when($request->technician, fn ($q, $id) => $q->where('main_technician_id', $id))
             ->when($request->from, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
@@ -327,7 +329,8 @@ class CustomerBikeController extends Controller
 
     private function customerJobsSubquery()
     {
-        return JobCard::selectRaw('count(*)')->join('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->whereColumn('bikes.customer_id', 'customers.id');
+        return JobCard::selectRaw('count(*)')->leftJoin('bike_intakes', 'bike_intakes.id', '=', 'job_cards.bike_intake_id')->leftJoin('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')
+            ->where(fn ($query) => $query->whereColumn('job_cards.quick_customer_id', 'customers.id')->orWhereColumn('bikes.customer_id', 'customers.id'));
     }
 
     private function customerDueSubquery(string $column = 'due_amount')
@@ -337,7 +340,11 @@ class CustomerBikeController extends Controller
 
     private function customerLastVisitSubquery()
     {
-        return BikeIntake::selectRaw('max(bike_intakes.created_at)')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')->whereColumn('bikes.customer_id', 'customers.id');
+        return Customer::selectRaw('max(visits.created_at)')->fromSub(
+            BikeIntake::select('bike_intakes.created_at', 'bikes.customer_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')
+                ->unionAll(JobCard::select('created_at', 'quick_customer_id as customer_id')->where('is_quick_job', true)),
+            'visits',
+        )->withoutGlobalScopes()->whereColumn('visits.customer_id', 'customers.id');
     }
 
     private function customerDueExistsSubquery()

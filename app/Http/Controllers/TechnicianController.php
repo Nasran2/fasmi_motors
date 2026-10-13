@@ -765,7 +765,7 @@ class TechnicianController extends Controller
 
     public function bikeDeductions(Request $request)
     {
-        return view('technicians.bike-deductions', ['records' => TechnicianBikeDeduction::with(['technician', 'bike', 'jobCard', 'invoice'])->latest()->paginate(15), 'technicians' => $this->technicians(), 'bikes' => Bike::with('intakes.jobCard.invoice')->where('is_technician_bike', true)->get(), 'stats' => ['total' => TechnicianBikeDeduction::sum('total_amount'), 'deducted' => TechnicianBikeDeduction::sum('deducted_amount'), 'pending' => TechnicianBikeDeduction::sum(DB::raw('total_amount-deducted_amount')), 'active' => TechnicianBikeDeduction::where('status', 'Active')->count()]]);
+        return view('technicians.bike-deductions', ['records' => TechnicianBikeDeduction::with(['technician', 'bike', 'jobCard', 'invoice'])->latest()->paginate(15), 'technicians' => $this->technicians(), 'bikes' => Bike::with('intakes.jobCard.invoice', 'quickJobs.invoice')->where('is_technician_bike', true)->get(), 'stats' => ['total' => TechnicianBikeDeduction::sum('total_amount'), 'deducted' => TechnicianBikeDeduction::sum('deducted_amount'), 'pending' => TechnicianBikeDeduction::sum(DB::raw('total_amount-deducted_amount')), 'active' => TechnicianBikeDeduction::where('status', 'Active')->count()]]);
     }
 
     public function bikeDeductionStore(Request $request)
@@ -776,7 +776,7 @@ class TechnicianController extends Controller
         if (! $bike->is_technician_bike || (int) $bike->technician_id !== (int) $data['technician_id']) {
             throw ValidationException::withMessages(['bike_id' => 'Select a bike belonging to this staff member.']);
         }
-        if ($job && ($job->intake->bike_id !== $bike->id || ! $job->invoice || $job->invoice->status === 'Cancelled')) {
+        if ($job && ($job->bike?->id !== $bike->id || ! $job->invoice || $job->invoice->status === 'Cancelled')) {
             throw ValidationException::withMessages(['job_card_id' => 'Select a billed job for this staff bike.']);
         }
         DB::transaction(function () use ($data, $job) {

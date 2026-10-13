@@ -20,6 +20,7 @@ use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\QuickJobController;
 use App\Http\Controllers\JobDuePaymentController;
 use App\Http\Controllers\JobPaymentController;
 use App\Http\Controllers\JobPreviousBalanceController;
@@ -74,6 +75,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('bike-ownership', [CustomerBikeController::class, 'ownershipStore'])->name('customers.ownership.store');
     Route::get('bike-intakes/lookup/{query}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
     Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->names('intakes');
+    Route::get('job-cards/quick/create', [QuickJobController::class, 'create'])->name('jobs.quick.create');
+    Route::post('job-cards/quick', [QuickJobController::class, 'store'])->name('jobs.quick.store');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
     Route::post('job-cards/{job}/parts/outer', [JobCardController::class, 'addOuterPart'])->name('jobs.parts.outer');
     Route::post('job-cards/{job}/products', [JobCardController::class, 'newProduct'])->name('jobs.products.store');

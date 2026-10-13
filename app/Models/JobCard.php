@@ -19,11 +19,13 @@ class JobCard extends Model
 
     protected $guarded = [];
 
+    protected $with = ['quickCustomer', 'quickBike'];
+
     protected $attributes = ['show_previous_balance_on_bill' => true, 'discount_percentage' => 0, 'fixed_discount' => 0];
 
     protected function casts(): array
     {
-        return ['show_previous_balance_on_bill' => 'boolean'];
+        return ['show_previous_balance_on_bill' => 'boolean', 'is_quick_job' => 'boolean', 'is_staff_bike' => 'boolean', 'quick_bike_details' => 'array'];
     }
 
     protected static function booted(): void
@@ -64,6 +66,45 @@ class JobCard extends Model
     public function technician(): BelongsTo
     {
         return $this->belongsTo(Technician::class, 'main_technician_id');
+    }
+
+    public function quickCustomer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class, 'quick_customer_id');
+    }
+
+    public function quickBike(): BelongsTo
+    {
+        return $this->belongsTo(Bike::class, 'quick_bike_id');
+    }
+
+    public function staffBikeOwner(): BelongsTo
+    {
+        return $this->belongsTo(Technician::class, 'staff_bike_owner_id');
+    }
+
+    public function getBikeAttribute(): ?Bike
+    {
+        if (! $this->is_quick_job) {
+            return $this->intake?->bike;
+        }
+
+        return $this->quickBike ?? (array_filter($this->quick_bike_details ?? []) ? new Bike($this->quick_bike_details) : null);
+    }
+
+    public function getCustomerAttribute(): ?Customer
+    {
+        return $this->is_quick_job ? $this->quickCustomer : $this->intake?->bike?->customer;
+    }
+
+    public function getCustomerIdAttribute(): ?int
+    {
+        return $this->is_quick_job ? $this->quick_customer_id : $this->intake?->bike?->customer_id;
+    }
+
+    public function getComplaintAttribute(): string
+    {
+        return $this->is_quick_job ? ($this->quick_complaint ?: 'Quick job') : ($this->intake?->complaint ?? '');
     }
 
     public function parts(): HasMany
