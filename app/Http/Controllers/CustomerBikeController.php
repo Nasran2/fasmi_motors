@@ -101,11 +101,18 @@ class CustomerBikeController extends Controller
 
     public function customerShow(Customer $customer)
     {
-        $customer->load('bikes.intakes.jobCard.invoice.payments');
+        $customer->load([
+            'bikes' => fn ($query) => $query->select('bikes.*')->selectSub($this->bikeDueSubquery()->customerAccount($customer->id), 'due_amount'),
+            'bikes.intakes',
+        ]);
 
-        $dueAmount = Invoice::customerAccount($customer->id)->where('status', '!=', 'Cancelled')->where('invoice_type', '!=', 'Quotation')->sum('due_amount');
+        $billQuery = Invoice::customerAccount($customer->id)->where('invoice_type', '!=', 'Quotation');
+        $dueAmount = (clone $billQuery)->where('status', '!=', 'Cancelled')->sum('due_amount');
+        $bills = $billQuery->with(['bike', 'jobCard.intake.bike'])->latest('created_at')->latest('id')
+            ->paginate(20, ['*'], 'bills_page')->withQueryString()->fragment('customer-bills');
+        $accounts = Account::where('active', true)->get();
 
-        return view('customers.show', compact('customer', 'dueAmount'));
+        return view('customers.show', compact('customer', 'dueAmount', 'bills', 'accounts'));
     }
 
     public function customerUpdate(Request $request, Customer $customer)

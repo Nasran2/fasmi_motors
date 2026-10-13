@@ -144,7 +144,7 @@
             </div>
 
             <!-- Right side: Connected Bikes -->
-            <div class="lg:col-span-8">
+            <div class="min-w-0 lg:col-span-8">
                 <div class="mb-4 flex items-center justify-between">
                     <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900">
                         <x-dashboard-icon name="bike" class="size-5 text-slate-400" />
@@ -179,7 +179,7 @@
                             </div>
                             
                             @php
-                                $bikeDue = $bike->intakes->map(fn($i) => $i->jobCard?->invoice)->filter()->sum('due_amount');
+                                $bikeDue = (float) $bike->due_amount;
                                 $lastIntake = $bike->intakes->sortByDesc('created_at')->first();
                             @endphp
                             
@@ -216,7 +216,11 @@
                         </div>
                     @endempty
                 </section>
+                @include('customers.partials.bills')
             </div>
         </div>
     </div>
+    @if(auth()->user()->canAccess('sales.receive_payments'))
+        <x-job-due-payment-dialog :accounts="$accounts" />
+    @endif
 </x-layouts::app>
