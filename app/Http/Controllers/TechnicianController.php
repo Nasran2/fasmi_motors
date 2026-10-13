@@ -810,9 +810,15 @@ class TechnicianController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'jobs_from' => ['nullable', 'date_format:Y-m-d'],
+            'jobs_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('jobs_from'), 'after_or_equal:jobs_from')],
         ]);
         $technician = null;
         $historyPeriod = null;
+        $workedJobs = collect();
+        $jobCommissions = collect();
+        $workedJobsFrom = null;
+        $workedJobsTo = null;
         if ($request->technician) {
             $from = null;
             $to = null;
@@ -886,9 +892,24 @@ class TechnicianController extends Controller
                 'bikeDeductions.bike',
                 'contributions',
             ])->find($request->technician);
+
+            $separateJobsRange = $request->filled('jobs_from') || $request->filled('jobs_to');
+            $workedJobsFrom = $separateJobsRange ? ($request->filled('jobs_from') ? Carbon::parse($request->jobs_from)->startOfDay() : null) : $from;
+            $workedJobsTo = $separateJobsRange ? ($request->filled('jobs_to') ? Carbon::parse($request->jobs_to)->endOfDay() : null) : $to;
+            if ($technician) {
+                $workedJobs = $separateJobsRange
+                    ? $technician->jobs()->with('intake.bike.customer', 'invoice')
+                        ->when($workedJobsFrom, fn ($q) => $q->where('created_at', '>=', $workedJobsFrom))
+                        ->when($workedJobsTo, fn ($q) => $q->where('created_at', '<=', $workedJobsTo))
+                        ->latest('created_at')->latest('id')->get()
+                    : $technician->jobs->sortByDesc('created_at')->values();
+                $jobCommissions = TechnicianCommission::where('technician_id', $technician->id)
+                    ->whereIn('job_card_id', $workedJobs->modelKeys())
+                    ->selectRaw('job_card_id, sum(amount) as total')->groupBy('job_card_id')->pluck('total', 'job_card_id');
+            }
         }
 
-        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'historyPeriod' => $historyPeriod, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
+        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'historyPeriod' => $historyPeriod, 'workedJobs' => $workedJobs, 'jobCommissions' => $jobCommissions, 'workedJobsFrom' => $workedJobsFrom, 'workedJobsTo' => $workedJobsTo, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
     }
 
     private function technicians()
@@ -928,7 +949,7 @@ class TechnicianController extends Controller
             'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'role' => ['nullable', Rule::in(['technician', 'staff'])],
-            'designation' => ['nullable', 'max:100']
+            'designation' => ['nullable', 'max:100'],
         ]);
     }
 }
