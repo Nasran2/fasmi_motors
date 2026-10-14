@@ -33,7 +33,7 @@ class JobDuePaymentController extends Controller
             throw ValidationException::withMessages(['invoice_ids' => 'Enable old balances to pay an earlier bill.']);
         }
         $primary = $invoice ?? Invoice::findOrFail($data['invoice_ids'][0]);
-        app(JobPaymentAllocationService::class)->receive($job, $primary, $rows, $data['paid_at'], invoiceIds: $data['invoice_ids'], oldestFirst: true, allowCashChange: false);
+        app(JobPaymentAllocationService::class)->receive($job, $primary, $rows, $data['paid_at'], invoiceIds: $data['invoice_ids'], oldestFirst: true);
 
         return back()->with('success', 'Payment saved against the selected bills. Cheques remain on hold until cleared.');
     }

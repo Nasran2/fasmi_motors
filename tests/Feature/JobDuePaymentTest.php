@@ -146,14 +146,73 @@ test('bill selection rejects empty duplicate and unrelated invoices without reco
     expect(Payment::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
 })->with(['empty', 'duplicate', 'unrelated']);
 
-test('payment cannot exceed selected dues or use a bill settled after the popup opened', function () {
+test('non-cash payment cannot exceed selected dues or use a bill settled after the popup opened', function () {
     $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 100, 'opening_balance_date' => today()->subDay()->toDateString()]);
-    $payload = ['paid_at' => today()->toDateString(), 'invoice_ids' => [$opening->id], 'payments' => [$this->payment]];
-    $this->post(route('jobs.dues.payment', $this->job), $payload)->assertSessionHasErrors('amount');
+    $payload = ['paid_at' => today()->toDateString(), 'invoice_ids' => [$opening->id], 'payments' => [array_replace($this->payment, ['method' => 'Card'])]];
+    $this->post(route('jobs.dues.payment', $this->job), $payload)->assertSessionHasErrors('payments');
     $opening->update(['paid_amount' => 100, 'due_amount' => 0, 'status' => 'Paid']);
     $this->post(route('jobs.dues.payment', $this->job), $payload)->assertSessionHasErrors('invoice_ids.0');
     expect(Payment::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
 });
+
+test('selected bill cash collection records the tender and returns excess without inflating income', function ($due, $received, $change) {
+    $this->job->update(['service_total' => $due]);
+    $this->invoice->update(['subtotal' => $due, 'total' => $due, 'due_amount' => $due]);
+    $this->post(route('jobs.dues.payment', $this->job), [
+        'paid_at' => today()->toDateString(), 'invoice_ids' => [$this->invoice->id],
+        'payments' => [array_replace($this->payment, ['amount' => $received])],
+    ])->assertSessionHasNoErrors();
+    $receipt = $this->invoice->payments()->sole();
+    expect((float) $receipt->amount)->toBe((float) $due)
+        ->and((float) $receipt->received_amount)->toBe((float) $received)
+        ->and((float) $receipt->change_amount)->toBe((float) $change)
+        ->and((float) $this->invoice->fresh()->due_amount)->toBe(0.0)
+        ->and($this->invoice->fresh()->status)->toBe('Paid')
+        ->and(Account::systemAccount('main')->balance)->toBe((float) $due);
+    $this->get(route('jobs.show', $this->job))->assertOk()
+        ->assertSeeInOrder(['Amount received', number_format($received, 2), 'Change to return', number_format($change, 2)]);
+})->with([[1450, 1500, 50], [24070, 24100, 30]]);
+
+test('excess cash on a selected opening bill is returned without paying unselected bills', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 100, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $this->post(route('jobs.dues.payment', $this->job), [
+        'paid_at' => today()->toDateString(), 'invoice_ids' => [$opening->id], 'payments' => [$this->payment],
+    ])->assertSessionHasNoErrors();
+    $receipt = $opening->payments()->sole();
+    expect((float) $receipt->amount)->toBe(100.0)->and((float) $receipt->received_amount)->toBe(300.0)
+        ->and((float) $receipt->change_amount)->toBe(200.0)->and($opening->fresh()->status)->toBe('Paid')
+        ->and((float) $this->invoice->fresh()->due_amount)->toBe(1000.0)
+        ->and($this->invoice->payments()->count())->toBe(0)
+        ->and(Account::systemAccount('main')->balance)->toBe(100.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
+});
+
+test('selected mixed cheque and cash collection returns only excess cash and keeps cheque on hold', function () {
+    $opening = app(OpeningBalanceService::class)->record($this->bike->customer, ['opening_balance' => 500, 'opening_balance_date' => today()->subDay()->toDateString()]);
+    $cheque = array_replace($this->payment, ['method' => 'Cheque', 'amount' => 500, 'account_id' => Account::systemAccount('bank')->id,
+        'cheque_date' => today()->toDateString(), 'cheque_number' => 'CASH-CHANGE-HOLD', 'bank_name' => 'Test Bank']);
+    $this->post(route('jobs.dues.payment', $this->job), [
+        'paid_at' => today()->toDateString(), 'invoice_ids' => [$this->invoice->id, $opening->id],
+        'payments' => [array_replace($this->payment, ['amount' => 1100]), $cheque],
+    ])->assertSessionHasNoErrors();
+    expect((float) Payment::sum('received_amount'))->toBe(1600.0)
+        ->and((float) Payment::sum('change_amount'))->toBe(100.0)
+        ->and((float) Payment::where('method', 'Cash')->sum('amount'))->toBe(1000.0)
+        ->and($opening->fresh()->status)->toBe('Hold')
+        ->and((float) $opening->fresh()->hold_amount)->toBe(500.0)
+        ->and($this->invoice->fresh()->status)->toBe('Paid')
+        ->and(Account::systemAccount('main')->balance)->toBe(1000.0);
+});
+
+test('selected bills reject excess non-cash payments even when cash is also supplied', function ($method) {
+    $nonCash = array_replace($this->payment, ['method' => $method, 'amount' => 1100, 'account_id' => Account::systemAccount('bank')->id,
+        'cheque_date' => today()->toDateString(), 'cheque_number' => 'EXCESS-SELECTED', 'bank_name' => 'Test Bank']);
+    $this->post(route('jobs.dues.payment', $this->job), [
+        'paid_at' => today()->toDateString(), 'invoice_ids' => [$this->invoice->id], 'payments' => [$this->payment, $nonCash],
+    ])->assertSessionHasErrors('payments');
+    expect(Payment::count())->toBe(0)->and(AccountTransaction::count())->toBe(0)
+        ->and((float) $this->invoice->fresh()->due_amount)->toBe(1000.0);
+})->with(['Card', 'Bank Transfer', 'Cheque']);
 
 test('the selected bill payment route requires collection permission', function () {
     $role = Role::create(['name' => 'Selected Job Viewer', 'permissions' => ['job_card.view']]);

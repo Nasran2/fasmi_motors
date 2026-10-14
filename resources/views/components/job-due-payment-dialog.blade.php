@@ -43,7 +43,7 @@
         </div>
         <p class="mt-3 text-xs text-slate-500">Enter the amount received. You can pay part of the outstanding balance.</p>
         @if($customerMode)<p class="mt-2 text-xs text-slate-500">Payments cover the oldest outstanding balances first, including the opening balance.</p>@endif
-        <div class="mt-4"><x-split-payments :accounts="$accounts" :change-total="0" :allow-cash-change="!$customerMode && !$selectBills" due-preview /></div>
+        <div class="mt-4"><x-split-payments :accounts="$accounts" :change-total="0" :allow-cash-change="!$customerMode" due-preview /></div>
         <details class="mt-4"><summary class="cursor-pointer text-xs font-semibold text-slate-500">Add a note (optional)</summary><label class="mt-2 block"><span class="label">Note</span><textarea name="note" rows="2" maxlength="500" class="field"></textarea></label></details>
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" onclick="document.getElementById('due-payment-dialog').close()" class="btn-secondary">Cancel</button>
