@@ -108,6 +108,37 @@ test('new invoice printing hides only total balance due while later viewing stil
         ->and((float) $this->previous->fresh()->due_amount)->toBe(10150.0);
 });
 
+test('invoice settings hide current and combined due rows on regenerated job bills', function () {
+    $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 500, 'payment_method' => 'Cash'])
+        ->assertSessionHasNoErrors();
+    $invoice = $this->job->fresh()->invoice;
+
+    foreach ([0, 1] as $visible) {
+        $this->post(route('system-settings.save'), ['group' => 'invoice', 'show_due_invoice' => $visible])
+            ->assertSessionHasNoErrors();
+        foreach (['a4', 'a5', '80mm'] as $format) {
+            $response = $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
+                ->assertOk()->assertSeeText('Earlier unpaid balances')->assertSeeText('Grand Total')
+                ->assertSeeText('JOB-OLD-DATED')->assertSeeText('15,650.00');
+            $currentDueLabel = $format === '80mm' ? 'Balance due (this bill)' : 'Current bill due';
+            if ($visible) {
+                $response->assertSeeText($currentDueLabel)->assertSeeText('Total balance due')->assertSeeText('15,150.00');
+            } else {
+                $response->assertDontSeeText($currentDueLabel)->assertDontSeeText('Total balance due')->assertDontSeeText('15,150.00');
+            }
+            $data = InvoiceDocument::data($invoice, pdfMode: true);
+            $pdfHtml = view($format === '80mm' ? 'invoices.thermal' : 'invoices.public', $data)->render();
+            expect(str_contains($pdfHtml, $currentDueLabel))->toBe((bool) $visible)
+                ->and(str_contains($pdfHtml, 'Total balance due'))->toBe((bool) $visible);
+        }
+        // The existing first-print choice can still hide the combined due when the setting is on.
+        expect(InvoiceDocument::data($invoice, showTotalBalanceDue: false)['showTotalBalanceDue'])->toBeFalse();
+    }
+    expect((float) $invoice->fresh()->due_amount)->toBe(5000.0)
+        ->and((float) $this->previous->fresh()->due_amount)->toBe(10150.0)
+        ->and($this->job->fresh()->show_previous_balance_on_bill)->toBeTrue();
+});
+
 test('previous balance excludes other customers shops quotations cancelled settled and later bills', function () {
     $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 0, 'payment_method' => 'Credit/Due', 'show_previous_balance_on_bill' => 1])
         ->assertSessionHasNoErrors();

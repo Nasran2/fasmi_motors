@@ -300,7 +300,7 @@
                 <tr><td>Change to return</td><td>Rs. {{ number_format($summaryChange, 2) }}</td></tr>
                 @endif
                 @if((float) $summaryHold > 0)<tr><td>Cheque Hold</td><td>Rs. {{ number_format((float) $summaryHold, 2) }}</td></tr>@endif
-                <tr class="balance"><td>{{ $showPreviousBalance ? 'Current bill due' : 'Balance due' }}</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>
+                @if($showDueAmounts)<tr class="balance"><td>{{ $showPreviousBalance ? 'Current bill due' : 'Balance due' }}</td><td>Rs. {{ number_format((float) $invoice->due_amount, 2) }}</td></tr>@endif
             @endif
             @if($showPreviousBalance && $showTotalBalanceDue)<tr class="balance"><td>Total balance due</td><td>Rs. {{ number_format($totalBalanceDue,2) }}</td></tr>@endif
         @endunless

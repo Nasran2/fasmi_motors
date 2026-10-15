@@ -89,6 +89,56 @@ test('public PDF access respects invoice download setting', function () {
     $this->get(route('sales.invoices.pdf', $invoice))->assertOk()->assertHeader('Content-Type', 'application/pdf');
 });
 
+test('saved due visibility applies to reopened parts bills and every document format without changing balances', function () {
+    $user = User::factory()->create();
+    $invoice = Invoice::create([
+        'number' => 'INV-DUE-VISIBILITY', 'invoice_type' => 'Parts Sale',
+        'subtotal' => 100, 'total' => 100, 'paid_amount' => 35, 'due_amount' => 65,
+        'status' => 'Partially Paid', 'public_token' => 'due-visibility-token', 'created_by' => $user->id,
+    ]);
+    $this->actingAs($user);
+    expect(InvoiceDocument::data($invoice)['showDueAmounts'])->toBeTrue();
+    $this->get(route('system-settings.invoice-settings'))->assertOk()
+        ->assertSeeText('Show due amounts on generated bills');
+
+    foreach ([0, 1] as $visible) {
+        $this->post(route('system-settings.save'), ['group' => 'invoice', 'show_due_invoice' => $visible])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        expect(Setting::valueFor('show_due_invoice'))->toBe((string) $visible);
+        foreach (['a4', 'a5', '80mm'] as $format) {
+            $response = $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
+                ->assertOk()->assertSeeText('100.00')->assertSeeText('35.00');
+            $label = $format === '80mm' ? 'Balance Due' : 'Balance due';
+            if ($visible) {
+                $response->assertSeeText($label)->assertSeeText('65.00');
+            } else {
+                $response->assertDontSeeText($label)->assertDontSeeText('65.00');
+            }
+            $data = InvoiceDocument::data($invoice, pdfMode: true);
+            $pdfHtml = view($format === '80mm' ? 'invoices.thermal' : 'invoices.public', $data)->render();
+            expect(str_contains($pdfHtml, $label))->toBe((bool) $visible);
+            foreach ([
+                route('invoices.public.pdf', ['token' => $invoice->public_token, 'format' => $format]),
+                route('sales.invoices.pdf', ['invoice' => $invoice, 'format' => $format]),
+            ] as $url) {
+                $this->get($url)->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            }
+        }
+    }
+    $invoice->refresh();
+    expect((float) $invoice->due_amount)->toBe(65.0)
+        ->and((float) $invoice->paid_amount)->toBe(35.0)
+        ->and((float) $invoice->total)->toBe(100.0)->and($invoice->status)->toBe('Partially Paid');
+});
+
+test('invoice due visibility rejects invalid values and preserves the last saved choice', function () {
+    $this->actingAs(User::factory()->create());
+    Setting::create(['group' => 'invoice', 'key' => 'show_due_invoice', 'value' => '0']);
+    $this->post(route('system-settings.save'), ['group' => 'invoice', 'show_due_invoice' => 'invalid'])
+        ->assertSessionHasErrors('show_due_invoice');
+    expect(Setting::valueFor('show_due_invoice'))->toBe('0');
+});
+
 test('POS cashier can download their own document without invoice-list access', function () {
     $role = Role::create(['name' => 'POS Cashier', 'permissions' => ['sales.parts_sales']]);
     $cashier = User::factory()->create(['role_id' => $role->id]);

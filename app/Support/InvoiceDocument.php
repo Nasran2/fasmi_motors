@@ -30,7 +30,7 @@ final class InvoiceDocument
             'quotation_intro_heading', 'quotation_intro_text', 'bill_intro_heading', 'bill_intro_text',
             'customer_note_heading', 'quotation_default_note', 'bill_default_note', 'terms_heading',
             'invoice_signature_text', 'show_logo_invoice', 'show_bike_invoice',
-            'show_technician_invoice', 'logo_url',
+            'show_technician_invoice', 'show_due_invoice', 'logo_url',
         ])->pluck('value', 'key')->all();
         $name = trim((string) ($settings['business_name'] ?? ''));
         $subtitle = trim((string) ($settings['business_subtitle'] ?? 'Bike Repair Center'));
@@ -48,6 +48,7 @@ final class InvoiceDocument
         }
 
         $isQuotation = $invoice->invoice_type === 'Quotation';
+        $showDueAmounts = filter_var($settings['show_due_invoice'] ?? true, FILTER_VALIDATE_BOOL);
         $customerNote = trim((string) ($invoice->customer_note ?: self::wordingValue($settings, $isQuotation ? 'quotation_default_note' : 'bill_default_note')));
         $wording = [
             'introHeading' => self::wordingValue($settings, $isQuotation ? 'quotation_intro_heading' : 'bill_intro_heading', $isQuotation ? self::QUOTATION_INTRO_HEADING : self::BILL_INTRO_HEADING),
@@ -143,7 +144,8 @@ final class InvoiceDocument
             'isQuotation' => $isQuotation,
             'wording' => $wording,
             'showPreviousBalance' => $showPreviousBalance,
-            'showTotalBalanceDue' => $showTotalBalanceDue,
+            'showDueAmounts' => $showDueAmounts,
+            'showTotalBalanceDue' => $showDueAmounts && $showTotalBalanceDue,
             'presentationQuery' => $showTotalBalanceDue ? [] : ['hide_total_balance_due' => 1],
             'previousBalances' => $previousBalances,
             'previousBalance' => $previousBalance,

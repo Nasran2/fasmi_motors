@@ -196,6 +196,7 @@ class SettingController extends Controller
 
         if ($group === 'invoice') {
             $r->validate([
+                'show_due_invoice' => ['sometimes', 'required', 'boolean'],
                 'quotation_intro_heading' => ['nullable', 'string', 'max:100'],
                 'quotation_intro_text' => ['nullable', 'string', 'max:2000'],
                 'quotation_default_note' => ['nullable', 'string', 'max:1000'],
@@ -210,6 +211,9 @@ class SettingController extends Controller
         }
 
         $inputs = $r->except(['_token', '_method', 'group', 'logo_file', 'favicon_file', 'slabs']);
+        if ($group === 'invoice' && $r->has('show_due_invoice')) {
+            $inputs['show_due_invoice'] = $r->boolean('show_due_invoice') ? '1' : '0';
+        }
 
         // Handle File uploads if present
         if ($r->hasFile('logo_file')) {

@@ -80,6 +80,14 @@
                 <input type="checkbox" name="show_qr_invoice" value="1" @checked(($settings['show_qr_invoice'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                 <span class="text-xs font-bold text-slate-700">Include QR code link for online payments</span>
               </label>
+              <div class="sm:col-span-2 mt-2">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="hidden" name="show_due_invoice" value="0">
+                  <input type="checkbox" name="show_due_invoice" value="1" @checked(($settings['show_due_invoice'] ?? 1) == 1) class="rounded border-slate-300 text-red-600 focus:ring-red-500" aria-describedby="show-due-invoice-help">
+                  <span class="text-xs font-bold text-slate-700">Show due amounts on generated bills</span>
+                </label>
+                <p id="show-due-invoice-help" class="mt-1 text-xs text-slate-500">Show current bill due and total balance due in previews, printouts, PDFs, and reprints. Hiding these rows does not change customer balances. Earlier bill details follow the job's outstanding balances option.</p>
+              </div>
             </div>
           </div>
         </div>
