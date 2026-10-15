@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AccountTransaction;
 use App\Models\AttendanceImportBatch;
 use App\Models\AuditLog;
 use App\Models\Bike;
@@ -23,7 +24,6 @@ use App\Services\AttendanceCalculationService;
 use App\Services\AttendanceImportService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
-use App\Services\WorkshopService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -729,19 +729,145 @@ class TechnicianController extends Controller
 
     public function advances(Request $request)
     {
-        return view('technicians.advances', ['advances' => TechnicianAdvance::with(['technician', 'account'])->latest('payment_date')->paginate(15), 'technicians' => $this->technicians(), 'accounts' => Account::where('active', true)->get(), 'stats' => ['today' => TechnicianAdvance::whereDate('payment_date', today())->where('status', '!=', 'Cancelled')->sum('amount'), 'month' => TechnicianAdvance::whereBetween('payment_date', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()])->where('status', '!=', 'Cancelled')->sum('amount'), 'pending' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount'), 'balance' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount')]]);
+        $editingAdvance = null;
+        if ($request->old('_editing_advance_id') && $request->user()->canAccess('technician.advances')) {
+            $editingAdvance = TechnicianAdvance::where('status', 'Pending Deduction')->whereNull('salary_sheet_id')
+                ->find($request->old('_editing_advance_id'));
+        }
+
+        return $this->advancePage($editingAdvance);
     }
 
-    public function advanceStore(Request $request, WorkshopService $service)
+    private function advancePage(?TechnicianAdvance $editingAdvance = null)
     {
-        $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'payment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', 'max:50'], 'deduct_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000']]);
-        DB::transaction(function () use ($data) {
-            $advance = TechnicianAdvance::create(array_merge($data, ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'deduct_month' => $data['deduct_month'].'-01', 'created_by' => auth()->id()]));
+        return view('technicians.advances', [
+            'editingAdvance' => $editingAdvance,
+            'advances' => TechnicianAdvance::with(['technician', 'account'])->where('status', '!=', 'Cancelled')->latest('payment_date')->latest('id')->paginate(15),
+            'technicians' => Technician::where(fn ($query) => $query->where('active', true)->orWhere('id', $editingAdvance?->technician_id))->orderBy('name')->get(),
+            'accounts' => Account::where(fn ($query) => $query->where('active', true)->orWhere('id', $editingAdvance?->account_id))->get(),
+            'stats' => [
+                'today' => TechnicianAdvance::whereDate('payment_date', today())->where('status', '!=', 'Cancelled')->sum('amount'),
+                'month' => TechnicianAdvance::whereBetween('payment_date', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()])->where('status', '!=', 'Cancelled')->sum('amount'),
+                'pending' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount'),
+                'balance' => TechnicianAdvance::where('status', 'Pending Deduction')->sum('amount'),
+            ],
+        ]);
+    }
 
-            app(AccountService::class)->outgoing('main', (float) $data['amount'], "Technician advance {$advance->number}", $advance, $data['payment_method'], $data['payment_date'], 'salary_advance');
+    public function advanceStore(Request $request)
+    {
+        $data = $this->advanceData($request);
+        DB::transaction(function () use ($data) {
+            $advance = TechnicianAdvance::create(array_merge($data, ['number' => 'ADV-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'created_by' => auth()->id()]));
+
+            $this->postAdvanceLedger($advance);
         });
 
-        return back()->with('success', 'Advance recorded and account ledger updated.');
+        return redirect()->route('technicians.advances')->with('success', 'Advance recorded and account ledger updated.');
+    }
+
+    public function advanceEdit(TechnicianAdvance $advance)
+    {
+        $this->ensureAdvanceEditable($advance);
+
+        return $this->advancePage($advance);
+    }
+
+    public function advanceUpdate(Request $request, TechnicianAdvance $advance)
+    {
+        $data = $this->advanceData($request, $advance);
+        DB::transaction(function () use ($advance, $data) {
+            $advance = TechnicianAdvance::lockForUpdate()->findOrFail($advance->id);
+            $this->ensureAdvanceEditable($advance);
+            $oldValues = $advance->getAttributes();
+            $advance->fill($data);
+
+            if ($advance->isDirty(['amount', 'account_id', 'payment_date', 'payment_method'])) {
+                $this->reverseAdvanceLedger($advance, 'Advance payment corrected');
+                $advance->save();
+                $this->postAdvanceLedger($advance);
+            } else {
+                $advance->save();
+            }
+
+            $this->auditAdvance($advance, 'Staff Advance Updated', $oldValues);
+        });
+
+        return redirect()->route('technicians.advances')->with('success', 'Advance updated and account ledger corrected.');
+    }
+
+    public function advanceDestroy(TechnicianAdvance $advance)
+    {
+        DB::transaction(function () use ($advance) {
+            $advance = TechnicianAdvance::lockForUpdate()->findOrFail($advance->id);
+            $this->ensureAdvanceEditable($advance);
+            $oldValues = $advance->getAttributes();
+            $this->reverseAdvanceLedger($advance, 'Advance payment deleted');
+            $advance->update(['status' => 'Cancelled', 'cancel_reason' => 'Advance payment deleted', 'cancelled_at' => now()]);
+            $this->auditAdvance($advance, 'Staff Advance Deleted', $oldValues);
+        });
+
+        return redirect()->route('technicians.advances')->with('success', 'Advance deleted and account ledger reversed.');
+    }
+
+    private function advanceData(Request $request, ?TechnicianAdvance $advance = null): array
+    {
+        $data = $request->validate([
+            'technician_id' => ['required', Rule::exists('technicians', 'id')->whereNull('deleted_at')->where(fn ($query) => $query->where('active', true)->orWhere('id', $advance?->technician_id))],
+            'payment_date' => ['required', 'date_format:Y-m-d'],
+            'amount' => ['required', 'numeric', 'min:0.01', 'decimal:0,2', 'max:999999999999.99'],
+            'account_id' => ['required', Rule::exists('accounts', 'id')->where('shop_type', session('shop_mode', 'workshop'))->where(fn ($query) => $query->where('active', true)->orWhere('id', $advance?->account_id))],
+            'payment_method' => ['required', 'string', 'max:50'],
+            'deduct_month' => ['required', 'date_format:Y-m'],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ], [], ['technician_id' => 'staff member']);
+        $data['deduct_month'] .= '-01';
+        $data['note'] = $data['note'] ?? null;
+
+        return $data;
+    }
+
+    private function ensureAdvanceEditable(TechnicianAdvance $advance): void
+    {
+        if ($advance->status !== 'Pending Deduction' || $advance->salary_sheet_id !== null) {
+            throw ValidationException::withMessages(['advance' => 'Only pending advances can be edited or deleted. Reopen the linked salary sheet before changing a deducted advance.']);
+        }
+    }
+
+    private function postAdvanceLedger(TechnicianAdvance $advance): void
+    {
+        $account = Account::findOrFail($advance->account_id);
+        $type = match ($account->code) {
+            Account::systemCode('main') => 'main',
+            Account::systemCode('spare_parts') => 'spare_parts',
+            Account::systemCode('bank') => 'bank',
+            default => 'cash',
+        };
+        $service = app(AccountService::class);
+        $service->recordTransaction($type, 'expense', (float) $advance->amount, "Staff advance {$advance->number}", $advance, $advance->payment_method, $advance->note, $account->id, $advance->payment_date, 'salary_advance');
+        if ($type !== 'bank' && $advance->payment_method !== 'Cash') {
+            $service->recordTransaction('bank', 'expense', (float) $advance->amount, "Staff advance {$advance->number}", $advance, $advance->payment_method, null, null, $advance->payment_date, 'salary_advance');
+        }
+    }
+
+    private function reverseAdvanceLedger(TechnicianAdvance $advance, string $reason): void
+    {
+        $entries = AccountTransaction::where('reference_type', $advance->getMorphClass())
+            ->where('reference_id', $advance->id)->where('status', 'active')
+            ->where('transaction_type', '!=', 'reversal')->orderBy('account_id')->orderBy('id')->get();
+        foreach ($entries as $entry) {
+            app(AccountService::class)->reverseTransaction($entry, $reason);
+        }
+    }
+
+    private function auditAdvance(TechnicianAdvance $advance, string $event, array $oldValues): void
+    {
+        AuditLog::create([
+            'user_id' => auth()->id(), 'event' => $event,
+            'auditable_type' => $advance->getMorphClass(), 'auditable_id' => $advance->id,
+            'old_values' => $oldValues, 'new_values' => $advance->getAttributes(),
+            'ip_address' => request()->ip(), 'user_agent' => request()->userAgent(),
+        ]);
     }
 
     public function commissions(Request $request)

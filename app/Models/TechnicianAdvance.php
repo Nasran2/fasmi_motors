@@ -11,7 +11,7 @@ class TechnicianAdvance extends Model
 
     protected function casts(): array
     {
-        return ['payment_date' => 'date', 'deduct_month' => 'date', 'cancelled_at' => 'datetime'];
+        return ['payment_date' => 'date', 'deduct_month' => 'date', 'cancelled_at' => 'datetime', 'amount' => 'decimal:2'];
     }
 
     public function technician(): BelongsTo
