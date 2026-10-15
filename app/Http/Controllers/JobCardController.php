@@ -15,7 +15,9 @@ use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\JobPartService;
 use App\Services\SettlementService;
+use App\Services\StaffBikeRepairService;
 use App\Services\WorkshopService;
+use App\Support\JobPaymentSummary;
 use App\Support\PreviousCustomerBalance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -64,6 +66,9 @@ class JobCardController extends Controller
         $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
         $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
         $job = DB::transaction(function () use ($v, $r) {
+            $bike = BikeIntake::findOrFail($v['bike_intake_id'])->bike;
+            $v['is_staff_bike'] = (bool) $bike?->is_technician_bike;
+            $v['staff_bike_owner_id'] = $bike?->is_technician_bike ? $bike->technician_id : null;
             $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
             DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
 
@@ -107,8 +112,8 @@ class JobCardController extends Controller
         $previousBalances = PreviousCustomerBalance::forJob($job);
         $oldDue = PreviousCustomerBalance::total($previousBalances);
         $relatedInvoiceIds = PreviousCustomerBalance::forJob($job, includeSettled: true)->pluck('invoice_id')->push($job->invoice?->id)->filter();
-        $paymentInvoices = Invoice::with('payments.cheque', 'payments.account', 'payments.invoice')->whereIn('id', $relatedInvoiceIds)->where('status', '!=', 'Cancelled')->get();
-        $paymentSummary = \App\Support\JobPaymentSummary::data($job);
+        $paymentInvoices = Invoice::with('payments.cheque', 'payments.account', 'payments.invoice', 'payments.salarySheet')->whereIn('id', $relatedInvoiceIds)->where('status', '!=', 'Cancelled')->get();
+        $paymentSummary = JobPaymentSummary::data($job);
         $receiptGroups = $paymentInvoices->flatMap(fn ($invoice) => $invoice->payments)->sortBy('id')
             ->groupBy(fn ($receipt) => $receipt->receipt_group_id ?: 'legacy-'.$receipt->id);
         $paymentChanges = PaymentCorrection::with('changer')->where(function ($query) use ($job) {
@@ -120,6 +125,7 @@ class JobCardController extends Controller
 
         return view('jobs.show', [
             'job' => $job,
+            'staffRepairSummary' => $job->repair_staff ? app(StaffBikeRepairService::class)->summary($job) : null,
             'oldDue' => $oldDue,
             'previousBalances' => $previousBalances,
             'paymentInvoices' => $paymentInvoices,
@@ -343,12 +349,25 @@ class JobCardController extends Controller
             'service_name' => 'sometimes|required|string|max:50',
             'other_income_name' => 'sometimes|required|string|max:50',
         ]);
+        $repair = $r->validate([
+            'staff_repair_payment' => 'nullable|in:normal,salary',
+            'repair_deduction_type' => 'nullable|required_if:staff_repair_payment,salary|in:Full deduction,Partial deduction,Monthly installment',
+            'repair_installment_amount' => 'nullable|numeric|gt:0|decimal:0,2',
+            'repair_start_month' => 'nullable|required_if:staff_repair_payment,salary|date_format:Y-m',
+        ]);
+        $salaryRepair = ($repair['staff_repair_payment'] ?? 'normal') === 'salary';
+        if ($salaryRepair && ! $job->repair_staff) {
+            throw ValidationException::withMessages(['staff_repair_payment' => 'Salary recovery is only available for a staff-owned bike repair.']);
+        }
         unset($labels['show_previous_balance_on_bill'], $labels['include_previous_balance']);
         $settlement = app(SettlementService::class);
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
         $rows = $settlement->rows($input);
-        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows, $labels) {
+        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows, $labels, $salaryRepair, $repair) {
+            if ($salaryRepair && $job->repair_staff) {
+                Technician::whereKey($job->repair_staff->id)->lockForUpdate()->firstOrFail();
+            }
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             if ($labels) {
                 $job->update($labels);
@@ -357,7 +376,17 @@ class JobCardController extends Controller
                 $job->update(['show_previous_balance_on_bill' => $r->boolean('show_previous_balance_on_bill')]);
             }
 
-            return $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id, $r->boolean('include_previous_balance', true));
+            $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id, ! $salaryRepair && $r->boolean('include_previous_balance', true));
+            if ($salaryRepair) {
+                app(StaffBikeRepairService::class)->createPlan($job, [
+                    'deduction_type' => $repair['repair_deduction_type'],
+                    'installment_amount' => $repair['repair_installment_amount'] ?? null,
+                    'start_month' => $repair['repair_start_month'],
+                ]);
+                $invoice->update(['payment_method' => $rows ? 'Mixed' : 'Salary Deduction']);
+            }
+
+            return $invoice;
         });
 
         return redirect()->route('jobs.show', $job)->with([

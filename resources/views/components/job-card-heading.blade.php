@@ -2,7 +2,7 @@
 
 <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Job card overview">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm font-extrabold text-slate-600">{{ $job->is_quick_job ? 'Quick Job' : 'Job Card' }} · {{ $job->number }}@if($job->is_staff_bike)<span class="ml-2 text-blue-700">Staff bike · {{ $job->staffBikeOwner?->name }}</span>@endif</p>
+        <p class="text-sm font-extrabold text-slate-600">{{ $job->is_quick_job ? 'Quick Job' : 'Job Card' }} · {{ $job->number }}@if($job->repair_staff)<span class="ml-2 text-blue-700">Staff bike · {{ $job->repair_staff->name }}</span>@endif</p>
         <span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusClass }}">{{ $job->status }}</span>
     </div>
     <div class="grid gap-4 md:grid-cols-2">

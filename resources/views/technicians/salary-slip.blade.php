@@ -135,6 +135,17 @@
       </section>
     </div>
 
+    @php($repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment'))
+    @if($repairDeductions->isNotEmpty())
+    <section id="staff-bike-repair-deductions" class="mt-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4 text-sm">
+        <h3 class="font-black text-emerald-900">Staff bike repair deductions</h3>
+        <p class="mt-1 font-bold text-emerald-800">{{ $sheet->status === 'Draft' ? 'Planned in' : 'Deducted from' }} {{ $sheet->number }}: Rs. {{ number_format($sheet->repair_deduction_amount,2) }}</p>
+        <table class="mt-3 w-full"><thead><tr><th class="text-left">Repair job / bike</th><th class="text-right">Balance before</th><th class="text-right">This paysheet</th><th class="text-right">Balance after</th></tr></thead><tbody>
+        @foreach($repairDeductions as $repair)<tr><td class="py-2">{{ $repair['job_number'] ?? $repair['reference_no'] }} · {{ $repair['bike_number'] ?? 'Staff bike' }}@php($repairPayment = $sheet->repairPayments->firstWhere('technician_bike_deduction_id',$repair['id']))@if($repairPayment && $sheet->status !== 'Draft' && auth()->user()->canAccess('technician.salaries'))<a class="mt-1 block font-bold text-blue-700 underline print:hidden" href="{{ route('technicians.salaries.repairs.edit',$repairPayment) }}">Correct deduction with reason</a>@endif</td><td class="text-right">{{ number_format($repair['remaining_balance'] ?? 0, 2) }}</td><td class="text-right font-extrabold text-emerald-900">{{ number_format($repair['amount'],2) }}</td><td class="text-right">{{ number_format(max(0, ($repair['remaining_balance'] ?? 0) - $repair['amount']),2) }}</td></tr>@endforeach
+        </tbody></table>
+        @foreach(data_get($sheet->calculation_snapshot,'repair_corrections',[]) as $correction)<p class="mt-3 rounded-xl bg-white p-3 text-xs">Correction: Rs. {{ number_format($correction['old_amount'],2) }} → Rs. {{ number_format($correction['amount'],2) }} · {{ \Carbon\Carbon::parse($correction['at'])->format('d M Y, h:i A') }}<br>Reason: {{ $correction['reason'] }}</p>@endforeach
+    </section>
+    @endif
     @if($sheet->advancesUsed->isNotEmpty() || $sheet->sourceDeductions->isNotEmpty())
     <section class="mt-6 grid gap-6 md:grid-cols-2 text-sm bg-slate-50 p-4 rounded-2xl">
         <div>

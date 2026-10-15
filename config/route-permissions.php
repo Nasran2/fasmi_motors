@@ -103,6 +103,8 @@ return [
         'technicians.advances.*' => 'technician.advances',
         'technicians.commissions.*' => 'technician.commission',
         'technicians.bike-deductions.*' => 'technician.bike_deductions',
+        'technicians.bike-repairs' => 'technician.bike_deductions',
+        'technicians.bike-repairs.*' => 'technician.bike_deductions',
         'technicians.contributions' => 'technician.epf_etf',
         'technicians.history' => 'technician.history',
         'technicians.create' => 'technician.add',

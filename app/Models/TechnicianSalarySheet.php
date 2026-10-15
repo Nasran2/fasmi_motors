@@ -16,6 +16,17 @@ class TechnicianSalarySheet extends Model
 {
     protected $guarded = [];
 
+    public function getRepairDeductionAmountAttribute(): float
+    {
+        return round((float) collect(data_get($this->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment')->sum('amount'), 2);
+    }
+
+    /** @return HasMany<Payment, $this> */
+    public function repairPayments(): HasMany
+    {
+        return $this->hasMany(Payment::class, 'salary_sheet_id')->where('method', 'Salary Deduction')->where('status', 'Completed');
+    }
+
     protected function casts(): array
     {
         return [

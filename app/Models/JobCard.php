@@ -83,6 +83,16 @@ class JobCard extends Model
         return $this->belongsTo(Technician::class, 'staff_bike_owner_id');
     }
 
+    public function getRepairStaffAttribute(): ?Technician
+    {
+        return $this->is_staff_bike ? $this->staffBikeOwner : ($this->bike?->is_technician_bike ? $this->bike->technician : null);
+    }
+
+    public function bikeDeductionPlans(): HasMany
+    {
+        return $this->hasMany(TechnicianBikeDeduction::class);
+    }
+
     public function getBikeAttribute(): ?Bike
     {
         if (! $this->is_quick_job) {

@@ -7,7 +7,6 @@ use App\Models\AccountTransaction;
 use App\Models\AttendanceImportBatch;
 use App\Models\AuditLog;
 use App\Models\Bike;
-use App\Models\Invoice;
 use App\Models\JobCard;
 use App\Models\OtSlabRule;
 use App\Models\SalarySetting;
@@ -17,13 +16,14 @@ use App\Models\TechnicianAttendance;
 use App\Models\TechnicianBikeDeduction;
 use App\Models\TechnicianCommission;
 use App\Models\TechnicianContribution;
-use App\Models\TechnicianDeduction;
 use App\Models\TechnicianSalarySheet;
 use App\Services\AccountService;
 use App\Services\AttendanceCalculationService;
 use App\Services\AttendanceImportService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
+use App\Services\SalaryRepairCorrectionService;
+use App\Services\StaffBikeRepairService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -41,15 +41,20 @@ class TechnicianController extends Controller
         $query = Technician::query()->withCount(['jobs as month_jobs_count' => fn (Builder $q) => $q->where('created_at', '>=', $month)])
             ->withSum(['commissions as month_commission' => fn (Builder $q) => $q->where('earned_date', '>=', $month)], 'amount')
             ->withSum(['advances as advance_balance' => fn (Builder $q) => $q->where('status', 'Pending Deduction')], 'amount')
-            ->withSum(['bikeDeductions as bike_balance' => fn (Builder $q) => $q->where('status', 'Active')], DB::raw('total_amount-deducted_amount'))
+            ->with('bikeDeductions.invoice')
             ->with(['attendance' => fn ($q) => $q->whereDate('date', today())])
             ->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $nested) => $nested->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")))
             ->when($request->status !== null && $request->status !== '', fn (Builder $q) => $q->where('active', $request->status === 'active'))
             ->when($request->salary_type, fn (Builder $q, string $type) => $q->where('salary_type', $type))
             ->when($request->commission !== null && $request->commission !== '', fn (Builder $q) => $q->where('commission_enabled', $request->commission === 'yes'));
 
+        $technicians = $query->latest()->paginate(15)->withQueryString();
+        foreach ($technicians as $technician) {
+            $technician->bike_balance = $technician->bikeDeductions->where('status', 'Active')->sum('recoverable_balance');
+        }
+
         return view('technicians.index', [
-            'technicians' => $query->latest()->paginate(15)->withQueryString(),
+            'technicians' => $technicians,
             'stats' => [
                 'total' => Technician::count(), 'active' => Technician::where('active', true)->count(),
                 'present' => TechnicianAttendance::whereDate('date', today())->whereIn('status', ['Present', 'Late'])->count(),
@@ -544,7 +549,17 @@ class TechnicianController extends Controller
             'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
             'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
         ]);
-        $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+        try {
+            $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+        } catch (ValidationException $exception) {
+            if ($request->has('bike_installments') || ! isset($exception->errors()['bike_installments'])) {
+                throw $exception;
+            }
+            $pending = $calculator->getTechnicianPendingDeductions((int) $data['technician_id'], $data['month'].'-01');
+            $data['bike_installments'] = collect($pending['items'])->where('kind', 'bike_installment')->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
+            $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+            $response['repair_deduction_warning'] = 'Scheduled repairs exceed available salary. Enter a smaller amount for each repair before saving.';
+        }
         $salaryCycle = app(SalaryCycleService::class);
         $conflicts = $salaryCycle->conflictingSheets((int) $data['technician_id'], $response['salary_cycle']);
         $existing = $conflicts->first(fn ($sheet) => $sheet->status !== 'Draft') ?? $conflicts->first();
@@ -648,6 +663,40 @@ class TechnicianController extends Controller
         return redirect()->route('technicians.salaries')->with('success', "Salary sheet {$sheet->number} saved as draft.");
     }
 
+    public function salaryRepairDeductions(TechnicianSalarySheet $sheet, SalaryCalculationService $calculator)
+    {
+        $sheet->load('repairPayments');
+        $snapshotItems = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment');
+        $editable = $sheet->status === 'Draft';
+        $items = $editable
+            ? collect($calculator->getTechnicianPendingDeductions($sheet->technician_id, data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_end), $sheet->period_end)['items'])->where('kind', 'bike_installment')
+            : $snapshotItems;
+        $rows = $items->map(function ($item) use ($snapshotItems, $editable, $sheet) {
+            $plan = TechnicianBikeDeduction::with(['invoice', 'jobCard', 'bike'])->find($item['id']);
+            $remaining = $editable ? $item['remaining_balance'] : min(
+                max(0, (float) ($plan?->total_amount ?? 0) - (float) ($plan?->deducted_amount ?? 0)),
+                (float) ($plan?->invoice?->due_amount ?? 0),
+            );
+            $item['remaining_balance'] = $remaining;
+            $item['job_number'] = $plan?->jobCard?->number;
+            $item['bike_number'] = $plan?->bike?->number;
+            $item['invoice_number'] = $plan?->invoice?->number;
+            $item['salary_number'] = $sheet->number;
+            $payment = $sheet->repairPayments->firstWhere('technician_bike_deduction_id', $item['id']);
+            $item['correction_url'] = ! $editable && $payment ? route('technicians.salaries.repairs.edit', $payment) : null;
+            if ($editable) {
+                $item['amount'] = min((float) ($snapshotItems->firstWhere('id', $item['id'])['amount'] ?? $item['amount']), $remaining);
+            }
+
+            return $item;
+        })->values();
+
+        return response()->json([
+            'editable' => $editable, 'rows' => $rows, 'paid_amount' => (float) $sheet->paid_amount,
+            'net_before_repairs' => round((float) $sheet->net_payable + (float) $snapshotItems->sum('amount'), 2),
+        ]);
+    }
+
     public function salaryFinalize(Request $request, TechnicianSalarySheet $sheet, SalaryCalculationService $calculator)
     {
         abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be finalized.');
@@ -658,9 +707,16 @@ class TechnicianController extends Controller
             'payment_method' => ['nullable', 'string', 'max:50'],
             'payment_date' => ['nullable', 'date'],
             'payment_note' => ['nullable', 'max:1000'],
+            'repair_selection_reviewed' => ['nullable', 'boolean'],
+            'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0', 'decimal:0,2'],
         ]);
 
         return DB::transaction(function () use ($sheet, $data, $request, $calculator) {
+            if ($request->boolean('repair_selection_reviewed') || $request->has('bike_installments')) {
+                Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
+                $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
+                $sheet = $calculator->updateDraftRepairAmounts($sheet, $data['bike_installments'] ?? []);
+            }
             $sheet = $calculator->finalizeSalaryPayment($sheet, auth()->id());
             AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Finalized', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Finalized'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
@@ -677,20 +733,19 @@ class TechnicianController extends Controller
     public function salaryPay(Request $request, TechnicianSalarySheet $sheet)
     {
         abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
+        if ($request->routeIs('technicians.salaries.pay') && $request->has('bike_installments')) {
+            throw ValidationException::withMessages(['bike_installments' => 'Repair deductions were already applied when salary was finalized. Reopen an unpaid sheet to change them.']);
+        }
         $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
         DB::transaction(function () use ($sheet, $data) {
+            Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
             $paid = (float) $sheet->paid_amount + (float) $data['amount'];
             $balance = round((float) $sheet->net_payable - $paid, 2);
             $overpaid = max(0, -$balance);
             $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'] ?? today(), 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? now() : null, 'paid_by' => auth()->id()]);
-            if ($overpaid > 0) {
-                TechnicianDeduction::updateOrCreate(
-                    ['technician_id' => $sheet->technician_id, 'source_type' => 'salary_overpayment', 'source_id' => $sheet->id],
-                    ['reference_no' => $sheet->number, 'deduction_name' => 'Previous salary overpayment adjustment', 'amount' => $overpaid, 'reason' => 'Automatically carried forward from an overpaid salary.', 'deduction_date' => $sheet->period_start->copy()->addMonth(), 'status' => 'pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id()]
-                );
-            }
+            app(SalaryRepairCorrectionService::class)->syncOverpayment($sheet, 'Automatically carried forward from an overpaid salary.');
             app(AccountService::class)->outgoing('main', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $data['payment_date'] ?? today(), 'salary');
         });
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
@@ -725,7 +780,7 @@ class TechnicianController extends Controller
 
     public function salarySlip(TechnicianSalarySheet $sheet)
     {
-        return view('technicians.salary-slip', ['sheet' => $sheet->load(['technician', 'preparedBy', 'additions', 'paymentDeductions', 'sourceDeductions', 'advancesUsed'])]);
+        return view('technicians.salary-slip', ['sheet' => $sheet->load(['technician', 'preparedBy', 'additions', 'paymentDeductions', 'sourceDeductions', 'advancesUsed', 'repairPayments'])]);
     }
 
     public function advances(Request $request)
@@ -892,33 +947,35 @@ class TechnicianController extends Controller
 
     public function bikeDeductions(Request $request)
     {
-        return view('technicians.bike-deductions', ['records' => TechnicianBikeDeduction::with(['technician', 'bike', 'jobCard', 'invoice'])->latest()->paginate(15), 'technicians' => $this->technicians(), 'bikes' => Bike::with('intakes.jobCard.invoice', 'quickJobs.invoice')->where('is_technician_bike', true)->get(), 'stats' => ['total' => TechnicianBikeDeduction::sum('total_amount'), 'deducted' => TechnicianBikeDeduction::sum('deducted_amount'), 'pending' => TechnicianBikeDeduction::sum(DB::raw('total_amount-deducted_amount')), 'active' => TechnicianBikeDeduction::where('status', 'Active')->count()]]);
+        $plans = TechnicianBikeDeduction::with('invoice')->get();
+
+        return view('technicians.bike-deductions', [
+            'records' => TechnicianBikeDeduction::with(['technician', 'bike', 'jobCard', 'invoice'])->latest()->paginate(15),
+            'technicians' => $this->technicians(),
+            'bikes' => Bike::with('intakes.jobCard.invoice', 'quickJobs.invoice')->where('is_technician_bike', true)->get(),
+            'stats' => ['total' => $plans->sum('total_amount'), 'deducted' => $plans->sum('deducted_amount'),
+                'pending' => $plans->where('status', 'Active')->sum('recoverable_balance'),
+                'active' => $plans->where('status', 'Active')->where('recoverable_balance', '>', 0)->count()],
+        ]);
     }
 
     public function bikeDeductionStore(Request $request)
     {
-        $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'bike_id' => ['required', 'exists:bikes,id'], 'job_card_id' => ['nullable', 'exists:job_cards,id'], 'total_amount' => ['required', 'numeric', 'gt:0'], 'deduction_type' => ['required', Rule::in(['Full deduction', 'Partial deduction', 'Monthly installment'])], 'installment_amount' => ['required', 'numeric', 'gt:0'], 'installments' => ['required', 'integer', 'min:1'], 'start_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000']]);
-        $job = ! empty($data['job_card_id']) ? JobCard::with('invoice')->find($data['job_card_id']) : null;
-        $bike = Bike::findOrFail($data['bike_id']);
-        if (! $bike->is_technician_bike || (int) $bike->technician_id !== (int) $data['technician_id']) {
-            throw ValidationException::withMessages(['bike_id' => 'Select a bike belonging to this staff member.']);
+        $data = $request->validate([
+            'technician_id' => ['required', 'exists:technicians,id'], 'bike_id' => ['nullable', 'exists:bikes,id'],
+            'job_card_id' => ['required', 'exists:job_cards,id'], 'total_amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+            'deduction_type' => ['required', Rule::in(['Full deduction', 'Partial deduction', 'Monthly installment'])],
+            'installment_amount' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
+            'start_month' => ['required', 'date_format:Y-m'], 'note' => ['nullable', 'max:1000'],
+        ]);
+        $job = JobCard::findOrFail($data['job_card_id']);
+        if ((int) $job->repair_staff?->id !== (int) $data['technician_id'] ||
+            (! empty($data['bike_id']) && (int) $job->bike?->id !== (int) $data['bike_id'])) {
+            throw ValidationException::withMessages(['job_card_id' => 'Select a repair job belonging to this staff member and bike.']);
         }
-        if ($job && ($job->bike?->id !== $bike->id || ! $job->invoice || $job->invoice->status === 'Cancelled')) {
-            throw ValidationException::withMessages(['job_card_id' => 'Select a billed job for this staff bike.']);
-        }
-        DB::transaction(function () use ($data, $job) {
-            if ($job) {
-                $invoice = Invoice::lockForUpdate()->findOrFail($job->invoice->id);
-                $assigned = TechnicianBikeDeduction::where('invoice_id', $invoice->id)->whereIn('status', ['Active', 'Completed'])->sum(DB::raw('total_amount-deducted_amount'));
-                if ((float) $data['total_amount'] + (float) $assigned > (float) $invoice->due_amount) {
-                    throw ValidationException::withMessages(['total_amount' => 'Salary recovery exceeds the unassigned invoice due.']);
-                }
-            }
-            $data['start_month'] .= '-01';
-            TechnicianBikeDeduction::create($data + ['number' => 'TBD-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'invoice_id' => $job?->invoice?->id, 'next_deduction_month' => $data['start_month'], 'created_by' => auth()->id()]);
-        });
+        app(StaffBikeRepairService::class)->createPlan($job, $data);
 
-        return back()->with('success', 'Own-bike salary deduction plan created.');
+        return back()->with('success', 'Staff bike salary recovery plan created.');
     }
 
     public function contributions(Request $request)
@@ -1018,6 +1075,7 @@ class TechnicianController extends Controller
                     $q->with('jobCard');
                 },
                 'bikeDeductions.bike',
+                'bikeDeductions.invoice',
                 'contributions',
             ])->find($request->technician);
 

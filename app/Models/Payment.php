@@ -14,6 +14,18 @@ class Payment extends Model
 {
     protected $guarded = [];
 
+    /** @return BelongsTo<TechnicianSalarySheet, $this> */
+    public function salarySheet(): BelongsTo
+    {
+        return $this->belongsTo(TechnicianSalarySheet::class);
+    }
+
+    /** @return BelongsTo<TechnicianBikeDeduction, $this> */
+    public function bikeDeduction(): BelongsTo
+    {
+        return $this->belongsTo(TechnicianBikeDeduction::class, 'technician_bike_deduction_id');
+    }
+
     public function getCorrectionBlockReasonAttribute(): ?string
     {
         if (! in_array($this->status, ['Completed', 'Hold'], true)) {

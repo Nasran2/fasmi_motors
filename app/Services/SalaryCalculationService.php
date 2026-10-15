@@ -147,8 +147,8 @@ class SalaryCalculationService
         $end = $periodEnd ? Carbon::parse($periodEnd)->endOfDay() : $start->copy()->endOfMonth();
         $manual = TechnicianDeduction::where('technician_id', $technicianId)->where('status', 'pending')
             ->whereDate('deduction_date', '<=', $end)->orderBy('deduction_date')->get();
-        $bike = TechnicianBikeDeduction::where('technician_id', $technicianId)->where('status', 'Active')
-            ->whereDate('next_deduction_month', '<=', $start)->orderBy('next_deduction_month')->get();
+        $bike = TechnicianBikeDeduction::with(['invoice', 'jobCard', 'bike'])->where('technician_id', $technicianId)->where('status', 'Active')
+            ->whereDate('next_deduction_month', '<=', $start)->orderBy('next_deduction_month')->orderBy('id')->get();
 
         $items = [];
         foreach ($manual as $row) {
@@ -159,15 +159,34 @@ class SalaryCalculationService
                 'amount' => (float) $row->amount, 'status' => $row->status,
             ];
         }
+        $invoiceBalances = [];
         foreach ($bike as $row) {
             $remaining = max(0, (float) $row->total_amount - (float) $row->deducted_amount);
-            $amount = min($remaining, (float) $row->installment_amount);
+            $repairTotal = (float) $row->total_amount;
+            $invoiceBalance = $remaining;
+            $invoiceNumber = null;
+            if ($row->invoice_id) {
+                if (! $row->invoice || $row->invoice->status === 'Cancelled') {
+                    continue;
+                }
+                $invoiceBalances[$row->invoice_id] ??= max(0, (float) $row->invoice->due_amount);
+                $repairTotal = (float) $row->invoice->total;
+                $invoiceBalance = (float) $row->invoice->due_amount;
+                $invoiceNumber = $row->invoice->number;
+                $remaining = min($remaining, $invoiceBalances[$row->invoice_id]);
+                $invoiceBalances[$row->invoice_id] -= $remaining;
+            }
+            $amount = $row->deduction_type === 'Full deduction' ? $remaining : min($remaining, (float) $row->installment_amount);
             if ($amount > 0) {
                 $items[] = [
                     'id' => $row->id, 'kind' => 'bike_installment', 'source' => 'own_bike_repair',
                     'reference_no' => $row->number, 'name' => 'Own bike repair instalment',
                     'date' => Carbon::parse($row->next_deduction_month)->toDateString(), 'reason' => $row->note,
                     'amount' => $amount, 'status' => 'pending',
+                    'job_number' => $row->jobCard?->number, 'bike_number' => $row->bike?->number,
+                    'invoice_number' => $invoiceNumber, 'repair_total' => $repairTotal,
+                    'remaining_balance' => round($remaining, 2), 'invoice_balance' => $invoiceBalance,
+                    'next_deduction_month' => Carbon::parse($row->next_deduction_month)->toDateString(),
                 ];
             }
         }
@@ -211,23 +230,7 @@ class SalaryCalculationService
         $attendance = $this->getAttendanceSummary($technician->id, $start, $end);
         $advance = $this->getAdvanceSummary($technician->id, $salaryMonth);
         $pendingDeductions = $this->getTechnicianPendingDeductions($technician->id, $salaryMonth, $end);
-        foreach ($pendingDeductions['items'] as &$item) {
-            if ($item['kind'] !== 'bike_installment') {
-                continue;
-            }
-            $plan = TechnicianBikeDeduction::findOrFail($item['id']);
-            $remaining = round((float) $plan->total_amount - (float) $plan->deducted_amount, 2);
-            $item['remaining_balance'] = $remaining;
-            $item['next_deduction_month'] = Carbon::parse($plan->next_deduction_month)->toDateString();
-            if (array_key_exists($item['id'], $custom['bike_installments'] ?? [])) {
-                $selected = round((float) $custom['bike_installments'][$item['id']], 2);
-                if ($selected < 0 || $selected > $remaining) {
-                    throw ValidationException::withMessages(['bike_installments' => 'Selected repair deduction exceeds the remaining balance.']);
-                }
-                $item['amount'] = $selected;
-            }
-        }
-        unset($item);
+        $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $dailySalary = $this->dailySalary($technician);
         $attendanceSalary = $technician->salary_type === 'Daily'
@@ -319,6 +322,63 @@ class SalaryCalculationService
         ];
     }
 
+    private function selectBikeAmounts(array $items, array $amounts): array
+    {
+        $bikeIds = collect($items)->where('kind', 'bike_installment')->pluck('id')->map(fn ($id) => (string) $id)->all();
+        if (array_diff(array_map('strval', array_keys($amounts)), $bikeIds)) {
+            throw ValidationException::withMessages(['bike_installments' => 'Select an eligible repair belonging to this staff member and salary month.']);
+        }
+        foreach ($items as &$item) {
+            if ($item['kind'] !== 'bike_installment' || ! array_key_exists($item['id'], $amounts)) {
+                continue;
+            }
+            $amount = round((float) $amounts[$item['id']], 2);
+            if ($amount < 0 || $amount > $item['remaining_balance']) {
+                throw ValidationException::withMessages(['bike_installments' => 'Selected repair deduction exceeds the remaining bill balance.']);
+            }
+            $item['amount'] = $amount;
+        }
+        unset($item);
+
+        return $items;
+    }
+
+    public function updateDraftRepairAmounts(TechnicianSalarySheet $sheet, array $amounts): TechnicianSalarySheet
+    {
+        abort_unless($sheet->status === 'Draft', 422, 'Repair deductions are locked after salary finalization.');
+        $snapshot = $sheet->calculation_snapshot ?? [];
+        $month = data_get($snapshot, 'salary_cycle.salary_month', $sheet->period_end);
+        $current = $this->getTechnicianPendingDeductions($sheet->technician_id, $month, $sheet->period_end);
+        foreach ($current['items'] as $item) {
+            if ($item['kind'] === 'bike_installment' && ! array_key_exists($item['id'], $amounts)) {
+                $amounts[$item['id']] = 0;
+            }
+        }
+        $selected = $this->selectBikeAmounts($current['items'], $amounts);
+        $oldItems = collect(data_get($snapshot, 'pending_deductions.items', []));
+        $oldBikeTotal = (float) $oldItems->where('kind', 'bike_installment')->sum('amount');
+        $bikeItems = collect($selected)->where('kind', 'bike_installment');
+        $delta = round((float) $bikeItems->sum('amount') - $oldBikeTotal, 2);
+        $total = round((float) $sheet->total_deductions + $delta, 2);
+        if ($total > (float) $sheet->gross_salary) {
+            throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the repair amounts before finalizing.']);
+        }
+        // Keep all other draft inputs intact so finalization still detects attendance or advance changes.
+        $items = $oldItems->reject(fn ($item) => $item['kind'] === 'bike_installment')->concat($bikeItems)->values();
+        $snapshot['pending_deductions'] = ['items' => $items->all(), 'count' => $items->count(), 'total_amount' => round((float) $items->sum('amount'), 2)];
+        $snapshot['inputs']['bike_installments'] = $bikeItems->pluck('amount', 'id')->all();
+        $snapshot['deductions']['job_bike'] = $snapshot['pending_deductions']['total_amount'];
+        $net = round((float) $sheet->gross_salary - $total, 2);
+        $sheet->update([
+            'own_bike_deduction' => round((float) $sheet->own_bike_deduction + $delta, 2),
+            'total_job_deduction' => round((float) $sheet->total_job_deduction + $delta, 2),
+            'deductions' => round((float) $sheet->deductions + $delta, 2), 'total_deductions' => $total,
+            'net_payable' => $net, 'balance_amount' => $net, 'calculation_snapshot' => $snapshot,
+        ]);
+
+        return $sheet->fresh();
+    }
+
     public function finalizeSalaryPayment(TechnicianSalarySheet $sheet, ?int $userId = null): TechnicianSalarySheet
     {
         return DB::transaction(function () use ($sheet, $userId) {
@@ -374,7 +434,7 @@ class SalaryCalculationService
                 ->update(['status' => 'deducted', 'salary_payment_id' => $sheet->id, 'updated_by' => $userId]);
             foreach ($deductionItems->where('kind', 'bike_installment') as $item) {
                 $plan = TechnicianBikeDeduction::lockForUpdate()->find($item['id']);
-                if (! $plan || $plan->status !== 'Active') {
+                if (! $plan || $plan->status !== 'Active' || (int) $plan->technician_id !== (int) $sheet->technician_id) {
                     throw ValidationException::withMessages(['month' => 'The repair recovery plan changed. Regenerate this draft.']);
                 }
                 if (isset($item['next_deduction_month']) && Carbon::parse($plan->next_deduction_month)->toDateString() !== $item['next_deduction_month']) {
@@ -395,7 +455,7 @@ class SalaryCalculationService
                     $invoice->update(['paid_amount' => round((float) $invoice->paid_amount + $amount, 2), 'due_amount' => round((float) $invoice->due_amount - $amount, 2), 'status' => $amount >= (float) $invoice->due_amount ? 'Paid' : 'Partially Paid']);
                     app(SettlementService::class)->saveStatus($invoice);
                     // Salary offsets settle the receivable without another cash receipt.
-                    $invoice->payments()->create(['number' => 'OFFSET-'.Str::upper(Str::random(12)), 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => 'Salary Deduction', 'reference' => "salary:{$sheet->id}:plan:{$plan->id}", 'paid_at' => now(), 'status' => 'Completed', 'created_by' => $userId]);
+                    $invoice->payments()->create(['number' => 'OFFSET-'.Str::upper(Str::random(12)), 'amount' => $amount, 'balance_after' => $invoice->due_amount, 'method' => 'Salary Deduction', 'reference' => "salary:{$sheet->id}:plan:{$plan->id}", 'note' => "Salary sheet {$sheet->number}", 'received_amount' => 0, 'salary_sheet_id' => $sheet->id, 'technician_bike_deduction_id' => $plan->id, 'paid_at' => now(), 'status' => 'Completed', 'created_by' => $userId]);
                 }
                 $deducted = min((float) $plan->total_amount, (float) $plan->deducted_amount + (float) $item['amount']);
                 $plan->update([
@@ -414,12 +474,20 @@ class SalaryCalculationService
     public function reopenSalaryPayment(TechnicianSalarySheet $sheet, string $reason, ?int $userId = null): TechnicianSalarySheet
     {
         return DB::transaction(function () use ($sheet, $reason, $userId) {
+            Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Finalized', 422);
             TechnicianAdvance::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending Deduction', 'salary_sheet_id' => null]);
             TechnicianDeduction::where('salary_payment_id', $sheet->id)->update(['status' => 'pending', 'salary_payment_id' => null, 'updated_by' => $userId]);
             TechnicianCommission::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending', 'salary_sheet_id' => null]);
             foreach (collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment') as $item) {
+                if ((float) $item['amount'] <= 0) {
+                    Payment::where('salary_sheet_id', $sheet->id)->where('technician_bike_deduction_id', $item['id'])
+                        ->where('method', 'Salary Deduction')->where('status', 'Completed')->where('amount', 0)
+                        ->update(['status' => 'Cancelled', 'cancel_reason' => $reason, 'cancelled_by' => $userId, 'cancelled_at' => now()]);
+
+                    continue;
+                }
                 $plan = TechnicianBikeDeduction::lockForUpdate()->find($item['id']);
                 if ($plan) {
                     $payment = Payment::where('reference', "salary:{$sheet->id}:plan:{$plan->id}")->where('status', 'Completed')->lockForUpdate()->first();

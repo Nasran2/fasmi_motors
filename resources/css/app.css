@@ -112,6 +112,29 @@
         border-color: #cbd5e1 !important;
         cursor: default !important;
     }
+
+    #salary-form input[aria-invalid="true"],
+    #payment-form input[aria-invalid="true"] {
+        background-color: #fff1f2 !important;
+        border-color: #dc2626 !important;
+        color: #991b1b !important;
+        box-shadow: 0 0 0 3px rgb(220 38 38 / 15%) !important;
+    }
+}
+
+.salary-deduction-invalid {
+    border-color: #dc2626 !important;
+    background-color: #fff1f2 !important;
+}
+
+.salary-save-button:disabled {
+    background: #cbd5e1 !important;
+    color: #475569 !important;
+    border-color: #94a3b8 !important;
+    box-shadow: none !important;
+    cursor: not-allowed !important;
+    opacity: .65;
+    transform: none !important;
 }
 
 @layer components {

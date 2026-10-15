@@ -111,6 +111,7 @@
             <div class="flex justify-between border-t pt-3 text-sm font-bold" x-show="includePreviousBalance" x-cloak><dt>Total Due Balance</dt><dd class="text-red-600" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) ($job->invoice?->paid_amount ?? 0) }} - {{ (float) ($job->invoice?->hold_amount ?? 0) }}) + {{ (float) $oldDue }})">Rs. {{ number_format(($job->invoice?->due_amount ?? $job->total) + $oldDue,2) }}</dd></div>
             @endif
         </dl>
+        @if($staffRepairSummary) @include('technicians.partials.repair-payment-summary') @endif
         <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <input type="hidden" name="show_previous_balance_on_bill" form="job-update-form" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <label class="flex items-start gap-2 text-sm font-semibold text-slate-700">
@@ -150,14 +151,21 @@
             @endif
         </div>
         @else
-        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-effect="$dispatch('payment-due-selected', {due: jobTotal + (includePaymentBalance ? {{ (float) $oldDue }} : 0)})">
+        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: jobTotal + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0)})">
             @csrf<x-submission-token/>
+            @if($job->repair_staff)
+            <div class="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                <p class="text-sm font-bold">Staff bike payment · {{ $job->repair_staff->name }}</p>
+                <label><span class="label">Repair payment method</span><select name="staff_repair_payment" class="field" x-model="repairPayment" @change="if (repairPayment === 'salary') includePaymentBalance = false"><option value="normal">Pay normally (cash, bank, card, cheque, or due)</option><option value="salary">Deduct from salary</option></select></label>
+                <div x-show="repairPayment === 'salary'" x-cloak><fieldset :disabled="repairPayment !== 'salary'">@include('technicians.partials.repair-plan-fields', ['prefix' => 'repair_', 'plan' => null])</fieldset><p class="mt-2 text-xs text-slate-600">Any payment below is paid upfront. Only this repair's unpaid balance goes to salary recovery.</p></div>
+            </div>
+            @endif
             <input type="hidden" name="service_name" :value="serviceName" value="{{ old('service_name', $job->service_name ?: 'Service') }}">
             <input type="hidden" name="other_income_name" :value="otherIncomeName" value="{{ old('other_income_name', $job->other_income_name ?: 'Other Income') }}">
             <input type="hidden" name="show_previous_balance_on_bill" :value="includePreviousBalance ? 1 : 0" value="{{ $job->show_previous_balance_on_bill ? 1 : 0 }}">
             <input type="hidden" name="include_previous_balance" value="0">
-            <label class="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePaymentBalance" @checked(old('include_previous_balance', true))><span>Include old balances in this payment</span></label>
-            <p class="text-xs text-slate-500">Pays this bill first, then earlier unpaid balances. Cash change is calculated after both.</p>
+            <label class="flex items-start gap-2 text-sm font-semibold" x-show="repairPayment !== 'salary'"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePaymentBalance" :disabled="repairPayment === 'salary'" @checked(old('include_previous_balance', true))><span>Include old balances in this payment</span></label>
+            <p class="text-xs text-slate-500" x-show="repairPayment !== 'salary'">Pays this bill first, then earlier unpaid balances. Cash change is calculated after both.</p>
             <x-split-payments :accounts="$accounts" :change-total="$job->total + $oldDue" due-preview />
             <div class="mt-3">
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Parts Commission (Optional)</label>
@@ -172,6 +180,7 @@
             <button class="btn-primary w-full mt-3 disabled:opacity-50" :disabled="hasUnsavedBillChanges">Generate invoice</button>
         </form>
         @endif
+        @if($job->repair_staff && auth()->user()->canAccess('technician.bike_deductions'))<a href="{{ route('technicians.bike-repairs.show',$job) }}" class="btn-secondary mt-4 w-full text-center">Staff bike repair & salary recovery</a>@endif
     </div>
 
     @include('jobs.partials.payment-receipts')
