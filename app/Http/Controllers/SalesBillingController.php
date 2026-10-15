@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\AccountTransaction;
+use App\Models\AuditLog;
 use App\Models\Cheque;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -15,12 +16,14 @@ use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\Store;
 use App\Models\Technician;
+use App\Models\TechnicianCommission;
 use App\Services\AccountService;
 use App\Services\SettlementService;
 use App\Services\Sms\WorkshopSmsService;
 use App\Services\WorkshopService;
 use App\Support\InvoiceDocument;
 use App\Support\InvoiceNumber;
+use App\Support\ThermalReceipt;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -344,25 +347,25 @@ class SalesBillingController extends Controller
                 }
                 $invoice->refresh();
                 $settlement->saveStatus($invoice);
-                
+
                 // Process Technician Commission
-                if (!empty($v['technician_id'])) {
+                if (! empty($v['technician_id'])) {
                     $technician = Technician::find($v['technician_id']);
-                    if ($technician && $technician->commission_enabled && (float)$technician->parts_commission_percentage > 0) {
+                    if ($technician && $technician->commission_enabled && (float) $technician->parts_commission_percentage > 0) {
                         $baseAmount = 0;
                         if (stripos($technician->commission_type, 'profit') !== false) {
                             $baseAmount = $invoice->items->sum('profit');
                         } else {
                             $baseAmount = $partsSubtotal;
                         }
-                        
+
                         if ($baseAmount > 0) {
-                            $amount = $baseAmount * ((float)$technician->parts_commission_percentage / 100);
-                            \App\Models\TechnicianCommission::create([
+                            $amount = $baseAmount * ((float) $technician->parts_commission_percentage / 100);
+                            TechnicianCommission::create([
                                 'technician_id' => $technician->id,
                                 'invoice_id' => $invoice->id,
                                 'commission_type' => 'Parts Sale',
-                                'percentage' => (float)$technician->parts_commission_percentage,
+                                'percentage' => (float) $technician->parts_commission_percentage,
                                 'base_amount' => $baseAmount,
                                 'amount' => round($amount, 2),
                                 'earned_date' => now()->toDateString(),
@@ -431,7 +434,7 @@ class SalesBillingController extends Controller
 
     public function invoiceShow(Invoice $invoice)
     {
-        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'charges', 'payments.account', 'payments.cheque.forwardedSupplier', 'returns'])]);
+        return view('sales.invoice-show', ['invoice' => $invoice->load(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'charges', 'payments.account', 'payments.cheque.forwardedSupplier', 'returns']), 'saleEdits' => AuditLog::where('auditable_type', $invoice->getMorphClass())->where('auditable_id', $invoice->id)->where('event', 'sale_edited')->latest()->limit(50)->get()]);
     }
 
     public function invoicePdf(Request $request, Invoice $invoice)
@@ -441,7 +444,7 @@ class SalesBillingController extends Controller
             .preg_replace('/[^A-Za-z0-9_-]/', '-', $invoice->number).'.pdf';
 
         if ($request->query('format') === '80mm') {
-            return \App\Support\ThermalReceipt::pdf(InvoiceDocument::data($invoice, pdfMode: true))->download($filename);
+            return ThermalReceipt::pdf(InvoiceDocument::data($invoice, pdfMode: true))->download($filename);
         }
 
         return Pdf::loadView('invoices.public', InvoiceDocument::data($invoice, pdfMode: true))

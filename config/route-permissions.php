@@ -77,6 +77,7 @@ return [
         'sales.parts.index' => 'sales.view_invoices',
         'sales.parts.edit' => 'sales.parts_sales',
         'sales.parts.update' => 'sales.parts_sales',
+        'sales.parts.edit-preview' => 'sales.parts_sales',
         'sales.parts.return' => 'sales.cancel_invoice',
         'sales.parts.return.store' => 'sales.cancel_invoice',
         'sales.parts.destroy' => 'sales.cancel_invoice',

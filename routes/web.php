@@ -136,6 +136,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('sales/parts/list', [PartsSaleController::class, 'index'])->name('sales.parts.index');
     Route::get('sales/parts/{invoice}/edit', [PartsSaleController::class, 'edit'])->name('sales.parts.edit');
     Route::put('sales/parts/{invoice}', [PartsSaleController::class, 'update'])->name('sales.parts.update');
+    Route::post('sales/parts/{invoice}/edit-preview', [PartsSaleController::class, 'editPreview'])->name('sales.parts.edit-preview');
     Route::get('sales/parts/{invoice}/return', [PartsSaleController::class, 'returnForm'])->name('sales.parts.return');
     Route::post('sales/parts/{invoice}/return', [PartsSaleController::class, 'returnStore'])->name('sales.parts.return.store');
     Route::delete('sales/parts/{invoice}', [PartsSaleController::class, 'destroy'])->name('sales.parts.destroy');

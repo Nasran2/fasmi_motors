@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property-read Product|null $product */
 class InvoiceItem extends Model
 {
     protected $guarded = [];
@@ -14,6 +15,7 @@ class InvoiceItem extends Model
         return $this->belongsTo(Invoice::class);
     }
 
+    /** @return BelongsTo<Product, $this> */
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);

@@ -76,11 +76,13 @@ class Invoice extends Model
         return $this->belongsTo(Store::class);
     }
 
+    /** @return HasMany<InvoiceItem, $this> */
     public function items(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);
     }
 
+    /** @return HasMany<SaleReturn, $this> */
     public function returns(): HasMany
     {
         return $this->hasMany(SaleReturn::class)->latest();
