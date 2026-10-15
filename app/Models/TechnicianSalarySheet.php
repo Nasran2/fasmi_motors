@@ -5,7 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $period_start
+ * @property Carbon $period_end
+ * @property array<string, mixed>|null $calculation_snapshot
+ */
 class TechnicianSalarySheet extends Model
 {
     protected $guarded = [];

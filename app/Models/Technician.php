@@ -14,7 +14,7 @@ class Technician extends Model
 
     protected function casts(): array
     {
-        return ['date_of_birth' => 'date', 'joining_date' => 'date', 'active' => 'boolean', 'commission_enabled' => 'boolean', 'epf_eligible' => 'boolean', 'etf_eligible' => 'boolean'];
+        return ['date_of_birth' => 'date', 'joining_date' => 'date', 'active' => 'boolean', 'commission_enabled' => 'boolean', 'epf_eligible' => 'boolean', 'etf_eligible' => 'boolean', 'salary_start_day' => 'integer'];
     }
 
     /** @return HasMany<JobCard, $this> */

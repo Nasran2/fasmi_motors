@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\SalaryCycleSetting;
+use App\Models\Technician;
+use App\Models\TechnicianSalarySheet;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -10,14 +12,23 @@ use Illuminate\Validation\ValidationException;
 
 class SalaryCycleService
 {
-    public function getSalaryPeriod(CarbonInterface|string $salaryMonth): array
+    public function getSalaryPeriod(CarbonInterface|string $salaryMonth, ?Technician $technician = null): array
     {
-        $setting = SalaryCycleSetting::current();
         $month = Carbon::parse($salaryMonth)->startOfMonth();
+        $mode = $technician->salary_period_mode ?? 'system_default';
+        if ($mode === 'normal_calendar') {
+            return $this->getNormalCalendarPeriod($month) + ['salary_period_source' => 'staff'];
+        }
+        if ($mode === 'custom_start') {
+            return $this->getCustomStartPeriod($month, (int) $technician->salary_start_day) + ['salary_period_source' => 'staff'];
+        }
+        $setting = SalaryCycleSetting::current();
 
-        return $setting->isCustomCutoffActive()
+        $period = $setting->isCustomCutoffActive()
             ? $this->getCustomCutoffPeriod($month, $setting)
             : $this->getNormalCalendarPeriod($month);
+
+        return $period + ['salary_period_source' => 'system_default'];
     }
 
     public function getNormalCalendarPeriod(CarbonInterface|string $salaryMonth): array
@@ -57,9 +68,28 @@ class SalaryCycleService
         );
     }
 
-    public function getCarriedForwardDates(CarbonInterface|string $salaryMonth): array
+    public function getCustomStartPeriod(CarbonInterface|string $salaryMonth, int $startDay): array
     {
-        return $this->getSalaryPeriod($salaryMonth)['excluded_dates'];
+        if ($startDay < 1 || $startDay > 31) {
+            throw ValidationException::withMessages(['salary_start_day' => 'Choose a salary start day from 1 to 31.']);
+        }
+        $month = Carbon::parse($salaryMonth)->startOfMonth();
+        if ($startDay === 1) {
+            return $this->getNormalCalendarPeriod($month);
+        }
+        $previous = $month->copy()->subMonthNoOverflow();
+        $start = $previous->copy()->day(min($startDay, $previous->daysInMonth));
+        $end = $month->copy()->day(min($startDay, $month->daysInMonth))->subDay();
+
+        return $this->periodPayload(
+            month: $month, start: $start, end: $end, mode: 'custom_start',
+            label: 'Custom Start Day Salary Cycle', excludedDates: $this->getExcludedDates($month, $end),
+        ) + ['salary_start_day' => $startDay];
+    }
+
+    public function getCarriedForwardDates(CarbonInterface|string $salaryMonth, ?Technician $technician = null): array
+    {
+        return $this->getSalaryPeriod($salaryMonth, $technician)['excluded_dates'];
     }
 
     public function getExcludedDates(CarbonInterface $month, CarbonInterface $periodEnd, bool $carryMissingDays = true): Collection
@@ -88,12 +118,27 @@ class SalaryCycleService
         }
     }
 
-    public function previewSalaryPeriod(CarbonInterface|string $salaryMonth): array
+    public function previewSalaryPeriod(CarbonInterface|string $salaryMonth, ?Technician $technician = null): array
     {
-        $period = $this->getSalaryPeriod($salaryMonth);
+        $period = $this->getSalaryPeriod($salaryMonth, $technician);
         $this->validateSalaryPeriod($period);
 
         return $period;
+    }
+
+    public function sheetSalaryMonth(TechnicianSalarySheet $sheet): string
+    {
+        return Carbon::parse(data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_end))->format('Y-m');
+    }
+
+    /** @return Collection<int, TechnicianSalarySheet> */
+    public function conflictingSheets(int $technicianId, array $period, bool $lock = false): Collection
+    {
+        return TechnicianSalarySheet::where('technician_id', $technicianId)->orderBy('id')
+            ->when($lock, fn ($query) => $query->lockForUpdate())->get()
+            ->filter(fn (TechnicianSalarySheet $sheet) => $this->sheetSalaryMonth($sheet) === Carbon::parse($period['salary_month'])->format('Y-m')
+                || (Carbon::parse($sheet->period_start)->toDateString() <= $period['salary_period_end']
+                    && Carbon::parse($sheet->period_end)->toDateString() >= $period['salary_period_start']));
     }
 
     private function customEndDateForMonth(CarbonInterface $month, int $cycleEndDay): Carbon
@@ -130,7 +175,7 @@ class SalaryCycleService
             'salary_period_end' => $end->copy()->toDateString(),
             'period_start' => $start->copy(),
             'period_end' => $end->copy(),
-            'salary_period_days' => $start->diffInDays($end) + 1,
+            'salary_period_days' => (int) $start->copy()->startOfDay()->diffInDays($end->copy()->startOfDay()) + 1,
             'carried_from_previous_month_days' => $previousMonthDays,
             'current_month_days_included' => $currentMonthDays,
             'carried_to_next_month_days' => $excludedDates->count(),

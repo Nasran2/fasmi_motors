@@ -545,11 +545,11 @@ class TechnicianController extends Controller
             'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
         ]);
         $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
-        $existing = TechnicianSalarySheet::where('technician_id', $data['technician_id'])
-            ->whereDate('period_start', $response['period_start'])
-            ->whereDate('period_end', $response['period_end'])
-            ->first();
-        $response['existing_sheet_status'] = $existing ? $existing->status : null;
+        $salaryCycle = app(SalaryCycleService::class);
+        $conflicts = $salaryCycle->conflictingSheets((int) $data['technician_id'], $response['salary_cycle']);
+        $existing = $conflicts->first(fn ($sheet) => $sheet->status !== 'Draft') ?? $conflicts->first();
+        $response['existing_sheet_status'] = $existing?->status;
+        $response['existing_sheet_can_replace'] = $conflicts->isNotEmpty() && $conflicts->every(fn ($sheet) => $sheet->status === 'Draft' && $salaryCycle->sheetSalaryMonth($sheet) === $data['month']);
 
         return response()->json($response);
     }
@@ -581,18 +581,19 @@ class TechnicianController extends Controller
         if (($data['action'] ?? 'save') === 'preview') {
             return back()->withInput()->with('salary_preview', $calculation + ['technician_name' => $technician->name]);
         }
-        $sheet = DB::transaction(function () use ($data, $technician, $calculation, $manualDeductionsList) {
-            Technician::whereKey($technician->id)->lockForUpdate()->firstOrFail();
-            $existing = TechnicianSalarySheet::where('technician_id', $technician->id)->whereDate('period_start', $calculation['period_start'])->lockForUpdate()->first();
-            if ($existing) {
-                if ($existing->status === 'Draft') {
-                    $existing->additions()->delete();
-                    $existing->paymentDeductions()->delete();
-                    TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
-                    $existing->delete();
-                } else {
-                    throw ValidationException::withMessages(['month' => 'A finalized or paid salary sheet already exists for this technician and month. Please reopen it first to edit.']);
+        $sheet = DB::transaction(function () use ($data, $technician, $calculator, $manualDeductionsList) {
+            $technician = Technician::whereKey($technician->id)->lockForUpdate()->firstOrFail();
+            $calculation = $calculator->generateMonthlySalary($technician, $data['month'].'-01', $data);
+            $salaryCycle = app(SalaryCycleService::class);
+            $conflicts = $salaryCycle->conflictingSheets($technician->id, $calculation['salary_cycle'], true);
+            foreach ($conflicts as $existing) {
+                if ($existing->status !== 'Draft' || $salaryCycle->sheetSalaryMonth($existing) !== $data['month']) {
+                    throw ValidationException::withMessages(['month' => "Salary sheet {$existing->number} already covers this month or overlaps this period. Resolve that sheet before generating another salary."]);
                 }
+                $existing->additions()->delete();
+                $existing->paymentDeductions()->delete();
+                TechnicianContribution::where('salary_sheet_id', $existing->id)->delete();
+                $existing->delete();
             }
 
             $sheetFields = [
@@ -946,10 +947,11 @@ class TechnicianController extends Controller
         $workedJobsFrom = null;
         $workedJobsTo = null;
         if ($request->technician) {
+            $historyStaff = Technician::find($request->technician);
             $from = null;
             $to = null;
             if ($request->month) {
-                $historyPeriod = $salaryCycle->previewSalaryPeriod($request->month.'-01');
+                $historyPeriod = $salaryCycle->previewSalaryPeriod($request->month.'-01', $historyStaff);
                 $from = Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
                 $to = Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
             } elseif ($request->from || $request->to) {
@@ -966,7 +968,7 @@ class TechnicianController extends Controller
                     'excluded_date_labels' => [],
                 ];
             } else {
-                $historyPeriod = $salaryCycle->previewSalaryPeriod(now()->startOfMonth());
+                $historyPeriod = $salaryCycle->previewSalaryPeriod(now()->startOfMonth(), $historyStaff);
                 $from = Carbon::parse($historyPeriod['salary_period_start'])->startOfDay();
                 $to = Carbon::parse($historyPeriod['salary_period_end'])->endOfDay();
             }
@@ -1045,7 +1047,7 @@ class TechnicianController extends Controller
 
     private function technicianData(Request $request, ?Technician $technician = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'attendance_person_id' => ['nullable', 'max:80', Rule::unique('technicians', 'attendance_person_id')->ignore($technician)],
             'department' => ['nullable', 'max:150'],
             'name' => ['required', 'max:150'],
@@ -1059,6 +1061,8 @@ class TechnicianController extends Controller
             'active' => ['required', 'boolean'],
             'basic_salary' => ['required', 'numeric', 'min:0'],
             'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])],
+            'salary_period_mode' => ['sometimes', 'required', Rule::in(['system_default', 'normal_calendar', 'custom_start'])],
+            'salary_start_day' => ['exclude_unless:salary_period_mode,custom_start', 'required', 'integer', 'min:1', 'max:31'],
             'daily_salary' => ['nullable', 'numeric', 'min:0'],
             'ot_rate' => ['nullable', 'numeric', 'min:0'],
             'late_deduction_rate' => ['nullable', 'numeric', 'min:0'],
@@ -1077,5 +1081,10 @@ class TechnicianController extends Controller
             'role' => ['nullable', Rule::in(['technician', 'staff'])],
             'designation' => ['nullable', 'max:100'],
         ]);
+        if (isset($data['salary_period_mode']) && $data['salary_period_mode'] !== 'custom_start') {
+            $data['salary_start_day'] = null;
+        }
+
+        return $data;
     }
 }

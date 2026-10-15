@@ -150,8 +150,8 @@
                 <div class="text-slate-400">to {{ $sheet->period_end->format('d M Y') }}</div>
               </td>
               <td class="px-4 py-3">
-                <span class="rounded-full px-2 py-0.5 text-[10px] font-black uppercase {{ $sheet->salary_cycle_mode === 'custom_cutoff' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600' }}">
-                  {{ $sheet->salary_cycle_mode === 'custom_cutoff' ? 'Custom Cut-Off' : 'Calendar' }}
+                <span class="rounded-full px-2 py-0.5 text-[10px] font-black uppercase {{ $sheet->salary_cycle_mode !== 'normal_calendar' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600' }}">
+                  {{ match ($sheet->salary_cycle_mode) { 'custom_cutoff' => 'Custom Cut-Off', 'custom_start' => 'Custom Start Day', default => 'Calendar' } }}
                 </span>
               </td>
               <td class="px-4 py-3">Rs. {{ number_format($sheet->gross_salary, 2) }}</td>
@@ -441,14 +441,14 @@
             const notice = document.getElementById('existing-sheet-notice');
             if (data.existing_sheet_status) {
                 notice.classList.remove('hidden');
-                if (data.existing_sheet_status === 'Draft') {
+                if (data.existing_sheet_status === 'Draft' && data.existing_sheet_can_replace) {
                     notice.classList.add('bg-orange-100', 'text-orange-800');
                     notice.classList.remove('bg-red-100', 'text-red-800');
                     notice.innerHTML = '⚠️ A Draft paysheet already exists for this month. Saving will overwrite it.';
                 } else {
                     notice.classList.add('bg-red-100', 'text-red-800');
                     notice.classList.remove('bg-orange-100', 'text-orange-800');
-                    notice.innerHTML = '❌ A ' + data.existing_sheet_status + ' paysheet already exists! You must reopen it first to edit.';
+                    notice.textContent = 'A ' + data.existing_sheet_status + ' paysheet already covers this month or overlaps these dates. Resolve that sheet before generating another salary.';
                     document.getElementById('save-draft-btn').disabled = true;
                 }
             } else {

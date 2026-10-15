@@ -14,6 +14,7 @@ use App\Models\TechnicianDeduction;
 use App\Models\TechnicianSalarySheet;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,8 @@ class SalaryCalculationService
             'name' => $technician->name,
             'basic_salary' => (float) $technician->basic_salary,
             'salary_type' => $technician->salary_type,
+            'salary_period_mode' => $technician->salary_period_mode ?? 'system_default',
+            'salary_start_day' => $technician->salary_start_day,
             'daily_salary' => $this->dailySalary($technician),
             'ot_rate' => (float) $technician->ot_rate,
             'late_deduction_rate' => (float) $technician->late_deduction_rate,
@@ -202,7 +205,7 @@ class SalaryCalculationService
     public function generateMonthlySalary(Technician $technician, CarbonInterface|string $month, array $custom = []): array
     {
         $salaryMonth = Carbon::parse($month)->startOfMonth();
-        $cycle = $this->salaryCycle->previewSalaryPeriod($salaryMonth);
+        $cycle = $this->salaryCycle->previewSalaryPeriod($salaryMonth, $technician);
         $start = Carbon::parse($cycle['salary_period_start'])->startOfDay();
         $end = Carbon::parse($cycle['salary_period_end'])->startOfDay();
         $attendance = $this->getAttendanceSummary($technician->id, $start, $end);
@@ -215,7 +218,7 @@ class SalaryCalculationService
             $plan = TechnicianBikeDeduction::findOrFail($item['id']);
             $remaining = round((float) $plan->total_amount - (float) $plan->deducted_amount, 2);
             $item['remaining_balance'] = $remaining;
-            $item['next_deduction_month'] = $plan->next_deduction_month->toDateString();
+            $item['next_deduction_month'] = Carbon::parse($plan->next_deduction_month)->toDateString();
             if (array_key_exists($item['id'], $custom['bike_installments'] ?? [])) {
                 $selected = round((float) $custom['bike_installments'][$item['id']], 2);
                 if ($selected < 0 || $selected > $remaining) {
@@ -319,16 +322,25 @@ class SalaryCalculationService
     public function finalizeSalaryPayment(TechnicianSalarySheet $sheet, ?int $userId = null): TechnicianSalarySheet
     {
         return DB::transaction(function () use ($sheet, $userId) {
+            $technician = Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Draft', 422);
             $snapshot = $sheet->calculation_snapshot ?? [];
             if (isset($snapshot['attendance_summary']) && $snapshot['attendance_summary'] != $this->getAttendanceSummary($sheet->technician_id, $sheet->period_start, $sheet->period_end)) {
                 throw ValidationException::withMessages(['month' => 'Attendance changed after this draft was calculated. Regenerate the salary draft.']);
             }
-            if (isset($snapshot['technician']) && $snapshot['technician'] != $this->getTechnicianSalaryData($sheet->technician_id)) {
+            if (isset($snapshot['technician']) && $snapshot['technician'] != Arr::only($this->getTechnicianSalaryData($sheet->technician_id), array_keys($snapshot['technician']))) {
                 throw ValidationException::withMessages(['month' => 'Staff salary settings changed. Regenerate the salary draft.']);
             }
-            $salaryMonth = data_get($snapshot, 'salary_cycle.salary_month', $sheet->period_end->copy()->startOfMonth());
+            $salaryMonth = data_get($snapshot, 'salary_cycle.salary_month', Carbon::parse($sheet->period_end)->startOfMonth());
+            $currentCycle = $this->salaryCycle->previewSalaryPeriod($salaryMonth, $technician);
+            if ($currentCycle['salary_period_start'] !== Carbon::parse($sheet->period_start)->toDateString()
+                || $currentCycle['salary_period_end'] !== Carbon::parse($sheet->period_end)->toDateString()) {
+                throw ValidationException::withMessages(['month' => 'The salary period changed. Regenerate this draft before finalizing.']);
+            }
+            if ($this->salaryCycle->conflictingSheets($sheet->technician_id, $currentCycle, true)->contains(fn ($other) => $other->id !== $sheet->id)) {
+                throw ValidationException::withMessages(['month' => 'Another salary sheet covers this salary month or overlaps these attendance dates. Resolve the duplicate before finalizing.']);
+            }
             if (isset($snapshot['advance_summary']) && $snapshot['advance_summary'] != $this->getAdvanceSummary($sheet->technician_id, $salaryMonth)) {
                 throw ValidationException::withMessages(['month' => 'Salary advances changed. Regenerate the salary draft.']);
             }
@@ -365,7 +377,7 @@ class SalaryCalculationService
                 if (! $plan || $plan->status !== 'Active') {
                     throw ValidationException::withMessages(['month' => 'The repair recovery plan changed. Regenerate this draft.']);
                 }
-                if (isset($item['next_deduction_month']) && $plan->next_deduction_month->toDateString() !== $item['next_deduction_month']) {
+                if (isset($item['next_deduction_month']) && Carbon::parse($plan->next_deduction_month)->toDateString() !== $item['next_deduction_month']) {
                     throw ValidationException::withMessages(['month' => 'This repair installment was already recovered. Regenerate this draft.']);
                 }
                 $amount = round((float) $item['amount'], 2);

@@ -11,7 +11,7 @@
       $showAttendance = $salarySetting->slip_show_attendance ?? true;
       $paperSize = $salarySetting->slip_paper_size ?? 'A4';
       $salaryMonthLabel = \Carbon\Carbon::parse(data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_start))->format('F Y');
-      $cycleLabel = $sheet->salary_cycle_mode === 'custom_cutoff' ? 'Custom Cut-Off Salary Cycle' : 'Calendar Month Salary';
+      $cycleLabel = data_get($sheet->calculation_snapshot, 'salary_cycle.salary_cycle_label') ?? match ($sheet->salary_cycle_mode) { 'custom_cutoff' => 'Custom Cut-Off Salary Cycle', 'custom_start' => 'Custom Start Day Salary Cycle', default => 'Calendar Month Salary' };
     @endphp
 
     <style>
