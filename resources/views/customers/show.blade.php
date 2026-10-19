@@ -180,7 +180,7 @@
                             
                             @php
                                 $bikeDue = (float) $bike->due_amount;
-                                $lastIntake = $bike->intakes->toBase()->concat($bike->quickJobs)->sortByDesc('created_at')->first();
+                                $lastIntake = $bike->intakes->toBase()->concat($bike->quickJobs)->sortByDesc(fn ($visit) => $visit->intake_date ?? $visit->created_at)->first();
                             @endphp
                             
                             <div class="mt-5 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4">
@@ -191,7 +191,7 @@
                                 <div>
                                     <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Last Visit</p>
                                     <p class="mt-1 text-sm font-semibold text-slate-700 mt-1.5">
-                                        {{ $lastIntake ? $lastIntake->created_at->format('d M Y') : 'Never' }}
+                                        {{ $lastIntake ? ($lastIntake->intake_date ?? $lastIntake->created_at)->format('d M Y') : 'Never' }}
                                     </p>
                                 </div>
                                 <div>

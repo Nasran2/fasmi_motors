@@ -15,7 +15,14 @@ class BikeIntake extends Model
 
     protected function casts(): array
     {
-        return ['is_service' => 'boolean', 'estimated_delivery_date' => 'date', 'next_service_date' => 'date'];
+        return ['intake_date' => 'date', 'is_service' => 'boolean', 'estimated_delivery_date' => 'date', 'next_service_date' => 'date'];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (BikeIntake $intake) {
+            $intake->intake_date ??= ($intake->created_at ?? today())->toDateString();
+        });
     }
 
     public function bike(): BelongsTo

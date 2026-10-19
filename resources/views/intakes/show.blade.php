@@ -16,7 +16,7 @@
                     <p class="page-subtitle mt-1 flex items-center gap-2">
                         <span class="font-medium text-slate-700">{{ $intake->bike->model }}</span>
                         <span class="size-1 rounded-full bg-slate-300"></span>
-                        Received {{ $intake->created_at->format('d M Y, h:i A') }}
+                        Received {{ ($intake->intake_date ?? $intake->created_at)->format('d M Y') }}
                     </p>
                 </div>
             </div>
@@ -123,11 +123,11 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach($intake->bike->intakes->sortByDesc('created_at') as $past)
+                                    @foreach($intake->bike->intakes->sortByDesc(fn ($visit) => $visit->intake_date ?? $visit->created_at) as $past)
                                         <tr class="{{ $past->id === $intake->id ? 'bg-blue-50/50' : '' }}">
                                             <td class="whitespace-nowrap">
-                                                <div class="font-semibold text-slate-700">{{ $past->created_at->format('d M Y') }}</div>
-                                                <div class="text-[10px] text-slate-500">{{ $past->created_at->format('h:i A') }}</div>
+                                                <div class="font-semibold text-slate-700">{{ ($past->intake_date ?? $past->created_at)->format('d M Y') }}</div>
+
                                                 @if($past->id === $intake->id)
                                                     <span class="mt-1 inline-block rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 uppercase tracking-wider">Current</span>
                                                 @endif

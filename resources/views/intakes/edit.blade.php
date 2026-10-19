@@ -22,6 +22,7 @@
                     </div>
 
                     <div class="grid gap-4 md:grid-cols-2">
+                        <label class="md:col-span-2"><span class="label">Intake date <em class="not-italic text-red-500">*</em></span><input type="date" name="intake_date" value="{{ old('intake_date', ($intake->intake_date ?? $intake->created_at)->toDateString()) }}" class="field" required>@error('intake_date')<span class="mt-1 block text-xs text-red-600">{{ $message }}</span>@enderror</label>
                         <label><span class="label">Bike number <em class="not-italic text-red-500">*</em></span><input id="bike_number" name="bike_number" value="{{ old('bike_number', $intake->bike->number) }}" class="field uppercase" required placeholder="BAM 5428" autocomplete="off"></label>
                         <label><span class="label">Bike model <em class="not-italic text-red-500">*</em></span><input id="bike_model" name="bike_model" value="{{ old('bike_model', $intake->bike->model) }}" class="field" required placeholder="e.g. Yamaha FZ-S V3"></label>
                         <label><span class="label">Customer name</span><input id="customer_name" name="customer_name" value="{{ old('customer_name', $intake->bike->customer->name) }}" class="field" placeholder="Full name"></label>

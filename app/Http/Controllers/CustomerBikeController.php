@@ -136,8 +136,8 @@ class CustomerBikeController extends Controller
     {
         $query = Bike::query()->select('bikes.*')->with(['customer', 'technician'])
             ->selectSub($this->bikeDueSubquery(), 'due_amount')
-            ->selectSub(BikeIntake::selectRaw('max(created_at)')->whereColumn('bike_id', 'bikes.id'), 'last_job_date')
-            ->selectSub(BikeIntake::select('next_service_date')->whereColumn('bike_id', 'bikes.id')->whereNotNull('next_service_date')->latest('created_at')->limit(1), 'next_service_date')
+            ->selectSub(BikeIntake::selectRaw('max(intake_date)')->whereColumn('bike_id', 'bikes.id'), 'last_job_date')
+            ->selectSub(BikeIntake::select('next_service_date')->whereColumn('bike_id', 'bikes.id')->whereNotNull('next_service_date')->latest('intake_date')->latest('created_at')->limit(1), 'next_service_date')
             ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhere('model', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))))
             ->when($request->filter === 'service_due', fn ($q) => $q->whereHas('intakes', fn ($i) => $i->whereDate('next_service_date', '<=', today())))
             ->when($request->filter === 'due', fn ($q) => $q->whereExists($this->bikeDueExistsSubquery()))
@@ -341,7 +341,7 @@ class CustomerBikeController extends Controller
     private function customerLastVisitSubquery()
     {
         return Customer::selectRaw('max(visits.created_at)')->fromSub(
-            BikeIntake::select('bike_intakes.created_at', 'bikes.customer_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')
+            BikeIntake::selectRaw('bike_intakes.intake_date as created_at, bikes.customer_id')->join('bikes', 'bikes.id', '=', 'bike_intakes.bike_id')
                 ->unionAll(JobCard::select('created_at', 'quick_customer_id as customer_id')->where('is_quick_job', true)),
             'visits',
         )->withoutGlobalScopes()->whereColumn('visits.customer_id', 'customers.id');

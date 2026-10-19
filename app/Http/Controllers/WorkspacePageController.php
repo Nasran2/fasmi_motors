@@ -57,7 +57,7 @@ class WorkspacePageController extends Controller
         $closedStatuses = ['Completed', 'Billed', 'Delivered', 'Cancelled'];
 
         $cards = [
-            ['label' => 'Bike Intakes', 'value' => BikeIntake::whereBetween('created_at', [$start, $end])->count(), 'icon' => 'bike', 'tone' => 'red'],
+            ['label' => 'Bike Intakes', 'value' => BikeIntake::whereBetween('intake_date', [$start->toDateString(), $end->toDateString()])->count(), 'icon' => 'bike', 'tone' => 'red'],
             ['label' => 'Jobs Created', 'value' => JobCard::whereBetween('created_at', [$start, $end])->count(), 'icon' => 'clipboard', 'tone' => 'orange'],
             ['label' => 'Active Jobs', 'value' => JobCard::whereNotIn('status', $closedStatuses)->count(), 'icon' => 'clipboard', 'tone' => 'blue'],
             ['label' => 'Completed Today', 'value' => JobCard::whereIn('status', ['Completed', 'Billed', 'Delivered'])->whereBetween('updated_at', [$start, $end])->count(), 'icon' => 'check', 'tone' => 'green'],
@@ -71,7 +71,7 @@ class WorkspacePageController extends Controller
             'group' => $group,
             'page' => $page,
             'cards' => $cards,
-            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->whereBetween('created_at', [$start, $end])->latest()->limit(8)->get(),
+            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->whereBetween('intake_date', [$start->toDateString(), $end->toDateString()])->latest()->limit(8)->get(),
             'recentJobs' => JobCard::with('intake.bike.customer', 'technician')->whereBetween('updated_at', [$start, $end])->latest('updated_at')->limit(8)->get(),
             'jobsByStatus' => JobCard::selectRaw('status, count(*) total')->groupBy('status')->orderByDesc('total')->pluck('total', 'status'),
             'netCash' => (float) Payment::whereBetween('paid_at', [$start, $end])->sum('amount') - (float) Expense::whereBetween('expense_date', [$start->toDateString(), $end->toDateString()])->sum('amount'),
@@ -117,7 +117,7 @@ class WorkspacePageController extends Controller
 
     private function intakeRecords(Request $request, array $group, array $page, string $filter): View
     {
-        $query = BikeIntake::with('bike.customer', 'bike.technician', 'jobCard.technician', 'jobCard.invoice')->latest();
+        $query = BikeIntake::with('bike.customer', 'bike.technician', 'jobCard.technician', 'jobCard.invoice')->latest('intake_date')->latest();
         $this->applyIntakeFilter($query, $filter);
 
         if ($request->filled('q')) {

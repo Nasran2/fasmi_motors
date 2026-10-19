@@ -31,8 +31,8 @@ class DashboardController extends Controller
         $finalStatuses = ['Completed', 'Billed', 'Delivered', 'Cancelled'];
         $completedStatuses = ['Completed', 'Billed', 'Delivered'];
 
-        $todayIntakes = BikeIntake::whereBetween('created_at', [$startDate, $endDate])->count();
-        $yesterdayIntakes = BikeIntake::whereBetween('created_at', [$previousStartDate, $previousEndDate])->count();
+        $todayIntakes = BikeIntake::whereBetween('intake_date', [$startDate->toDateString(), $endDate->toDateString()])->count();
+        $yesterdayIntakes = BikeIntake::whereBetween('intake_date', [$previousStartDate->toDateString(), $previousEndDate->toDateString()])->count();
         $activeJobs = JobCard::whereNotIn('status', $finalStatuses)->count();
         $completedToday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$startDate, $endDate])->count();
         $completedYesterday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$previousStartDate, $previousEndDate])->count();
@@ -150,7 +150,7 @@ class DashboardController extends Controller
             'jobGradient' => $jobGradient,
             'technicianPerformance' => $technicianPerformance,
             'performanceMaximum' => $performanceMaximum,
-            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->latest()->limit(7)->get(),
+            'recentIntakes' => BikeIntake::with('bike.customer', 'jobCard.technician')->latest('intake_date')->latest()->limit(7)->get(),
             'lowStock' => $lowStock,
             'reminders' => ServiceReminder::with('bike.customer')->where('status', 'Pending')->whereNotNull('due_date')->orderBy('due_date')->limit(4)->get(),
             'attendance' => $attendance,

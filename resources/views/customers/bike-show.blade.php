@@ -1,6 +1,6 @@
 <x-layouts::app title="{{ $bike->number }}">
 @php
-    $visits = $bike->intakes->toBase()->concat($bike->quickJobs)->sortByDesc('created_at');
+    $visits = $bike->intakes->toBase()->concat($bike->quickJobs)->sortByDesc(fn ($visit) => $visit->intake_date ?? $visit->created_at);
     $due = $bike->intakes->map(fn ($intake) => $intake->jobCard?->invoice)->filter()->sum('due_amount') + $bike->quickJobs->sum(fn ($job) => (float) $job->invoice?->due_amount);
     $summary = [
         ['Current mileage', number_format($bike->last_mileage ?? 0).' km', 'chart-bar', 'blue'],
@@ -134,7 +134,7 @@
 
     <section class="bp-history">
         <div class="bp-history-header">
-            <div><h2 class="bp-heading"><flux:icon.clock/>Service & repair history</h2><p>{{ $visits->first() ? 'Last visit: '.$visits->first()->created_at->format('d M Y') : 'No workshop visits yet' }}</p></div>
+            <div><h2 class="bp-heading"><flux:icon.clock/>Service & repair history</h2><p>{{ $visits->first() ? 'Last visit: '.($visits->first()->intake_date ?? $visits->first()->created_at)->format('d M Y') : 'No workshop visits yet' }}</p></div>
             <span class="bp-history-count">{{ number_format($visits->count()) }} {{ Str::plural('visit', $visits->count()) }}</span>
         </div>
         <div class="bp-table-scroll">
@@ -149,7 +149,7 @@
                         $status = $job?->status ?? 'Intake only';
                     @endphp
                     <tr>
-                        <td class="bp-date">{{ $intake->created_at->format('d M Y') }}</td>
+                        <td class="bp-date">{{ ($intake->intake_date ?? $intake->created_at)->format('d M Y') }}</td>
                         <td>@if($isQuickJob)<span>Quick Job</span>@else<a href="{{ route('intakes.show', $intake) }}" class="bp-link">{{ $intake->intake_number }}</a>@endif</td>
                         <td class="bp-complaint">{{ $intake->complaint }}</td>
                         <td>@if($job)<a href="{{ route('jobs.show', $job) }}" class="bp-link">{{ $job->number }}</a>@else<span style="color:#94a3b8">-</span>@endif</td>
