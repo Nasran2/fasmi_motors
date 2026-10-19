@@ -1,5 +1,5 @@
 <x-layouts::app title="New Job Card">
-    @php($selectedIntake = $intakes->firstWhere('id', (int) $selected))
+    @php($selectedIntake = $intakes->firstWhere('id', (int) old('bike_intake_id', $selected)))
     <div class="mx-auto max-w-4xl space-y-5">
         <div>
             <p class="mb-1 text-[10px] font-bold uppercase tracking-[.18em] text-red-600">Workshop Operations</p>
@@ -61,7 +61,7 @@
                                         class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-red-50 focus:bg-red-50 focus:outline-none"
                                     >
                                         <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-[#0b2447]"><x-dashboard-icon name="bike" class="size-5"/></span>
-                                        <span class="min-w-0 flex-1"><span class="block truncate text-sm font-bold text-slate-800">{{ $i->bike->number }} <span class="font-medium text-slate-400">· {{ $i->intake_number }}</span></span><span class="mt-1 block truncate text-[11px] text-slate-500">{{ $i->bike->model }} · {{ $i->bike->customer->name ?: 'Walk-in customer' }} · {{ $i->bike->customer->phone }}</span></span>
+                                        <span class="min-w-0 flex-1"><span class="block truncate text-sm font-bold text-slate-800">{{ $i->bike->number }} <span class="font-medium text-slate-400">· {{ $i->intake_number }}</span></span><span class="mt-1 block truncate text-[11px] text-slate-500">{{ $i->bike->model }} · {{ $i->bike->customer->name ?: 'Walk-in customer' }} · {{ $i->bike->customer->phone }}</span><span class="mt-1 block text-[11px] text-slate-500">Intake date: {{ ($i->intake_date ?? $i->created_at)->format('d M Y') }}</span></span>
                                         <svg class="option-check size-5 shrink-0 {{ (string) old('bike_intake_id', $selected) === (string) $i->id ? 'text-emerald-500' : 'hidden' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
                                     </button>
                                 @endforeach
@@ -76,6 +76,7 @@
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
+                <label class="sm:col-span-2"><span class="label">Job card creation date <span class="text-red-500">*</span></span><input id="job-creation-date" name="job_date" type="date" value="{{ old('job_date', today()->toDateString()) }}" class="field" required>@error('job_date')<span class="mt-1 block text-xs font-semibold text-red-600">{{ $message }}</span>@enderror</label>
                 <label><span class="label">Main technician</span><select name="main_technician_id" class="field"><option value="">Assign later</option>@foreach($technicians as $t)<option value="{{ $t->id }}" @selected(old('main_technician_id')==$t->id)>{{ $t->name }}</option>@endforeach</select></label>
                 <label><span class="label">Priority <span class="text-red-500">*</span></span><select name="priority" class="field">@foreach(['Normal','Low','High','Urgent'] as $priority)<option @selected(old('priority','Normal')===$priority)>{{ $priority }}</option>@endforeach</select></label>
                 <label><span class="label">Estimated amount</span><input name="estimated_amount" value="{{ old('estimated_amount') }}" type="number" step=".01" class="field" placeholder="0.00"></label>

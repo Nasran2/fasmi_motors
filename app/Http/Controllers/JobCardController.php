@@ -63,13 +63,16 @@ class JobCardController extends Controller
 
     public function store(Request $r)
     {
-        $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
+        $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'job_date' => 'sometimes|required|date_format:Y-m-d', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
         $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
         $job = DB::transaction(function () use ($v, $r) {
-            $bike = BikeIntake::findOrFail($v['bike_intake_id'])->bike;
+            $intake = BikeIntake::lockForUpdate()->findOrFail($v['bike_intake_id']);
+            $createdAt = now()->setDateFrom($v['job_date'] ?? now());
+            unset($v['job_date']);
+            $bike = $intake->bike;
             $v['is_staff_bike'] = (bool) $bike?->is_technician_bike;
             $v['staff_bike_owner_id'] = $bike?->is_technician_bike ? $bike->technician_id : null;
-            $job = JobCard::create($v + ['number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
+            $job = JobCard::create($v + ['number' => 'JOB-'.$createdAt->format('ymd').'-'.Str::upper(Str::random(6)), 'created_at' => $createdAt, 'status' => $r->main_technician_id ? 'Assigned' : 'Received', 'created_by' => auth()->id(), 'internal_notes' => $r->internal_notes]);
             DB::table('job_card_status_logs')->insert(['job_card_id' => $job->id, 'new_status' => $job->status, 'changed_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()]);
 
             return $job;

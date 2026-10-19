@@ -2,6 +2,7 @@
 
 use App\Models\BikeIntake;
 use App\Models\Customer;
+use App\Models\JobCard;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -59,4 +60,36 @@ test('backdated intake is counted on the selected date and sorted by intake date
     $dashboard = $this->get(route('dashboard', ['filter' => 'yesterday']))->assertOk();
     expect(collect($dashboard->viewData('cards'))->firstWhere('label', 'Bike Intake')['value'])->toBe(1);
     expect($older->created_at->isToday())->toBeTrue();
+});
+
+test('job card creation date defaults to today and dates the job without changing the intake', function () {
+    $date = today()->subDays(3)->toDateString();
+    $this->post(route('intakes.store'), $this->intakeData + ['intake_date' => $date])->assertSessionHasNoErrors();
+    $intake = BikeIntake::sole();
+    $this->get(route('jobs.create'))->assertOk()->assertSee('name="job_date" type="date" value="'.today()->toDateString().'"', false);
+    $this->get(route('jobs.create', ['intake' => $intake->id]))->assertOk()
+        ->assertSeeText('Job card creation date')->assertSee('name="job_date" type="date" value="'.today()->toDateString().'"', false)
+        ->assertSeeText('Intake date: '.$intake->intake_date->format('d M Y'));
+    $correctedDate = today()->subDays(4)->toDateString();
+    $this->post(route('jobs.store'), ['bike_intake_id' => $intake->id, 'job_date' => $correctedDate, 'priority' => 'Normal'])
+        ->assertSessionHasNoErrors();
+    expect(JobCard::sole()->bike_intake_id)->toBe($intake->id)
+        ->and(JobCard::sole()->created_at->toDateString())->toBe($correctedDate)
+        ->and(JobCard::sole()->number)->toStartWith('JOB-'.Carbon::parse($correctedDate)->format('ymd').'-')
+        ->and($intake->fresh()->intake_date->toDateString())->toBe($date)
+        ->and($intake->fresh()->created_at->isToday())->toBeTrue();
+});
+
+test('job card creation uses today when omitted and rejects invalid job dates', function () {
+    $date = today()->subDays(3)->toDateString();
+    $this->post(route('intakes.store'), $this->intakeData + ['intake_date' => $date])->assertSessionHasNoErrors();
+    $intake = BikeIntake::sole();
+    foreach (['', '2026-02-30'] as $invalidDate) {
+        $this->post(route('jobs.store'), ['bike_intake_id' => $intake->id, 'job_date' => $invalidDate, 'priority' => 'Normal'])
+            ->assertSessionHasErrors('job_date');
+        expect(JobCard::count())->toBe(0)->and($intake->fresh()->intake_date->toDateString())->toBe($date);
+    }
+    $this->post(route('jobs.store'), ['bike_intake_id' => $intake->id, 'priority' => 'Normal'])->assertSessionHasNoErrors();
+    expect(JobCard::sole()->created_at->isToday())->toBeTrue()
+        ->and($intake->fresh()->intake_date->toDateString())->toBe($date);
 });
