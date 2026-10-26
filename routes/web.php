@@ -89,6 +89,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::post('job-cards/{job}/due-payment', JobDuePaymentController::class)->name('jobs.dues.payment');
     Route::post('job-cards/{job}/advances', JobAdvanceController::class)->name('jobs.advances.store');
+    Route::put('job-cards/{job}/advances/{advance}', [JobAdvanceController::class, 'update'])->name('jobs.advances.update');
+    Route::delete('job-cards/{job}/advances/{advance}', [JobAdvanceController::class, 'destroy'])->name('jobs.advances.destroy');
     Route::post('job-cards/{job}/previous-balance', JobPreviousBalanceController::class)->name('jobs.previous-balance.store');
     Route::put('job-cards/{job}/payments/{payment}', JobPaymentController::class)->name('jobs.payments.update');
     Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');

@@ -119,7 +119,7 @@ test('invalid advances and bills below advances do not write partial financial d
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_amount' => 0]))->assertSessionHasErrors('advance_amount');
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_method' => 'Cheque']))->assertSessionHasErrors('advance_cheque_number');
     expect(JobAdvance::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
-    $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_amount' => 6000]))->assertSessionHasNoErrors();
+    $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_amount' => 6000, 'advance_method' => 'Bank Transfer']))->assertSessionHasNoErrors();
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasErrors('advance_amount');
     expect(Invoice::count())->toBe(0)->and(Payment::count())->toBe(0)->and(JobAdvance::sole()->payment_id)->toBeNull()->and(Account::systemAccount('main')->balance)->toBe(6000.0);
 });

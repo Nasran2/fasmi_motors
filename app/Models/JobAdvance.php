@@ -28,4 +28,19 @@ class JobAdvance extends Model
     {
         return $this->belongsTo(Cheque::class)->withTrashed();
     }
+
+    public function getChangeBlockReasonAttribute(): ?string
+    {
+        if ($this->payment_id || ! in_array($this->status, ['Completed', 'Hold'], true)) {
+            return 'This advance is already billed or inactive.';
+        }
+        if ($this->cheque_id) {
+            $cheque = $this->cheque;
+            if (! $cheque || $cheque->trashed() || ! in_array($cheque->status, ['Pending', 'Deposited'], true) || $cheque->forwarded_supplier_id || $cheque->payments()->exists() || $cheque->supplierPayments()->exists()) {
+                return 'Manage this settled, forwarded or shared cheque in the cheque register.';
+            }
+        }
+
+        return null;
+    }
 }

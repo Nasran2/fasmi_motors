@@ -2,6 +2,8 @@
 @php
   $advancePaid = (float) $advances->where('status', 'Completed')->sum('amount');
   $advanceHold = (float) $advances->where('status', 'Hold')->sum('amount');
+  $advanceTotal = $advancePaid + $advanceHold;
+  $advanceOldApplied = old('include_previous_balance', true) ? min($oldDue, max(0, $advanceTotal - $job->total)) : 0;
   $statusColors = [
       'Received'          => 'bg-slate-100 text-slate-700 border border-slate-200',
       'Assigned'          => 'bg-blue-100 text-blue-700 border border-blue-200',
@@ -91,7 +93,7 @@
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
 <div class="space-y-4">
-    <div class="panel" x-data="{ includePreviousBalance: @js((bool) old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill)), includePaymentBalance: @js((bool) old('include_previous_balance', true)) }">
+    <div class="panel" x-data="{ includePreviousBalance: @js((bool) old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill)), includePaymentBalance: @js((bool) old('include_previous_balance', true)), get advanceOnOld() { return this.includePaymentBalance ? Math.min({{ (float) $oldDue }}, Math.max(0, {{ $advanceTotal }} - this.jobTotal)) : 0; }, get advanceBalanceDue() { return Math.max(0, this.jobTotal - {{ $advanceTotal }}) + {{ (float) $oldDue }} - this.advanceOnOld; } }">
         <h2 class="mb-4 font-bold">Bill summary</h2>
         <dl class="space-y-2 text-sm">
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
@@ -103,7 +105,12 @@
             @if(!$job->invoice && ($advancePaid > 0 || $advanceHold > 0))
             <div class="flex justify-between border-t pt-2"><dt>Advance paid</dt><dd class="font-bold text-emerald-600">Rs. {{ number_format($advancePaid, 2) }}</dd></div>
             @if($advanceHold > 0)<div class="flex justify-between"><dt>Advance cheque hold</dt><dd class="font-bold text-amber-600">Rs. {{ number_format($advanceHold, 2) }}</dd></div>@endif
-            <div class="flex justify-between font-bold"><dt>Remaining after advance</dt><dd x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ $advancePaid + $advanceHold }}))">Rs. {{ number_format(max(0, $job->total - $advancePaid - $advanceHold), 2) }}</dd></div>
+            <div class="flex justify-between font-bold"><dt>Current job balance</dt><dd x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ $advancePaid + $advanceHold }}))">Rs. {{ number_format(max(0, $job->total - $advancePaid - $advanceHold), 2) }}</dd></div>
+            @if($oldDue > 0)
+            <div class="flex justify-between"><dt>Advance towards old dues</dt><dd id="advance-old-allocation" class="font-bold text-emerald-600" x-text="'Rs. ' + money(advanceOnOld)">Rs. {{ number_format($advanceOldApplied, 2) }}</dd></div>
+            <div class="flex justify-between"><dt>Old dues after advance</dt><dd class="font-bold text-red-600" x-text="'Rs. ' + money({{ (float) $oldDue }} - advanceOnOld)">Rs. {{ number_format($oldDue - $advanceOldApplied, 2) }}</dd></div>
+            @endif
+            <div class="flex justify-between" x-show="{{ $advanceTotal }} > jobTotal + (includePaymentBalance ? {{ (float) $oldDue }} : 0)" x-cloak><dt>Unused advance / cash change at billing</dt><dd x-text="'Rs. ' + money(Math.max(0, {{ $advanceTotal }} - jobTotal - (includePaymentBalance ? {{ (float) $oldDue }} : 0)))"></dd></div>
             @endif
             @if($job->invoice)
             <div class="flex justify-between border-t border-dashed pt-2 text-xs font-semibold text-slate-500"><dt>Paid</dt><dd class="text-emerald-600 font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['paid'] }} : {{ (float) $job->invoice->paid_amount }})">Rs. {{ number_format($paymentSummary['paid'],2) }}</dd></div>
@@ -115,7 +122,13 @@
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Payment status</dt><dd x-text="includePreviousBalance ? @js($combinedPaymentStatus) : @js($job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status)">{{ $job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status }}</dd></div>
             @endif
             @if($oldDue > 0)
-            <div class="flex justify-between border-t pt-3 text-sm font-bold" x-show="includePreviousBalance" x-cloak><dt>Total Due Balance</dt><dd class="text-red-600" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) ($job->invoice?->paid_amount ?? $advancePaid) }} - {{ (float) ($job->invoice?->hold_amount ?? $advanceHold) }}) + {{ (float) $oldDue }})">Rs. {{ number_format(($job->invoice?->due_amount ?? max(0, $job->total - $advancePaid - $advanceHold)) + $oldDue,2) }}</dd></div>
+            <div class="flex justify-between border-t pt-3 text-sm font-bold" x-show="includePreviousBalance" x-cloak><dt>Total Due Balance</dt>
+                @if($job->invoice)
+                <dd class="text-red-600" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) $job->invoice->paid_amount }} - {{ (float) $job->invoice->hold_amount }}) + {{ (float) $oldDue }})">Rs. {{ number_format($job->invoice->due_amount + $oldDue, 2) }}</dd>
+                @else
+                <dd id="advance-total-balance" class="text-red-600" x-text="'Rs. ' + money(advanceBalanceDue)">Rs. {{ number_format(max(0, $job->total - $advanceTotal) + $oldDue - $advanceOldApplied, 2) }}</dd>
+                @endif
+            </div>
             @endif
         </dl>
         @if($staffRepairSummary) @include('technicians.partials.repair-payment-summary') @endif
@@ -127,11 +140,21 @@
             </label>
             <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $job->invoice ? '.' : ' or Generate invoice.' }}</p>
             <div x-show="includePreviousBalance" x-cloak class="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs">
+                @if(!$job->invoice && $advanceTotal > 0)
+                <p class="text-slate-500">Advance allocation is a preview until billing. New job charges are covered first, then the oldest unpaid bills.</p>
+                @endif
+                @php($earlierDueBeforeRow = 0)
                 @forelse($previousBalances as $balance)
                     <div class="flex justify-between gap-3">
                         <span>{{ $balance['reference'] }}<span class="block text-slate-500">{{ $balance['date'] }}</span><span class="block text-slate-500">{{ $balance['status'] }}</span></span>
-                        <div class="shrink-0 text-right"><span class="block font-bold text-red-600">Rs. {{ number_format($balance['amount'],2) }}</span><x-due-payment-button :invoice-id="$balance['invoice_id']" :due="$balance['amount']" :number="$balance['invoice_number']" :paid="$balance['paid']" :hold="$balance['hold']" class="mt-1"/></div>
+                        <div class="shrink-0 text-right"><span class="block font-bold text-red-600">Rs. {{ number_format($balance['amount'],2) }}</span>
+                            @if(!$job->invoice && $advanceTotal > 0)
+                            <span class="block text-emerald-700" x-show="advanceOnOld > {{ $earlierDueBeforeRow }}" x-cloak x-text="'After advance: Rs. ' + money(Math.max(0, {{ $balance['amount'] }} - Math.max(0, advanceOnOld - {{ $earlierDueBeforeRow }})))"></span>
+                            @endif
+                            <span @if(!$job->invoice && $advanceTotal > 0) x-show="advanceOnOld <= {{ $earlierDueBeforeRow }}" @endif><x-due-payment-button :invoice-id="$balance['invoice_id']" :due="$balance['amount']" :number="$balance['invoice_number']" :paid="$balance['paid']" :hold="$balance['hold']" class="mt-1"/></span>
+                        </div>
                     </div>
+                @php($earlierDueBeforeRow += $balance['amount'])
                 @empty
                     <p class="text-slate-500">No previous unpaid bills.</p>
                 @endforelse
@@ -161,7 +184,7 @@
             @endif
         </div>
         @else
-        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: Math.max(0, jobTotal - {{ $advancePaid + $advanceHold }}) + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0)})">
+        <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: Math.max(0, jobTotal + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0) - {{ $advanceTotal }})})">
             @csrf<x-submission-token/>
             @if($job->repair_staff)
             <div class="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
@@ -176,7 +199,7 @@
             <input type="hidden" name="include_previous_balance" value="0">
             <label class="flex items-start gap-2 text-sm font-semibold" x-show="repairPayment !== 'salary'"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePaymentBalance" :disabled="repairPayment === 'salary'" @checked(old('include_previous_balance', true))><span>Include old balances in this payment</span></label>
             <p class="text-xs text-slate-500" x-show="repairPayment !== 'salary'">Pays this bill first, then earlier unpaid balances. Cash change is calculated after both.</p>
-            <x-split-payments :accounts="$accounts" :change-total="max(0, $job->total - $advancePaid - $advanceHold) + $oldDue" due-preview />
+            <x-split-payments :accounts="$accounts" :change-total="max(0, $job->total + $oldDue - $advanceTotal)" due-preview />
             <div class="mt-3">
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Parts Commission (Optional)</label>
                 <select name="parts_technician_id" class="field">
@@ -201,6 +224,11 @@
             <p class="mt-1">{{ $advance->paid_at->format('d M Y') }} · {{ $advance->method }} · {{ $advance->status }} · {{ $advance->account?->name }}</p>
             <x-cheque-reference :cheque="$advance->cheque"/>
             @if($advance->note)<p class="mt-1 text-slate-500">{{ $advance->note }}</p>@endif
+            @if(auth()->user()->canAccess('sales.receive_payments') && !$job->invoice)
+                @if(!$advance->change_block_reason)
+                <div class="mt-3 flex gap-2"><button type="button" class="btn-secondary" onclick="document.getElementById('job-advance-edit-{{ $advance->id }}').showModal()">Edit advance</button><button type="button" class="btn-secondary text-red-600" onclick="document.getElementById('job-advance-delete-{{ $advance->id }}').showModal()">Delete advance</button></div>
+                @elseif(in_array($advance->status, ['Completed', 'Hold']))<p class="mt-2 text-amber-700">{{ $advance->change_block_reason }}</p>@endif
+            @endif
         </div>
         @endforeach
     </div></div>
@@ -563,6 +591,12 @@ function saveEditedName() {
 <x-job-due-payment-dialog :accounts="$accounts" select-bills />
 @if(!$job->invoice && !in_array($job->status, ['Cancelled', 'Delivered']) && auth()->user()->canAccess('sales.receive_payments'))
 @include('jobs.partials.advance-dialog')
+@foreach($advances as $editableAdvance)
+@if(!$editableAdvance->change_block_reason)
+@include('jobs.partials.advance-dialog', ['editingAdvance' => $editableAdvance])
+@include('jobs.partials.advance-delete-dialog', ['editingAdvance' => $editableAdvance])
+@endif
+@endforeach
 @endif
 @include('jobs.partials.payment-edit-dialog')
 <script>
