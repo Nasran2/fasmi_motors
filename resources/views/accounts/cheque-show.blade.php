@@ -23,9 +23,10 @@
         @else<p class="text-sm text-slate-500">This cheque is {{ strtolower($cheque->status) }}. Its settlement is complete.</p>@endif
     </section>
     @endunless
-    @if($cheque->payments->isNotEmpty() || $cheque->supplierPayments->isNotEmpty())
+    @if($cheque->payments->isNotEmpty() || $cheque->supplierPayments->isNotEmpty() || $cheque->jobAdvances->whereNull('payment_id')->isNotEmpty())
     <section class="panel space-y-3"><h2 class="text-lg font-bold">Linked Payments</h2><div class="grid gap-3 sm:grid-cols-2">
         @foreach($cheque->payments as $payment)<a href="{{ route('sales.invoices.show',$payment->invoice_id) }}" class="rounded-xl border border-slate-200 p-3 text-sm"><b>{{ $payment->invoice?->number }} · Customer payment</b><p class="mt-1 text-slate-500">Rs. {{ number_format($payment->amount,2) }} · {{ $payment->status }}</p></a>@endforeach
+        @foreach($cheque->jobAdvances->whereNull('payment_id') as $advance)<a href="{{ route('jobs.show', $advance->job_card_id) }}" class="rounded-xl border border-slate-200 p-3 text-sm"><b>{{ $advance->jobCard?->number }} · Job advance</b><p class="mt-1 text-slate-500">Rs. {{ number_format($advance->amount,2) }} · {{ $advance->status }}</p></a>@endforeach
         @foreach($cheque->supplierPayments as $payment)<a href="{{ route('purchases.show',$payment->purchase_id) }}" class="rounded-xl border border-slate-200 p-3 text-sm"><b>{{ $payment->purchase?->number }} · Supplier payment</b><p class="mt-1 text-slate-500">Rs. {{ number_format($payment->amount,2) }} · {{ $payment->status }}</p></a>@endforeach
     </div></section>
     @endif

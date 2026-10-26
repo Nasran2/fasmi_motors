@@ -36,6 +36,7 @@ return [
         'jobs.previous-balance.store' => 'job_card.edit',
         'jobs.payments.update' => 'sales.receive_payments',
         'jobs.dues.payment' => 'sales.receive_payments',
+        'jobs.advances.store' => 'sales.receive_payments',
         'jobs.unlock' => 'job_card.edit',
         'jobs.create' => 'job_card.create',
         'jobs.quick.*' => 'job_card.create',

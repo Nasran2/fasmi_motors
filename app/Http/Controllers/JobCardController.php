@@ -112,6 +112,7 @@ class JobCardController extends Controller
             ->get();
 
         $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments');
+        $advances = \App\Models\JobAdvance::with('account', 'cheque')->where('job_card_id', $job->id)->whereNull('payment_id')->orderBy('id')->get();
         $previousBalances = PreviousCustomerBalance::forJob($job);
         $oldDue = PreviousCustomerBalance::total($previousBalances);
         $relatedInvoiceIds = PreviousCustomerBalance::forJob($job, includeSettled: true)->pluck('invoice_id')->push($job->invoice?->id)->filter();
@@ -128,6 +129,7 @@ class JobCardController extends Controller
 
         return view('jobs.show', [
             'job' => $job,
+            'advances' => $advances,
             'staffRepairSummary' => $job->repair_staff ? app(StaffBikeRepairService::class)->summary($job) : null,
             'oldDue' => $oldDue,
             'previousBalances' => $previousBalances,

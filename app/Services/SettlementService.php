@@ -220,6 +220,21 @@ class SettlementService
             $service = app(AccountService::class);
             $payments = $cheque->payments()->lockForUpdate()->get();
             $supplierPayments = $cheque->supplierPayments()->lockForUpdate()->get();
+            $advances = \App\Models\JobAdvance::where('cheque_id', $cheque->id)->whereNull('payment_id')->lockForUpdate()->get();
+            foreach ($advances as $advance) {
+                if (! in_array($advance->status, ['Hold', 'Completed'], true)) {
+                    continue;
+                }
+                if ($status === 'Cleared') {
+                    $advance->update(['status' => 'Completed']);
+                    app(JobAdvanceService::class)->postReceipt($advance, $date ?? today()->toDateString());
+                } elseif (in_array($status, ['Returned', 'Cancelled'], true)) {
+                    AccountTransaction::where('reference_type', $advance->getMorphClass())->where('reference_id', $advance->id)
+                        ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()
+                        ->each(fn ($entry) => $service->reverseTransaction($entry, $reason ?? 'Advance cheque returned'));
+                    $advance->update(['status' => $status]);
+                }
+            }
             foreach ($payments->concat($supplierPayments) as $payment) {
                 if (! in_array($payment->status, ['Hold', 'Completed'])) {
                     continue;
@@ -250,7 +265,7 @@ class SettlementService
                     }
                 }
             }
-            if ($payments->isEmpty() && $supplierPayments->isEmpty()) {
+            if ($payments->isEmpty() && $supplierPayments->isEmpty() && $advances->isEmpty()) {
                 if ($status === 'Cleared') {
                     $service->recordTransaction('bank', $cheque->cheque_type === 'Received' ? 'income' : 'expense', (float) $cheque->amount, "Cheque {$cheque->cheque_number} passed", $cheque, 'Cheque', $cheque->note, $cheque->bank_account_id, $date ?? today(), 'cheque');
                 } elseif ($old === 'Cleared') {

@@ -65,7 +65,8 @@ class WorkshopService
             $settlement = app(SettlementService::class);
             $rows = $payments ?? $settlement->rows(['paid_amount' => $paid, 'payment_method' => $method, 'account_id' => $accountId ?? Account::systemAccount('main')->id]);
             $job->setRelation('invoice', $invoice);
-            $available = $total + ($includePrevious ? \App\Support\PreviousCustomerBalance::total(\App\Support\PreviousCustomerBalance::forJob($job)) : 0);
+            app(JobAdvanceService::class)->applyToInvoice($job, $invoice);
+            $available = (float) $invoice->due_amount + ($includePrevious ? \App\Support\PreviousCustomerBalance::total(\App\Support\PreviousCustomerBalance::forJob($job)) : 0);
             if ($settlement->total(array_filter($rows, fn ($row) => $row['method'] !== 'Cash')) > round($available, 2)) {
                 throw ValidationException::withMessages(['paid_amount' => 'Non-cash payments cannot exceed the available bill balances.']);
             }

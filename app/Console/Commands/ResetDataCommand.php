@@ -37,6 +37,7 @@ class ResetDataCommand extends Command
             'job_card_parts',
             'job_card_services',
             'payment_corrections',
+            'job_advances',
             'job_card_status_logs',
             'job_card_technicians',
             'job_cards',

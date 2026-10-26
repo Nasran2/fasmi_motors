@@ -82,7 +82,7 @@ class ChequeController extends BaseAccountController
 
     public function show(Cheque $cheque)
     {
-        $cheque->load(['bankAccount', 'creator', 'forwardedSupplier', 'payments.invoice', 'supplierPayments.purchase']);
+        $cheque->load(['bankAccount', 'creator', 'forwardedSupplier', 'payments.invoice', 'supplierPayments.purchase', 'jobAdvances.jobCard']);
         $history = AuditLog::where('auditable_type', $cheque->getMorphClass())->where('auditable_id', $cheque->id)->latest('id')->get();
         $users = User::whereIn('id', $history->pluck('user_id'))->pluck('name', 'id');
 
@@ -96,7 +96,7 @@ class ChequeController extends BaseAccountController
 
     private function financialDetailsLocked(Cheque $cheque): bool
     {
-        return ! in_array($cheque->status, ['Pending', 'Deposited']) || $cheque->payments()->exists() || $cheque->supplierPayments()->exists();
+        return ! in_array($cheque->status, ['Pending', 'Deposited']) || $cheque->payments()->exists() || $cheque->supplierPayments()->exists() || $cheque->jobAdvances()->exists();
     }
 
     public function update(Request $request, Cheque $cheque)
@@ -124,6 +124,7 @@ class ChequeController extends BaseAccountController
             // Pending linked payments must use the cheque's selected account when it passes.
             if (in_array($cheque->status, ['Pending', 'Deposited'])) {
                 $cheque->payments()->where('status', 'Hold')->get()->each(fn ($p) => $p->update(['account_id' => $cheque->bank_account_id]));
+                $cheque->jobAdvances()->whereNull('payment_id')->where('status', 'Hold')->update(['account_id' => $cheque->bank_account_id ?? Account::systemAccount('bank')->id]);
                 $cheque->supplierPayments()->where('status', 'Hold')->where('payment_method', 'Cheque')->get()->each(fn ($p) => $p->update(['account_id' => $cheque->bank_account_id]));
             }
         });

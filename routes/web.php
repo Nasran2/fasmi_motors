@@ -20,6 +20,7 @@ use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\JobCardController;
+use App\Http\Controllers\JobAdvanceController;
 use App\Http\Controllers\JobDuePaymentController;
 use App\Http\Controllers\JobPaymentController;
 use App\Http\Controllers\JobPreviousBalanceController;
@@ -87,6 +88,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::post('job-cards/{job}/due-payment', JobDuePaymentController::class)->name('jobs.dues.payment');
+    Route::post('job-cards/{job}/advances', JobAdvanceController::class)->name('jobs.advances.store');
     Route::post('job-cards/{job}/previous-balance', JobPreviousBalanceController::class)->name('jobs.previous-balance.store');
     Route::put('job-cards/{job}/payments/{payment}', JobPaymentController::class)->name('jobs.payments.update');
     Route::post('job-cards/{job}/unlock', [JobCardController::class, 'unlock'])->name('jobs.unlock');

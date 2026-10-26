@@ -22,6 +22,11 @@ class Cheque extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function jobAdvances(): HasMany
+    {
+        return $this->hasMany(JobAdvance::class);
+    }
+
     /** @return HasMany<SupplierPayment, $this> */
     public function supplierPayments(): HasMany
     {
