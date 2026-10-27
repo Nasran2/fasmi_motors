@@ -183,6 +183,13 @@ class JobCardController extends Controller
                     'other_income_name' => 'nullable|string|max:50',
                 ]);
 
+                // Cleared amounts mean zero; omitted amounts keep their saved values.
+                foreach (['parts_total', 'service_total', 'labor_total', 'washing_total', 'other_total', 'tax'] as $field) {
+                    if (array_key_exists($field, $v)) {
+                        $v[$field] ??= 0;
+                    }
+                }
+
                 if ($r->hasAny(['discount_percentage', 'fixed_discount'])) {
                     unset($v['discount_type'], $v['discount_value'], $v['discount']);
                     foreach (['discount_percentage', 'fixed_discount'] as $field) {
