@@ -14,6 +14,7 @@ use App\Models\SmsLog;
 use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\Technician;
+use App\Models\User;
 
 final class ReportFilters
 {
@@ -86,6 +87,13 @@ final class ReportFilters
         }
         if ($report === 'sms') {
             $select('module', 'Module', SmsLog::whereNotNull('module')->distinct()->pluck('module', 'module')->all());
+        }
+        if ($report === 'cash-book') {
+            $cash = CashBook::query();
+            $types = (clone $cash)->distinct()->pluck('transaction_type');
+            $select('type', 'Entry type', $types->mapWithKeys(fn ($type) => [$type => ucwords(str_replace('_', ' ', $type))])->all());
+            $select('direction', 'Cash direction', ['in' => 'Cash in', 'out' => 'Cash out']);
+            $select('created_by', 'Added by', User::withTrashed()->whereIn('id', (clone $cash)->select('created_by'))->orderBy('name')->pluck('name', 'id')->all(), true);
         }
         if (in_array($report, ['main-account', 'spare-parts-account', 'bank-account'])) {
             $types = AccountTransaction::where('account_id', Account::systemAccount(match ($report) {

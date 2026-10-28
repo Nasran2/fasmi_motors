@@ -1,6 +1,6 @@
 # Report calculations and filters
 
-The Reports menu contains 24 reports. Every table, summary and breakdown uses its report's selected filters. Print and CSV include every matching row, regardless of the current pagination page. Export and print permissions are checked on the server.
+The Reports menu contains 25 reports. Every table, summary and breakdown uses its report's selected filters. Print and CSV include every matching row, regardless of the current pagination page. Export and print permissions are checked on the server.
 
 ## Dates and balances
 
@@ -13,6 +13,7 @@ The Reports menu contains 24 reports. Every table, summary and breakdown uses it
 - Stock is explicitly a current snapshot, with store, category, rack, stock status and product filters. Values use current product cost and selling prices, rather than historical/FIFO valuation. Date controls are not offered for this snapshot.
 - Salary reports include whole sheets whose periods overlap the selected range; they do not prorate sheets. Drafts require an explicit status selection. Contribution reports use salary months and finalized sheets.
 - Account opening and closing balances cover the selected period and include posted/reversed transaction history. Search/type/method filters affect the displayed movements and filtered totals; they do not redefine the account's opening or closing balance.
+- Daily Cash Book defaults to today and lists posted entries from Main and Spare Parts by ledger insertion ID. It starts with the Main Account base opening amount and auditable Main opening-balance entries at or before the period start, then carries forward earlier cash activity. Main opening entries later in the period appear in the book; their replacements/reversals are included once. Each row shows cash in, cash out and the running balance; the closing balance is at the bottom. Card/bank/cheque/credit receipts are excluded. Repair receipts can be split between Main and Spare Parts. This is posted ledger history, including reversals and allocation corrections, rather than a reconstruction of physical cash events. Search, entry type, cash direction and actor filters leave the complete period balances intact and expose matching totals separately. Print/CSV include all matching rows and the opening/closing balance rows.
 - Daily closing defaults to closed days. Selecting reopened days displays their saved snapshots.
 
 ## Sales and profit
@@ -45,6 +46,7 @@ The Reports menu contains 24 reports. Every table, summary and breakdown uses it
 | Salary | Technician, sheet status, staff name search |
 | EPF / ETF | Technician, staff name search |
 | Account reports | Transaction type, payment method, reference/description search |
+| Daily Cash Book | Entry type, cash in/out, added by, receipt/reference/description search |
 | Daily closing | Closed/reopened, closing date search |
 | Service reminders | Bike, customer, reminder status, SMS delivery status, bike/customer/phone search |
 | SMS | Delivery status, module, recipient/phone search |
@@ -58,3 +60,7 @@ Customer suggestions include phone numbers to distinguish namesakes. Date shortc
 `tests/Feature/ReportCalculationTest.php` exercises every report and CSV endpoint, filtered summaries, legacy and quick jobs, outstanding balances, returns, discounts, tax, penny allocation, stock filtering, purchase returns, cancelled transactions, account reversals, closing totals, SMS delivery, receipt dates, archived customers, salary recognition, permissions, date boundaries, and complete print/CSV output. Existing report, payroll and billing regression suites provide additional coverage.
 
 The final report-focused run passed 98 tests (727 assertions). Browser checks confirmed bike-number and customer-phone suggestions; the production frontend build and targeted PHPStan/Pint checks passed. The full application run found seven failures in existing permission, inventory/POS and staff workflows; the same seven failures were reproduced with the original source. Project-wide Pint and PHPStan also identify issues in unchanged files.
+
+Daily Cash Book additions are covered by `tests/Feature/CashBookReportTest.php`, including Main opening setup and replacement, same-day opening entries, cash carry-forward, insertion order, reversals, shop separation, filtered balances, repair receipts, complete print/CSV output and permissions.
+
+Cash Book verification: 67 report/account regression tests passed (365 assertions), and the final 11 Cash Book checks passed after the compact layout update. Targeted Pint/PHPStan, the production asset build, and a browser review of the opening balance, cash columns and bottom closing balance passed.

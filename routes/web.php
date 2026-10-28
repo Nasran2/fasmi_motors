@@ -238,6 +238,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
         Route::get('main-account', [ReportController::class, 'mainAccount'])->name('main-account');
         Route::get('spare-parts-account', [ReportController::class, 'sparePartsAccount'])->name('spare-parts-account');
         Route::get('bank-account', [ReportController::class, 'bankAccount'])->name('bank-account');
+        Route::get('cash-book', [ReportController::class, 'cashBook'])->name('cash-book');
         Route::get('daily-closing', [ReportController::class, 'dailyClosing'])->name('daily-closing');
         Route::get('service-reminders', [ReportController::class, 'serviceReminders'])->name('service-reminders');
         Route::get('sms', [ReportController::class, 'sms'])->name('sms');

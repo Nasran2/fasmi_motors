@@ -22,6 +22,7 @@ use App\Models\Technician;
 use App\Models\TechnicianAttendance;
 use App\Models\TechnicianContribution;
 use App\Models\TechnicianSalarySheet;
+use App\Support\CashBook;
 use App\Support\ReportAccounting;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -75,6 +76,8 @@ class ReportController extends Controller
             'module' => ['nullable', 'string', 'max:100'],
             'active' => ['nullable', Rule::in(['0', '1'])],
             'sort' => ['nullable', Rule::in(['name', 'rack'])],
+            'direction' => ['nullable', Rule::in(['in', 'out'])],
+            'created_by' => ['nullable', 'integer', 'min:1'],
             'print' => ['nullable', 'boolean'],
             'export_csv' => ['nullable', 'boolean'],
         ]);
@@ -448,6 +451,57 @@ class ReportController extends Controller
     public function bankAccount(Request $r)
     {
         return $this->accountReport($r, 'bank', 'bank-account');
+    }
+
+    public function cashBook(Request $r)
+    {
+        [$from, $to] = $this->dateRange($r);
+        $account = Account::systemAccount('main');
+        $base = CashBook::query();
+        // The requested main opening amount is the starting amount for this cash book.
+        // Spare-parts opening amounts and non-cash ledger movements are not cash receipts.
+        $openingEntries = CashBook::openingEntries();
+        $mainOpening = (int) round((float) $account->opening_balance * 100)
+            + (int) round((float) (clone $openingEntries)->where('transaction_date', '<=', $from)->sum(DB::raw('credit - debit')) * 100);
+        $broughtForward = (int) round((float) (clone $base)->whereNotIn('id', $openingEntries->select('id'))->where('transaction_date', '<', $from)->sum(DB::raw('credit - debit')) * 100);
+        $opening = ($mainOpening + $broughtForward) / 100;
+        $balance = $mainOpening + $broughtForward;
+        $entries = (clone $base)->whereNotIn('id', CashBook::openingEntries()->where('transaction_date', '<=', $from)->select('id'))->with(['account', 'creator', 'reference'])->whereBetween('transaction_date', [$from, $to])->orderBy('id')->get();
+        $cashIn = $cashOut = 0;
+        foreach ($entries as $index => $entry) {
+            $credit = (int) round((float) $entry->credit * 100);
+            $debit = (int) round((float) $entry->debit * 100);
+            $balance += $credit - $debit;
+            $cashIn += $credit;
+            $cashOut += $debit;
+            $entry->setAttribute('cash_book_sequence', $index + 1);
+            $entry->setAttribute('cash_book_balance', $balance / 100);
+            $entry->setAttribute('source_number', $entry->reference?->getAttribute('number') ?: $entry->reference?->getAttribute('transfer_no') ?: $entry->transaction_no);
+        }
+        $closing = $balance / 100;
+        $rows = $entries->filter(function (AccountTransaction $entry) use ($r) {
+            if ($r->filled('type') && $entry->transaction_type !== $r->type) {
+                return false;
+            }
+            if ($r->filled('created_by') && (int) $entry->created_by !== (int) $r->created_by) {
+                return false;
+            }
+            if (($r->direction === 'in' && (float) $entry->credit <= 0) || ($r->direction === 'out' && (float) $entry->debit <= 0)) {
+                return false;
+            }
+            $text = implode(' ', [$entry->transaction_no, $entry->getAttribute('source_number'), $entry->description, $entry->note, $entry->account?->getAttribute('name'), $entry->creator?->getAttribute('name')]);
+
+            return ! $r->filled('search') || str_contains(Str::lower($text), Str::lower($r->search));
+        })->values();
+        $filtered = $rows->count() !== $entries->count();
+        $stats = ['entry_count' => $entries->count(), 'cash_in_amount' => $cashIn / 100, 'cash_out_amount' => $cashOut / 100];
+        if ($filtered) {
+            $stats += ['matching_entry_count' => $rows->count(), 'matching_in_amount' => $rows->sum('credit'), 'matching_out_amount' => $rows->sum('debit')];
+        }
+        $mainOpening /= 100;
+        $broughtForward /= 100;
+
+        return $this->render($r, 'cash-book', compact('rows', 'stats', 'from', 'to', 'mainOpening', 'broughtForward', 'opening', 'closing', 'filtered'));
     }
 
     public function dailyClosing(Request $r)
