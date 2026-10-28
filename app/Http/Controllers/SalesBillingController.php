@@ -27,6 +27,7 @@ use App\Support\ThermalReceipt;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -41,22 +42,23 @@ class SalesBillingController extends Controller
             ->when($request->technician_id, fn (Builder $q, string $id) => $q->where('main_technician_id', $id))
             ->when($request->status, fn (Builder $q, string $status) => $q->where('status', $status))->latest()->paginate(15)->withQueryString();
 
-        return view('sales.job-billing', ['jobs' => $jobs, 'technicians' => Technician::where('active', true)->orderBy('name')->get(), 'accounts' => Account::where('active', true)->get(), 'selectedJob' => $request->job ? JobCard::with(['intake.bike.customer', 'technician', 'parts.product', 'services'])->find($request->job) : null, 'stats' => ['ready' => JobCard::whereIn('status', ['Repair Ready', 'Completed'])->doesntHave('invoice')->count(), 'today' => Invoice::where('invoice_type', 'Job Card Bill')->whereDate('created_at', today())->sum('total'), 'service' => Invoice::where('invoice_type', 'Job Card Bill')->whereDate('created_at', today())->sum(DB::raw('service_amount+labor_amount+washing_amount+other_amount')), 'pending' => Invoice::where('invoice_type', 'Job Card Bill')->where('due_amount', '>', 0)->count(), 'due' => Invoice::where('invoice_type', 'Job Card Bill')->sum('due_amount')]]);
+        return view('sales.job-billing', ['jobs' => $jobs, 'technicians' => Technician::where('active', true)->orderBy('name')->get(), 'accounts' => Account::where('active', true)->get(), 'selectedJob' => $request->job ? JobCard::with(['intake.bike.customer', 'technician', 'parts.product', 'services'])->find($request->job) : null, 'stats' => ['ready' => JobCard::whereIn('status', ['Repair Ready', 'Completed'])->doesntHave('invoice')->count(), 'today' => Invoice::where('invoice_type', 'Job Card Bill')->billDatedOn(today())->sum('total'), 'service' => Invoice::where('invoice_type', 'Job Card Bill')->billDatedOn(today())->sum(DB::raw('service_amount+labor_amount+washing_amount+other_amount')), 'pending' => Invoice::where('invoice_type', 'Job Card Bill')->where('due_amount', '>', 0)->count(), 'due' => Invoice::where('invoice_type', 'Job Card Bill')->sum('due_amount')]]);
     }
 
     public function billJob(Request $request, JobCard $job, WorkshopService $service)
     {
         $settlement = app(SettlementService::class);
         $rows = $settlement->rows($request->all());
+        $dates = $request->validate(['bill_date' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today', 'paid_at' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today']);
         $request->validate(['include_previous_balance' => ['sometimes', 'required', 'boolean']]);
         $includePrevious = $request->boolean('include_previous_balance', true);
         $request->merge(['paid_amount' => $settlement->total($rows), 'payment_method' => count($rows) > 1 ? 'Cash' : ($rows[0]['method'] ?? 'Credit/Due')]);
         $data = $request->validate(['service_total' => ['nullable', 'numeric', 'min:0'], 'labor_total' => ['nullable', 'numeric', 'min:0'], 'washing_total' => ['nullable', 'numeric', 'min:0'], 'other_total' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'tax' => ['nullable', 'numeric', 'min:0'], 'paid_amount' => ['required', 'numeric', 'min:0'], 'payment_method' => ['required', Rule::in(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR', 'Credit/Due'])], 'account_id' => ['nullable', 'exists:accounts,id']]);
-        $invoice = DB::transaction(function () use ($job, $data, $service, $rows, $includePrevious) {
+        $invoice = DB::transaction(function () use ($job, $data, $service, $rows, $includePrevious, $dates) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
-            $job->update(['service_total' => $data['service_total'] ?? 0, 'labor_total' => $data['labor_total'] ?? 0, 'washing_total' => $data['washing_total'] ?? 0, 'other_total' => $data['other_total'] ?? 0, 'discount' => $data['discount'] ?? 0, 'tax' => $data['tax'] ?? 0]);
+            $job->update(['bill_date' => $dates['bill_date'] ?? $job->bill_date, 'service_total' => $data['service_total'] ?? 0, 'labor_total' => $data['labor_total'] ?? 0, 'washing_total' => $data['washing_total'] ?? 0, 'other_total' => $data['other_total'] ?? 0, 'discount' => $data['discount'] ?? 0, 'tax' => $data['tax'] ?? 0]);
 
-            return $service->invoice($job->fresh(), (float) $data['paid_amount'], $data['payment_method'], ($data['account_id'] ?? null) ? (int) $data['account_id'] : null, $rows, includePrevious: $includePrevious);
+            return $service->invoice($job->fresh(), (float) $data['paid_amount'], $data['payment_method'], ($data['account_id'] ?? null) ? (int) $data['account_id'] : null, $rows, includePrevious: $includePrevious, paidAt: $dates['paid_at'] ?? null);
         });
 
         return redirect()->route('sales.invoices.show', $invoice)->with('success', 'Job card invoice generated with account split and secure public link.');
@@ -171,6 +173,8 @@ class SalesBillingController extends Controller
         $rows = $settlement->rows($request->all(), false);
         $request->merge(['paid_amount' => $settlement->total($rows)]);
         $v = $request->validate([
+            'bill_date' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today',
+            'paid_at' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today',
             'customer_mode' => ['nullable', Rule::in(['existing', 'new', 'walkin'])],
             'customer_id' => 'nullable|exists:customers,id',
             'customer_name' => 'nullable|string|max:255',
@@ -274,6 +278,7 @@ class SalesBillingController extends Controller
             $invoice = Invoice::create([
                 'number' => InvoiceNumber::next($invType),
                 'invoice_type' => $invType,
+                'bill_date' => ! empty($v['bill_date']) ? Carbon::parse($v['bill_date'])->setTimeFrom(now()) : null,
                 'status' => $invType === 'Quotation' ? 'Draft' : ($paid >= $total ? 'Paid' : ($paid > 0 ? 'Partially Paid' : 'Unpaid')),
                 'customer_id' => $customerId,
                 'bike_id' => $sourceQuotation && (int) $sourceQuotation->customer_id === (int) $customerId ? $sourceQuotation->bike_id : null,
@@ -343,7 +348,7 @@ class SalesBillingController extends Controller
 
             if ($invType !== 'Quotation') {
                 foreach ($rows as $row) {
-                    $settlement->receive($invoice, $row);
+                    $settlement->receive($invoice, $row, $v['paid_at'] ?? null);
                 }
                 $invoice->refresh();
                 $settlement->saveStatus($invoice);
@@ -368,7 +373,7 @@ class SalesBillingController extends Controller
                                 'percentage' => (float) $technician->parts_commission_percentage,
                                 'base_amount' => $baseAmount,
                                 'amount' => round($amount, 2),
-                                'earned_date' => now()->toDateString(),
+                                'earned_date' => $invoice->bill_date->toDateString(),
                                 'status' => 'Pending',
                                 'created_by' => auth()->id(),
                             ]);
@@ -393,9 +398,9 @@ class SalesBillingController extends Controller
     public function invoices(Request $request)
     {
         $invoices = Invoice::with(['customer', 'bike', 'jobCard.intake.bike', 'payments'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn (Builder $c) => $c->where('phone', 'like', "%{$term}%"))->orWhereHas('jobCard', fn (Builder $j) => $j->where('number', 'like', "%{$term}%")->orWhereHas('intake.bike', fn (Builder $b) => $b->where('number', 'like', "%{$term}%")))))
-            ->when($request->invoice_type, fn (Builder $q, string $type) => $q->where('invoice_type', $type))->when($request->status, fn (Builder $q, string $status) => $q->where('status', $status))->when($request->method, fn (Builder $q, string $method) => $q->where('payment_method', $method))->when($request->from, fn (Builder $q, string $date) => $q->whereDate('created_at', '>=', $date))->when($request->to, fn (Builder $q, string $date) => $q->whereDate('created_at', '<=', $date))->latest()->paginate(15)->withQueryString();
+            ->when($request->invoice_type, fn (Builder $q, string $type) => $q->where('invoice_type', $type))->when($request->status, fn (Builder $q, string $status) => $q->where('status', $status))->when($request->method, fn (Builder $q, string $method) => $q->where('payment_method', $method))->when($request->from, fn (Builder $q, string $date) => $q->billDatedOn($date, '>='))->when($request->to, fn (Builder $q, string $date) => $q->billDatedOn($date, '<='))->latest()->paginate(15)->withQueryString();
 
-        return view('sales.invoices', ['invoices' => $invoices, 'stats' => ['total' => Invoice::count(), 'today' => Invoice::whereDate('created_at', today())->count(), 'paid' => Invoice::where('status', 'Paid')->count(), 'due' => Invoice::where('due_amount', '>', 0)->count(), 'cancelled' => Invoice::where('status', 'Cancelled')->count()]]);
+        return view('sales.invoices', ['invoices' => $invoices, 'stats' => ['total' => Invoice::count(), 'today' => Invoice::billDatedOn(today())->count(), 'paid' => Invoice::where('status', 'Paid')->count(), 'due' => Invoice::where('due_amount', '>', 0)->count(), 'cancelled' => Invoice::where('status', 'Cancelled')->count()]]);
     }
 
     public function quotations(Request $request)
@@ -423,8 +428,8 @@ class SalesBillingController extends Controller
                 });
             })
             ->when($filters['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status))
-            ->when($filters['from'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '>=', $date))
-            ->when($filters['to'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '<=', $date))
+            ->when($filters['from'] ?? null, fn (Builder $query, string $date) => $query->billDatedOn($date, '>='))
+            ->when($filters['to'] ?? null, fn (Builder $query, string $date) => $query->billDatedOn($date, '<='))
             ->latest()
             ->paginate(20)
             ->withQueryString();
@@ -507,7 +512,7 @@ class SalesBillingController extends Controller
 
     public function paymentStore(Request $request, WorkshopService $service)
     {
-        $data = $request->validate(['customer_id' => 'required|exists:customers,id', 'invoice_id' => 'nullable|exists:invoices,id', 'paid_at' => 'required|date']);
+        $data = $request->validate(['customer_id' => 'required|exists:customers,id', 'invoice_id' => 'nullable|exists:invoices,id', 'paid_at' => 'required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today']);
         $settlement = app(SettlementService::class);
         $rows = $settlement->rows($request->all());
         if (! $rows) {
@@ -593,7 +598,8 @@ class SalesBillingController extends Controller
 
     private function paymentPageData(Request $request, bool $customerMode): array
     {
-        $payments = Payment::with(['invoice.customer', 'invoice.jobCard.intake.bike', 'account', 'cheque.forwardedSupplier'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('invoice', fn (Builder $i) => $i->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn (Builder $c) => $c->where('name', 'like', "%{$term}%")))))->when($request->method, fn (Builder $q, string $method) => $q->where('method', $method))->when($request->account_id, fn (Builder $q, string $id) => $q->where('account_id', $id))->latest('paid_at')->paginate(15)->withQueryString();
+        $request->validate(['from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d|after_or_equal:from']);
+        $payments = Payment::with(['invoice.customer', 'invoice.jobCard.intake.bike', 'account', 'cheque.forwardedSupplier'])->when($request->q, fn (Builder $q, string $term) => $q->where(fn (Builder $x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('invoice', fn (Builder $i) => $i->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn (Builder $c) => $c->where('name', 'like', "%{$term}%")))))->when($request->method, fn (Builder $q, string $method) => $q->where('method', $method))->when($request->account_id, fn (Builder $q, string $id) => $q->where('account_id', $id))->when($request->from, fn (Builder $q, string $date) => $q->whereDate('paid_at', '>=', $date))->when($request->to, fn (Builder $q, string $date) => $q->whereDate('paid_at', '<=', $date))->latest('paid_at')->paginate(15)->withQueryString();
 
         return ['payments' => $payments, 'customers' => Customer::where('active', true)->withSum(['invoices as due_total' => fn (Builder $q) => $q->where('status', '!=', 'Cancelled')], 'due_amount')->orderBy('name')->get(), 'invoices' => Invoice::with('customer')->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->orderBy('due_date')->get(), 'accounts' => Account::where('active', true)->get(), 'customerMode' => $customerMode, 'stats' => ['today' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereDate('paid_at', today())->sum('amount'), 'month' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])->sum('amount'), 'cash' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->where('method', 'Cash')->sum('amount'), 'bank' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->whereIn('method', ['Card', 'Bank Transfer', 'QR'])->sum('amount'), 'cheque' => Payment::where('method', '!=', 'Salary Deduction')->where('status', 'Completed')->where('method', 'Cheque')->sum('amount'), 'due' => Invoice::where('status', '!=', 'Cancelled')->sum('due_amount')]];
     }

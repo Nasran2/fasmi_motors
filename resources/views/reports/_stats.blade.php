@@ -4,8 +4,8 @@
       $count = str_ends_with($label, '_count') || in_array($label, ['due_invoices', 'due_customers', 'completed', 'received', 'assigned', 'billed', 'delivered', 'in_progress', 'pending', 'waiting_for_parts', 'cancelled', 'in_stock', 'low', 'out', 'active', 'present', 'absent', 'late', 'leave', 'staff_count', 'upcoming', 'sent', 'overdue', 'failed', 'items_sold']);
       $money = !$count;
     @endphp
-    <div class="panel border border-slate-200 rounded-xl p-4 bg-white">
-      <p class="text-xs text-slate-500 font-bold uppercase tracking-wide mb-2">{{ ucwords(str_replace('_', ' ', $label)) }}</p>
+    <div data-print-summary class="panel border border-slate-200 rounded-xl p-4 bg-white">
+      <p class="text-xs text-slate-500 font-bold uppercase tracking-wide mb-2">{{ $statLabels[$label] ?? ucwords(str_replace('_', ' ', $label)) }}</p>
       <p class="text-2xl font-black text-slate-900">{{ $money ? 'Rs. ' : '' }}{{ number_format((float) $value, $money || $label === 'items_sold' ? 2 : 0) }}</p>
     </div>
   @endforeach

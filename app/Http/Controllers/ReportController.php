@@ -23,6 +23,7 @@ use App\Models\TechnicianAttendance;
 use App\Models\TechnicianContribution;
 use App\Models\TechnicianSalarySheet;
 use App\Support\CashBook;
+use App\Support\PrintDocument;
 use App\Support\ReportAccounting;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -121,6 +122,15 @@ class ReportController extends Controller
     protected function render(Request $r, string $view, array $data, string $default = 'today')
     {
         $data['range'] = $this->activeRange($r, $default);
+        if ($r->boolean('print') && ! $r->boolean('export_csv')) {
+            $period = $data['range'] === 'all_time' ? 'All time' : $data['from']->format('d M Y').' - '.$data['to']->format('d M Y');
+            if ($view === 'stock') {
+                $period = 'Current stock snapshot';
+            }
+            $document = PrintDocument::fromHtml(view('reports.'.$view, $data)->render(), ['period' => $period]);
+
+            return view('printing.document', ['document' => $document, 'autoPrint' => ! $r->boolean('preview')] + $data);
+        }
         if (! $r->boolean('export_csv')) {
             return view('reports.'.$view, $data);
         }
@@ -173,7 +183,7 @@ class ReportController extends Controller
 
     protected function invoices($from, $to, bool $includeOpening = false)
     {
-        return Invoice::where('status', '!=', 'Cancelled')->whereNotIn('invoice_type', $includeOpening ? ['Quotation'] : self::NON_SALES)->whereBetween('created_at', [$from, $to]);
+        return Invoice::where('status', '!=', 'Cancelled')->whereNotIn('invoice_type', $includeOpening ? ['Quotation'] : self::NON_SALES)->billDatedBetween([$from, $to]);
     }
 
     public function index(Request $r)
@@ -183,7 +193,7 @@ class ReportController extends Controller
         $totals = (clone $q)->selectRaw('count(*) as total_count, COALESCE(sum(total),0) as total_sales, COALESCE(sum(paid_amount),0) as total_paid, COALESCE(sum(hold_amount),0) as total_held, COALESCE(sum(due_amount),0) as total_due, COALESCE(sum(discount),0) as total_discount')->first();
         $stats = ['invoice_count' => $totals->total_count, 'total_sales' => $totals->total_sales, 'paid_amount' => $totals->total_paid, 'held_amount' => $totals->total_held, 'due_amount' => $totals->total_due, 'discount_amount' => $totals->total_discount];
         $byType = (clone $q)->selectRaw('invoice_type, sum(total) as amount')->groupBy('invoice_type')->pluck('amount', 'invoice_type');
-        $rows = $this->rows($q->with($this->invoiceRelations())->latest(), $r);
+        $rows = $this->rows($q->with($this->invoiceRelations())->orderByRaw('COALESCE(invoices.bill_date, invoices.created_at) DESC')->orderByDesc('id'), $r);
 
         return $this->render($r, 'sales', compact('rows', 'stats', 'totals', 'byType', 'from', 'to'));
     }
@@ -208,7 +218,7 @@ class ReportController extends Controller
     public function spareParts(Request $r)
     {
         [$from, $to] = $this->dateRange($r);
-        $q = InvoiceItem::whereHas('invoice', fn ($q) => $this->invoiceFilters($q->whereBetween('created_at', [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'), $r->duplicate($r->except('search'))))
+        $q = InvoiceItem::whereHas('invoice', fn ($q) => $this->invoiceFilters($q->whereBetween(DB::raw('COALESCE(invoices.bill_date, invoices.created_at)'), [$from, $to])->where('status', '!=', 'Cancelled')->where('invoice_type', 'Parts Sale'), $r->duplicate($r->except('search'))))
             ->when($r->store_id, fn ($q, $v) => $q->where('store_id', $v))
             ->when($r->search, fn ($q, $s) => $q->where(fn ($q) => $q->where('description', 'like', "%{$s}%")->orWhereHas('product', fn ($p) => $p->where('name', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))))
             ->with(['invoice.items', 'product']);

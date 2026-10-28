@@ -10,6 +10,7 @@ use App\Models\TechnicianSalarySheet;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\Csv;
@@ -57,6 +58,7 @@ class AttendanceImportService
                 continue;
             }
             try {
+                Validator::make(['date' => $dateValue], ['date' => ['required', 'date']])->validate();
                 $date = Carbon::parse($dateValue)->toDateString();
             } catch (\Throwable) {
                 $errors[] = ['row' => $rowNumber, 'message' => 'Invalid attendance date.'];
@@ -65,21 +67,27 @@ class AttendanceImportService
             }
 
             $technician = null;
+            $identityWarning = null;
             if ($technicianId) {
                 $technician = Technician::find($technicianId);
                 $name = $name ?: ($technician ? $technician->name : '');
             } else {
-                $technician = $personId
-                    ? Technician::where('attendance_person_id', $personId)->first()
-                    : Technician::whereRaw('lower(name) = ?', [Str::lower($name)])->first();
-                if (! $technician) {
-                    $technician = Technician::whereRaw('lower(name) = ?', [Str::lower($name)])->first();
+                try {
+                    $technician = $this->matchIdentity($personId, $name);
+                } catch (\RuntimeException $exception) {
+                    $identityWarning = $exception->getMessage();
                 }
             }
             $existing = $technician ? TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->exists() : false;
 
-            $checkIn = $this->time($this->cell($row, $columns, 'check in'));
-            $checkOut = $this->time($this->cell($row, $columns, 'check out'));
+            try {
+                $checkIn = $this->time($this->cell($row, $columns, 'check in'));
+                $checkOut = $this->time($this->cell($row, $columns, 'check out'));
+            } catch (\Throwable) {
+                $errors[] = ['row' => $rowNumber, 'message' => 'Invalid check-in or checkout time.'];
+
+                continue;
+            }
             $autoFilledCheckout = false;
 
             if ($checkIn && ! $checkOut) {
@@ -101,6 +109,7 @@ class AttendanceImportService
                 'auto_filled_checkout' => $autoFilledCheckout,
                 'break_minutes' => $this->minutes($this->cell($row, $columns, 'break')),
                 'leave_type' => $this->cell($row, $columns, 'leave type'),
+                'identity_warning' => $identityWarning,
                 'technician_id' => $technician?->id,
                 'technician_name' => $technician?->name,
                 'will_create_technician' => ! $technician,
@@ -125,87 +134,89 @@ class AttendanceImportService
 
     public function confirm(AttendanceImportBatch $batch, AttendanceCalculationService $calculator, int $userId): AttendanceImportBatch
     {
-        $success = 0;
-        $skipped = 0;
-        $duplicates = 0;
-        $errors = $batch->errors ?? [];
+        return DB::transaction(function () use ($batch, $calculator, $userId) {
+            $batch = AttendanceImportBatch::lockForUpdate()->findOrFail($batch->id);
+            abort_unless((int) $batch->imported_by === $userId, 403);
+            abort_unless($batch->status === 'Preview', 422, 'This import has already been confirmed.');
+            $success = 0;
+            $skipped = 0;
+            $duplicates = 0;
+            $errors = $batch->errors ?? [];
 
-        foreach ($batch->preview_data ?? [] as $row) {
-            try {
-                DB::transaction(function () use ($row, $batch, $calculator, $userId, &$success, &$duplicates) {
-                    $technician = $this->resolveTechnician($row, $userId);
-                    if (TechnicianSalarySheet::where('technician_id', $technician->id)
-                        ->whereDate('period_start', '<=', $row['date'])
-                        ->whereDate('period_end', '>=', $row['date'])
-                        ->whereIn('status', ['Finalized', 'Paid', 'Partially Paid'])
-                        ->exists()) {
-                        throw new \RuntimeException('Attendance date is already included in a finalized salary period.');
+            foreach ($batch->preview_data ?? [] as $row) {
+                try {
+                    DB::transaction(function () use ($row, $batch, $calculator, $userId, &$success, &$duplicates) {
+                        $technician = $this->resolveTechnician($row, $userId);
+                        $technician = Technician::lockForUpdate()->findOrFail($technician->id);
+                        if (TechnicianSalarySheet::where('technician_id', $technician->id)
+                            ->whereDate('period_start', '<=', $row['date'])
+                            ->whereDate('period_end', '>=', $row['date'])
+                            ->whereIn('status', ['Finalized', 'Paid', 'Partially Paid'])
+                            ->exists()) {
+                            throw new \RuntimeException('Attendance date is already included in a finalized salary period.');
+                        }
+                        $existing = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $row['date'])->first();
+                        if ($existing) {
+                            $duplicates++;
+                        }
+                        $createdBy = $existing ? $existing->created_by : $userId;
+                        $metrics = $calculator->calculateDailyAttendance(
+                            $technician,
+                            $row['date'],
+                            $row['source_status'],
+                            $row['check_in'],
+                            $row['check_out'],
+                            ['break_minutes' => $row['break_minutes'], 'auto_filled_checkout' => $row['auto_filled_checkout'] ?? false]
+                        );
+                        TechnicianAttendance::updateOrCreate(
+                            ['technician_id' => $technician->id, 'date' => $row['date']],
+                            array_merge($metrics, [
+                                'source_person_id' => $row['person_id'] ?: null,
+                                'department' => $row['department'] ?: null,
+                                'shift_name' => $row['shift'] ?: null,
+                                'timetable' => $row['timetable'] ?: null,
+                                'in_time' => $row['check_in'],
+                                'out_time' => $row['check_out'],
+                                'leave_type' => $row['leave_type'] ?: $metrics['leave_type'],
+                                'is_manual_entry' => false,
+                                'is_manual_edit' => false,
+                                'import_batch_id' => $batch->id,
+                                'remarks' => 'Imported from '.$batch->file_name,
+                                'note' => 'Imported attendance',
+                                'created_by' => $createdBy,
+                                'edited_by' => $existing ? $userId : null,
+                                'updated_by' => $userId,
+                            ])
+                        );
+                        $success++;
+                    });
+                } catch (\Throwable $exception) {
+                    $skipped++;
+                    if (count($errors) < 30) {
+                        $errors[] = ['row' => $row['row'], 'message' => $exception->getMessage()];
                     }
-                    $existing = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $row['date'])->first();
-                    if ($existing) {
-                        $duplicates++;
-                    }
-                    $createdBy = $existing ? $existing->created_by : $userId;
-                    $metrics = $calculator->calculateDailyAttendance(
-                        $technician,
-                        $row['date'],
-                        $row['source_status'],
-                        $row['check_in'],
-                        $row['check_out'],
-                        ['break_minutes' => $row['break_minutes'], 'auto_filled_checkout' => $row['auto_filled_checkout'] ?? false]
-                    );
-                    TechnicianAttendance::updateOrCreate(
-                        ['technician_id' => $technician->id, 'date' => $row['date']],
-                        array_merge($metrics, [
-                            'source_person_id' => $row['person_id'] ?: null,
-                            'department' => $row['department'] ?: null,
-                            'shift_name' => $row['shift'] ?: null,
-                            'timetable' => $row['timetable'] ?: null,
-                            'in_time' => $row['check_in'],
-                            'out_time' => $row['check_out'],
-                            'leave_type' => $row['leave_type'] ?: $metrics['leave_type'],
-                            'is_manual_entry' => false,
-                            'is_manual_edit' => false,
-                            'import_batch_id' => $batch->id,
-                            'remarks' => 'Imported from '.$batch->file_name,
-                            'note' => 'Imported attendance',
-                            'created_by' => $createdBy,
-                            'edited_by' => $existing ? $userId : null,
-                            'updated_by' => $userId,
-                        ])
-                    );
-                    $success++;
-                });
-            } catch (\Throwable $exception) {
-                $skipped++;
-                if (count($errors) < 30) {
-                    $errors[] = ['row' => $row['row'], 'message' => $exception->getMessage()];
                 }
             }
-        }
 
-        $batch->update([
-            'success_rows' => $success,
-            'skipped_rows' => $skipped,
-            'duplicate_rows' => $duplicates,
-            'error_rows' => count($errors),
-            'errors' => $errors,
-            'status' => $skipped > 0 ? 'Completed with errors' : 'Completed',
-            'preview_data' => null,
-        ]);
+            $batch->update([
+                'success_rows' => $success,
+                'skipped_rows' => $skipped,
+                'duplicate_rows' => $duplicates,
+                'error_rows' => count($errors),
+                'errors' => $errors,
+                'status' => $skipped > 0 ? 'Completed with errors' : 'Completed',
+                'preview_data' => null,
+            ]);
 
-        return $batch->fresh();
+            return $batch->fresh();
+        }, 3);
     }
 
     private function resolveTechnician(array $row, int $userId): Technician
     {
-        $technician = ! empty($row['technician_id']) ? Technician::find($row['technician_id']) : null;
-        if (! $technician && ! empty($row['person_id'])) {
-            $technician = Technician::where('attendance_person_id', $row['person_id'])->first();
-        }
-        if (! $technician) {
-            $technician = Technician::whereRaw('lower(name) = ?', [Str::lower($row['name'])])->first();
-        }
+        $technician = ! empty($row['technician_id'])
+            ? Technician::lockForUpdate()->findOrFail($row['technician_id'])
+            : $this->matchIdentity($row['person_id'] ?? '', $row['name']);
         if ($technician) {
             $technician->update(array_filter([
                 'attendance_person_id' => $technician->attendance_person_id ?: ($row['person_id'] ?: null),
@@ -232,6 +243,24 @@ class AttendanceImportService
             'active' => true,
             'notes' => 'Created automatically from attendance import by user '.$userId,
         ]);
+    }
+
+    private function matchIdentity(string $personId, string $name): ?Technician
+    {
+        if ($personId !== '') {
+            $staff = Technician::where('attendance_person_id', $personId)->first();
+            if ($staff) {
+                return $staff;
+            }
+        }
+        $matches = Technician::whereRaw('lower(name) = ?', [Str::lower($name)])
+            ->when($personId !== '', fn ($query) => $query->where(fn ($query) => $query->whereNull('attendance_person_id')->orWhere('attendance_person_id', '')))
+            ->limit(2)->get();
+        if ($matches->count() > 1) {
+            throw new \RuntimeException('Multiple staff share this name. Select the correct staff member before importing this row.');
+        }
+
+        return $matches->first();
     }
 
     private function header(string $value): string

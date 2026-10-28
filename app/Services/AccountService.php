@@ -18,7 +18,7 @@ class AccountService
     public function ledgerOpeningBalance(string $type, CarbonInterface|string $date): float
     {
         $prior = AccountTransaction::ledger($type)->posted()->where('transaction_date', '<', $date);
-        $base = $type === 'cash' ? 0 : (float) (Account::systemAccount($type)?->opening_balance ?? 0);
+        $base = $type === 'cash' ? 0 : (float) (Account::systemAccount($type)->opening_balance ?? 0);
 
         return round($base + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit'), 2);
     }
@@ -110,7 +110,7 @@ class AccountService
                 'running_balance' => $newBalance,
                 'payment_method' => $paymentMethod,
                 'reference_type' => $reference?->getMorphClass(),
-                'reference_id' => $reference ? $reference->id : null,
+                'reference_id' => $reference?->getKey(),
                 'description' => $description,
                 'note' => $note,
                 'status' => 'active',
@@ -130,15 +130,15 @@ class AccountService
             return $this->ledgerOpeningBalance('cash', '9999-12-31');
         }
 
-        return (float) ($account?->balance ?? 0);
+        return (float) ($account->balance ?? 0);
     }
 
     /**
      * Soft reverse a transaction with a reason.
      */
-    public function reverseTransaction(AccountTransaction $transaction, string $reason): bool
+    public function reverseTransaction(AccountTransaction $transaction, string $reason, CarbonInterface|string|null $effectiveDate = null): bool
     {
-        return DB::transaction(function () use ($transaction, $reason) {
+        return DB::transaction(function () use ($transaction, $reason, $effectiveDate) {
             $account = Account::lockForUpdate()->findOrFail($transaction->account_id);
             $transaction = AccountTransaction::lockForUpdate()->findOrFail($transaction->id);
             if ($transaction->status !== 'active' || $transaction->transaction_type === 'reversal') {
@@ -146,9 +146,9 @@ class AccountService
             }
 
             $last = AccountTransaction::where('account_type', $transaction->account_type)->where('account_id', $transaction->account_id)->latest('transaction_date')->latest('id')->lockForUpdate()->first();
-            $previous = (float) ($last?->running_balance ?? 0);
+            $previous = (float) ($last->running_balance ?? 0);
             AccountTransaction::create([
-                'transaction_no' => 'REV-'.strtoupper(Str::random(8)), 'transaction_date' => now(),
+                'transaction_no' => 'REV-'.strtoupper(Str::random(8)), 'transaction_date' => $effectiveDate ?? now(),
                 'account_type' => $transaction->account_type, 'account_id' => $transaction->account_id,
                 'transaction_type' => 'reversal', 'debit' => $transaction->credit, 'credit' => $transaction->debit,
                 'amount' => $transaction->amount, 'running_balance' => $previous + (float) $transaction->debit - (float) $transaction->credit,
@@ -227,12 +227,14 @@ class AccountService
             $targetParts = ! $invoice->isOpeningDue() && (float) $invoice->total > 0 ? (int) round($cumulative * min(1, (float) $invoice->parts_amount / (float) $invoice->total)) : 0;
             $parts = ($targetParts - $previousParts) / 100;
             $previousParts = $targetParts;
+            // Cheques post on clearance; all other receipts post on their selected payment date.
+            $effectiveDate = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('transaction_type', 'income')->oldest('transaction_date')->value('transaction_date') ?? $payment->paid_at;
             foreach (['spare_parts' => $parts, 'main' => round((float) $payment->amount - $parts, 2)] as $type => $expected) {
                 $entries = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('account_type', $type);
                 $actual = (float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit');
                 $difference = round($expected - $actual, 2);
                 if ($difference != 0) {
-                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, now(), 'invoice_revision');
+                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $effectiveDate, 'invoice_revision');
                 }
             }
         }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\HolidayDate;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAdvance;
 use App\Models\TechnicianAttendance;
@@ -12,6 +13,7 @@ use App\Models\TechnicianBikeDeduction;
 use App\Models\TechnicianCommission;
 use App\Models\TechnicianDeduction;
 use App\Models\TechnicianSalarySheet;
+use App\Support\StaffPayRate;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Arr;
@@ -36,12 +38,13 @@ class SalaryCalculationService
             'name' => $technician->name,
             'basic_salary' => (float) $technician->basic_salary,
             'salary_type' => $technician->salary_type,
+            'hourly_salary' => (float) $technician->hourly_salary,
             'salary_period_mode' => $technician->salary_period_mode ?? 'system_default',
             'salary_start_day' => $technician->salary_start_day,
             'daily_salary' => $this->dailySalary($technician),
             'ot_rate' => (float) $technician->ot_rate,
             'late_deduction_rate' => (float) $technician->late_deduction_rate,
-            'no_pay_per_day' => (float) ($technician->no_pay_deduction_rate ?: $this->dailySalary($technician)),
+            'no_pay_per_day' => (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $this->dailySalary($technician)),
             'epf_eligible' => (bool) $technician->epf_eligible,
             'etf_eligible' => (bool) $technician->etf_eligible,
             'employee_epf_percentage' => (float) $technician->epf_employee_percentage,
@@ -85,7 +88,7 @@ class SalaryCalculationService
         $fullPresent = $records->whereIn('status', $presentStatuses)->count();
         $halfDays = $records->whereIn('status', ['Half Day', 'Morning Half Day', 'Evening Half Day'])->count();
         $technician = Technician::findOrFail($technicianId);
-        $noPayRate = (float) ($technician->no_pay_deduction_rate ?: $this->dailySalary($technician));
+        $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $this->dailySalary($technician));
         $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate) {
             $calculated = in_array($record->status, ['Absent', 'No Pay Leave'], true)
                 ? $noPayRate
@@ -117,6 +120,12 @@ class SalaryCalculationService
             'total_worked_hours' => round((float) $records->sum('working_minutes') / 60, 2),
             'total_ot_hours' => round((float) $records->sum('ot_minutes') / 60, 2),
             'total_ot_amount' => round((float) $records->sum('ot_amount'), 2),
+            'total_worked_minutes' => (int) $records->sum('working_minutes'),
+            'total_ot_minutes' => (int) $records->sum('ot_minutes'),
+            'hourly_manual_deduction' => round((float) $records->where('is_manual_edit', true)->sum('deduction_amount'), 2),
+            'hourly_ot_amount' => round((float) $records->sum(fn ($record) => $record->is_manual_edit
+                ? (float) $record->ot_amount
+                : round((float) $record->ot_minutes / 60 * (float) ((float) $technician->ot_rate > 0 ? $technician->ot_rate : $technician->hourly_salary), 2)), 2),
             'late_deduction' => round((float) $records->sum('late_deduction_amount'), 2),
             'early_leave_deduction' => round((float) $records->sum('early_leave_deduction_amount'), 2),
             'half_day_deduction' => round((float) $records->sum('half_day_deduction_amount'), 2),
@@ -233,9 +242,18 @@ class SalaryCalculationService
         $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $dailySalary = $this->dailySalary($technician);
-        $attendanceSalary = $technician->salary_type === 'Daily'
-            ? $dailySalary * ($attendance['worked_days'] + $attendance['approved_leave_days'])
-            : (float) $technician->basic_salary;
+        $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_ot_minutes']) / 60;
+        $paidLeaveHours = $attendance['approved_leave_days'] * (float) (SalarySetting::value('working_hours_per_day') ?? 8);
+        if ($technician->salary_type === 'Hourly' && (float) $technician->hourly_salary <= 0) {
+            throw ValidationException::withMessages(['hourly_salary' => 'Set this staff member’s hourly pay rate before generating salary.']);
+        }
+        $attendanceSalary = match ($technician->salary_type) {
+            'Daily' => $dailySalary * ($attendance['worked_days'] + $attendance['approved_leave_days']),
+            'Weekly' => round((float) $technician->basic_salary * $attendance['salary_period_days'] / 7, 2),
+            'Hourly' => round((float) $technician->hourly_salary * ($regularHours + $paidLeaveHours), 2),
+            default => (float) $technician->basic_salary,
+        };
+        $otAmount = $technician->salary_type === 'Hourly' ? $attendance['hourly_ot_amount'] : $attendance['total_ot_amount'];
         $attendanceAdjustment = $attendance['attendance_override_adjustment'];
         if ($technician->salary_type === 'Daily' && $attendanceAdjustment < 0) {
             // A waived deduction restores daily earnings already reduced by absence/half days.
@@ -251,9 +269,9 @@ class SalaryCalculationService
         $manualDeductions = max(0, (float) ($custom['manual_deductions'] ?? $custom['manual_deduction'] ?? 0));
         $workedOnLeavePay = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
         $paidAmount = max(0, (float) ($custom['paid_amount'] ?? 0));
-        $noPay = $technician->salary_type === 'Daily' ? 0 : $attendance['absent_days'] * (float) ($technician->no_pay_deduction_rate ?: $dailySalary);
+        $noPay = in_array($technician->salary_type, ['Daily', 'Hourly'], true) ? 0 : $attendance['absent_days'] * (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
         $contributions = $this->calculateEPFETF($technician, $attendanceSalary);
-        $gross = $this->calculateGrossSalary($attendanceSalary, $attendance['total_ot_amount'], $commission, $allowances, $manualAdditions, $workedOnLeavePay);
+        $gross = $this->calculateGrossSalary($attendanceSalary, $otAmount, $commission, $allowances, $manualAdditions, $workedOnLeavePay);
         $deductionParts = [
             'late' => $attendance['late_deduction'], 'early_leave' => $attendance['early_leave_deduction'],
             'no_pay' => $noPay, 'half_day' => $attendance['half_day_deduction'], 'advance' => $advance['total_amount'],
@@ -265,6 +283,11 @@ class SalaryCalculationService
         if ($technician->salary_type === 'Daily') {
             $deductionParts['half_day'] = 0;
         }
+        if ($technician->salary_type === 'Hourly') {
+            // Actual hours already account for late arrivals, absence and half days.
+            $deductionParts['late'] = $deductionParts['early_leave'] = $deductionParts['half_day'] = 0;
+            $deductionParts['attendance_adjustment'] = $attendance['hourly_manual_deduction'];
+        }
         $totalDeductions = $this->calculateTotalDeductions($deductionParts);
         if ($totalDeductions > $gross) {
             throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the selected deductions before saving.']);
@@ -272,8 +295,15 @@ class SalaryCalculationService
         $net = $this->calculateNetPayable($gross, $totalDeductions);
         $balance = $this->calculateBalance($net, $paidAmount);
         $technicianData = $this->getTechnicianSalaryData($technician->id);
+        $payBasis = match ($technician->salary_type) {
+            'Weekly' => 'Rs. '.number_format((float) $technician->basic_salary, 2).' per week × '.$attendance['salary_period_days'].' calendar days ÷ 7',
+            'Hourly' => number_format($regularHours, 2).' regular hours + '.number_format($paidLeaveHours, 2).' paid leave hours × Rs. '.number_format((float) $technician->hourly_salary, 2).'/hour; OT Rs. '.number_format((float) ((float) $technician->ot_rate > 0 ? $technician->ot_rate : $technician->hourly_salary), 2).'/hour',
+            'Daily' => 'Rs. '.number_format($dailySalary, 2).' per day × '.($attendance['worked_days'] + $attendance['approved_leave_days']).' payable days',
+            default => 'Rs. '.number_format((float) $technician->basic_salary, 2).' monthly basic salary',
+        };
 
         return [
+            'pay_basis' => $payBasis,
             'period_start' => $start, 'period_end' => $end,
             'salary_cycle_mode' => $cycle['salary_cycle_mode'],
             'salary_cycle_label' => $cycle['salary_cycle_label'],
@@ -300,10 +330,10 @@ class SalaryCalculationService
             'early_leave_days' => $attendance['early_leave_days'], 'worked_on_leave_days' => $attendance['worked_on_leave_days'],
             'total_worked_hours' => $attendance['total_worked_hours'], 'total_ot_hours' => $attendance['total_ot_hours'],
             'leave_summary' => ['weekly_leaves' => $attendance['weekly_leave_days'], 'public_holidays' => $attendance['public_holiday_days'], 'poya_holidays' => $attendance['poya_leave_days'], 'custom_holidays' => $attendance['custom_holiday_days'], 'approved_leaves' => $attendance['approved_leave_days']],
-            'ot_hours' => $attendance['total_ot_hours'], 'ot_amount' => $attendance['total_ot_amount'], 'commission' => $commission,
+            'ot_hours' => $attendance['total_ot_hours'], 'ot_amount' => $otAmount, 'commission' => $commission,
             'allowances' => $allowances, 'manual_additions' => $manualAdditions, 'worked_on_leave_pay' => $workedOnLeavePay,
             'gross_salary' => $gross, 'advances' => $advance['total_amount'], 'total_advance_deduction' => $advance['total_amount'],
-            'late_deduction' => $attendance['late_deduction'], 'early_leave_deduction' => $attendance['early_leave_deduction'],
+            'late_deduction' => $deductionParts['late'], 'early_leave_deduction' => $deductionParts['early_leave'],
             'half_day_deduction' => $deductionParts['half_day'], 'no_pay_deduction' => round($noPay, 2),
             'own_bike_deduction' => $pendingDeductions['total_amount'], 'total_job_deduction' => $pendingDeductions['total_amount'],
             'other_deductions' => $otherDeductions, 'total_other_deduction' => $otherDeductions,
@@ -312,13 +342,13 @@ class SalaryCalculationService
             'epf_company' => $contributions['company_epf_amount'], 'etf_company' => $contributions['company_etf_amount'],
             'net_payable' => $net, 'paid_amount' => $paidAmount, 'balance_amount' => $balance['balance'], 'overpaid_amount' => $balance['overpaid_amount'],
             'technician' => $technicianData, 'salary_cycle' => $cycle, 'attendance' => $attendance, 'attendance_summary' => $attendance, 'advance_summary' => $advance,
-            'pending_deductions' => $pendingDeductions, 'earnings' => ['attendance_salary' => round($attendanceSalary, 2), 'ot' => $attendance['total_ot_amount'], 'commission' => $commission, 'allowances' => $allowances, 'manual_additions' => $manualAdditions, 'worked_on_leave_pay' => $workedOnLeavePay, 'gross' => $gross],
+            'pending_deductions' => $pendingDeductions, 'earnings' => ['attendance_salary' => round($attendanceSalary, 2), 'ot' => $otAmount, 'commission' => $commission, 'allowances' => $allowances, 'manual_additions' => $manualAdditions, 'worked_on_leave_pay' => $workedOnLeavePay, 'gross' => $gross],
             'deduction_breakdown' => $deductionParts,
             'job_deductions' => $pendingDeductions,
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['gross' => $gross], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 
@@ -476,7 +506,7 @@ class SalaryCalculationService
         return DB::transaction(function () use ($sheet, $reason, $userId) {
             Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
-            abort_unless($sheet->status === 'Finalized', 422);
+            abort_unless($sheet->status === 'Finalized' && (float) $sheet->paid_amount === 0.0, 422, 'A salary with payments cannot be reopened.');
             TechnicianAdvance::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending Deduction', 'salary_sheet_id' => null]);
             TechnicianDeduction::where('salary_payment_id', $sheet->id)->update(['status' => 'pending', 'salary_payment_id' => null, 'updated_by' => $userId]);
             TechnicianCommission::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending', 'salary_sheet_id' => null]);
@@ -526,10 +556,6 @@ class SalaryCalculationService
 
     private function dailySalary(Technician $technician): float
     {
-        if ((float) $technician->daily_salary > 0) {
-            return (float) $technician->daily_salary;
-        }
-
-        return round((float) $technician->basic_salary / 26, 2);
+        return StaffPayRate::daily($technician);
     }
 }

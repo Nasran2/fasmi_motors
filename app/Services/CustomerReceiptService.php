@@ -17,7 +17,7 @@ class CustomerReceiptService
                 ->where('invoice_type', '!=', 'Quotation')->where('due_amount', '>', 0)
                 ->when($invoiceId, fn ($query) => $query->whereKey($invoiceId))
                 ->when($invoiceIds !== null, fn ($query) => $query->whereKey($invoiceIds))
-                ->orderBy('created_at')->orderBy('id')->lockForUpdate()->get();
+                ->orderByRaw('COALESCE(invoices.bill_date, invoices.created_at)')->orderBy('id')->lockForUpdate()->get();
             if ($invoiceIds !== null && $invoices->count() !== count(array_unique($invoiceIds))) {
                 throw ValidationException::withMessages(['invoice_ids' => 'A selected bill is no longer payable. Refresh the list and select the bills again.']);
             }

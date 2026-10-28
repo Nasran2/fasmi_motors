@@ -62,11 +62,11 @@ final class InvoiceDocument
 
         $lines = [];
         $parts = in_array($invoice->invoice_type, ['Parts Sale', 'Quotation'], true)
-            ? $invoice->items : ($invoice->jobCard?->parts ?? collect())->sortBy(fn ($part) => mb_strtolower(trim($part->name)), SORT_STRING);
+            ? $invoice->items : ($invoice->jobCard->parts ?? collect())->sortBy('id');
 
         foreach ($parts as $item) {
             $lines[] = [
-                'name' => $item instanceof JobCardPart ? $item->bill_name : ($item->description ?: ($item->product?->name ?? 'Product')),
+                'name' => $item instanceof JobCardPart ? $item->bill_name : ($item->description ?: ($item->product->name ?? 'Product')),
                 'detail' => collect([
                     $item->product?->code,
                     (float) ($item->returned_quantity ?? 0) > 0 ? 'Returned: '.$item->returned_quantity : null,

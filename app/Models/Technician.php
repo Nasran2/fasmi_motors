@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * @property numeric-string $hourly_salary
+ */
 class Technician extends Model
 {
     use SoftDeletes;
@@ -34,6 +37,7 @@ class Technician extends Model
         return $this->hasMany(TechnicianSalarySheet::class);
     }
 
+    /** @return HasMany<TechnicianAdvance, $this> */
     public function advances(): HasMany
     {
         return $this->hasMany(TechnicianAdvance::class);
@@ -44,6 +48,7 @@ class Technician extends Model
         return $this->hasMany(TechnicianCommission::class);
     }
 
+    /** @return HasMany<TechnicianBikeDeduction, $this> */
     public function bikeDeductions(): HasMany
     {
         return $this->hasMany(TechnicianBikeDeduction::class);

@@ -6,6 +6,7 @@ use App\Models\OtSlabRule;
 use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAttendance;
+use App\Support\StaffPayRate;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -79,15 +80,19 @@ class AttendanceCalculationService
             $result['auto_checkout_reason'] = 'Missing checkout time, used workshop closing time';
         }
 
+        if ($in && $out && $out->lt($in)) {
+            throw ValidationException::withMessages(['out_time' => 'Checkout must be after check-in. Enter an actual checkout time for a check-in after closing.']);
+        }
+
         $status = $this->normalizeStatus($status, $in, $out, $result['is_leave_day'], $result['leave_type'], $result['is_auto_checkout']);
         $result['status'] = $status;
 
         if (in_array($status, ['Absent', 'No Pay Leave'], true)) {
             if (! $result['is_leave_day']) {
                 $result['absent_minutes'] = (int) round((float) $settings->working_hours_per_day * 60);
-                $result['deduction_amount'] = (float) ($technician->no_pay_deduction_rate ?: $dailySalary);
+                $result['deduction_amount'] = $technician->salary_type === 'Hourly' ? 0 : (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
             } else {
-                $result['status'] = $result['leave_type'] ?? 'Leave';
+                $result['status'] = $result['leave_type'];
             }
 
             return $this->applyOverrides($result, $overrides);
@@ -139,7 +144,7 @@ class AttendanceCalculationService
         }
 
         // Only apply deductions if not a leave day
-        if (! $result['is_leave_day']) {
+        if (! $result['is_leave_day'] && $technician->salary_type !== 'Hourly') {
             $result['deduction_amount'] = $result['late_deduction_amount'] + $result['early_leave_deduction_amount'] + $result['half_day_deduction_amount'];
         } else {
             $result['late_deduction_amount'] = 0;
@@ -216,11 +221,27 @@ class AttendanceCalculationService
         if ((float) $technician->ot_rate > 0) {
             return round($minutes / 60 * (float) $technician->ot_rate, 2);
         }
+        if ($technician->salary_type === 'Hourly') {
+            return round($minutes / 60 * (float) $technician->hourly_salary, 2);
+        }
         $slabs = OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get();
         if ($slabs->isNotEmpty()) {
-            $slab = $slabs->first(fn ($rule) => $minutes >= $rule->from_minutes && $minutes <= $rule->to_minutes) ?? $slabs->last();
+            $slab = $slabs->first(fn ($rule) => $minutes >= $rule->from_minutes && $minutes <= $rule->to_minutes)
+                ?? $slabs->filter(fn ($rule) => $rule->to_minutes < $minutes)->last();
 
-            return (float) $slab->amount;
+            if (! $slab) {
+                return 0;
+            }
+            $amount = 0;
+            foreach ($slabs as $rule) {
+                $amount = $rule->calculation_rule === 'Add previous slab amount'
+                    ? $amount + (float) $rule->amount : (float) $rule->amount;
+                if ($rule->id === $slab->id) {
+                    break;
+                }
+            }
+
+            return round($amount, 2);
         }
         $slabMinutes = max(1, (int) $settings->ot_slab_minutes);
         $count = match ((string) $settings->ot_round_method) {
@@ -247,9 +268,7 @@ class AttendanceCalculationService
 
     private function dailySalary(Technician $technician): float
     {
-        return $technician->salary_type === 'Daily' && (float) $technician->daily_salary > 0
-            ? (float) $technician->daily_salary
-            : (float) $technician->basic_salary / 26;
+        return StaffPayRate::daily($technician);
     }
 
     private function normalizeStatus(?string $status, ?CarbonInterface $in, ?CarbonInterface $out, bool $isLeaveDay = false, ?string $leaveType = null, bool $isAutoCheckout = false): string

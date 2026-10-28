@@ -27,6 +27,12 @@ class TechnicianSalarySheet extends Model
         return $this->hasMany(Payment::class, 'salary_sheet_id')->where('method', 'Salary Deduction')->where('status', 'Completed');
     }
 
+    public function getBaseEarningsAttribute(): float
+    {
+        return (float) ($this->calculation_snapshot || (float) $this->attendance_salary_amount !== 0.0
+            ? $this->attendance_salary_amount : $this->basic_salary);
+    }
+
     protected function casts(): array
     {
         return [

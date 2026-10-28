@@ -1,0 +1,52 @@
+/* Standalone print documents: independent of application and utility CSS. */
+@page { size: A4 portrait; margin: 14mm 12mm 18mm; }
+* { box-sizing: border-box; }
+html { background: #fff; color: #162337; }
+body { margin: 0; padding: 0; background: #fff; }
+body { font: 10pt/1.4 Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.document { max-width: 1050px; margin: 30px auto; padding: 30px; background: #fff; }
+.document-header { width: 100%; border-collapse: collapse; margin-bottom: 14px; border-bottom: 2px solid #182c48; }
+.document-header td { padding: 0 0 12px; border: 0; vertical-align: top; }
+.document-header .identity { width: 42%; }
+.business-name { font-size: 19pt; font-weight: 700; letter-spacing: -.4px; }
+.business-detail { margin-top: 3px; color: #536174; font-size: 8pt; }
+.document-heading { text-align: right; }
+.document-title { margin: 0 0 5px; font-size: 15pt; line-height: 1.2; font-weight: 700; }
+.document-meta { color: #536174; font-size: 8pt; }
+.document-filters { padding: 7px 10px; border-left: 3px solid #9aa9bd; background: #f4f6f9; font-size: 8pt; margin: 0 0 12px; }
+.document-summary { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 8px; }
+.document-summary td { border: 1px solid #dce2e9; padding: 8px 10px; vertical-align: top; }
+.summary-label { color: #536174; font-size: 7pt; letter-spacing: .25px; text-transform: uppercase; }
+.summary-value { margin-top: 3px; font-size: 11pt; font-weight: 700; }
+.document-section { margin: 0 0 14px; }
+.document-section-title { font-size: 11pt; margin: 15px 0 7px; }
+.document-table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: auto; font-size: 8.5pt; margin: 0 0 10px; }
+.document-table th, .document-table td { border-bottom: 1px solid #dce2e9; padding: 6px 7px; vertical-align: top; text-align: left; overflow-wrap: anywhere; word-wrap: break-word; }
+.document-table th { background: #edf1f6; border-top: 1px solid #bdc8d6; border-bottom: 1px solid #bdc8d6; font-size: 7.5pt; font-weight: 700; }
+.document-table td p { margin: 0 0 2px; }
+.document-table .muted { color: #536174; font-size: 7pt; }
+.document-table .strong { font-weight: 700; }
+.document-table small { color: #536174; font-size: 7pt; }
+.document-table .number, .number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.document-wide { table-layout: fixed; font-size: 7.3pt; }
+.document-wide th { font-size: 7pt; }
+.document-wide th, .document-wide td { padding: 5px 4px; }
+.document-table thead { display: table-header-group; }
+.document-table tbody { display: table-row-group; }
+.document-table tfoot { display: table-row-group; }
+.document-table tr { break-inside: avoid; page-break-inside: avoid; }
+.document-totals td, .document-totals th { border-top: 1px solid #9aa9bd; background: #f3f5f8; font-weight: 700; }
+.document-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd4df; color: #647184; font-size: 7pt; }
+.document-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1050px; margin: 18px auto; padding: 0 30px; font-size: 12px; }
+.document-toolbar button { font: inherit; cursor: pointer; border: 1px solid #b9c5d5; border-radius: 5px; padding: 9px 15px; background: #fff; color: #162337; }
+.document-toolbar .primary { background: #182c48; color: #fff; border-color: #182c48; }
+.document-note { margin: 7px 0 12px; font-size: 8pt; color: #536174; }
+h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+@media screen { body { background: #e9edf2; } .document { box-shadow: 0 3px 20px #13243a18; } }
+@media print {
+    .document-toolbar { display: none !important; }
+    .document { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+    a { color: inherit; text-decoration: none; }
+    .document-header, .document-summary, .document-footer { break-inside: avoid; page-break-inside: avoid; }
+    .document-footer { display: none; }
+}

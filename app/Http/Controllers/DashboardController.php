@@ -36,10 +36,10 @@ class DashboardController extends Controller
         $activeJobs = JobCard::whereNotIn('status', $finalStatuses)->count();
         $completedToday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$startDate, $endDate])->count();
         $completedYesterday = JobCard::whereIn('status', $completedStatuses)->whereBetween('updated_at', [$previousStartDate, $previousEndDate])->count();
-        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('total');
-        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('total');
-        $partsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('parts_amount');
-        $yesterdayPartsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('parts_amount');
+        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$startDate, $endDate])->sum('total');
+        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$previousStartDate, $previousEndDate])->sum('total');
+        $partsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->billDatedBetween([$startDate, $endDate])->sum('parts_amount');
+        $yesterdayPartsSales = (float) Invoice::where('status', '!=', 'Cancelled')->where('status', '!=', 'Cancelled')->billDatedBetween([$previousStartDate, $previousEndDate])->sum('parts_amount');
 
         $accountService = app(AccountService::class);
         $mainBalance = $accountService->getRunningBalance('main');
@@ -66,13 +66,13 @@ class DashboardController extends Controller
                 $startHour = $startDate->copy()->startOfDay()->addHours($hour);
                 $endHour = $startHour->copy()->endOfHour();
 
-                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startHour, $endHour])->sum('total')];
+                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$startHour, $endHour])->sum('total')];
             });
         } elseif ($daysDiff <= 31) {
             $salesSeries = collect(range(0, (int) $daysDiff))->map(function (int $offset) use ($startDate): array {
                 $date = $startDate->copy()->addDays($offset);
 
-                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereDate('created_at', $date)->sum('total')];
+                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedOn($date)->sum('total')];
             });
         } else {
             $monthsDiff = $startDate->diffInMonths($endDate);
@@ -83,7 +83,7 @@ class DashboardController extends Controller
                     $monthEnd = $endDate->copy();
                 }
 
-                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$monthStart, $monthEnd])->sum('total')];
+                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$monthStart, $monthEnd])->sum('total')];
             });
         }
 
@@ -176,8 +176,8 @@ class DashboardController extends Controller
     {
         [$startDate, $endDate, $previousStartDate, $previousEndDate, $filterLabel, $periodName] = $this->getFilterDates($request);
 
-        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startDate, $endDate])->sum('total');
-        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$previousStartDate, $previousEndDate])->sum('total');
+        $todaySales = (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$startDate, $endDate])->sum('total');
+        $yesterdaySales = (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$previousStartDate, $previousEndDate])->sum('total');
 
         $pendingDue = (float) Invoice::where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)->sum('due_amount');
         $lowStockCount = Product::where('active', true)
@@ -197,13 +197,13 @@ class DashboardController extends Controller
                 $startHour = $startDate->copy()->startOfDay()->addHours($hour);
                 $endHour = $startHour->copy()->endOfHour();
 
-                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$startHour, $endHour])->sum('total')];
+                return ['label' => $startHour->format('H:00'), 'date' => $startHour->format('H:00'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$startHour, $endHour])->sum('total')];
             });
         } elseif ($daysDiff <= 31) {
             $salesSeries = collect(range(0, (int) $daysDiff))->map(function (int $offset) use ($startDate): array {
                 $date = $startDate->copy()->addDays($offset);
 
-                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereDate('created_at', $date)->sum('total')];
+                return ['label' => $date->format('d M'), 'date' => $date->format('d M'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedOn($date)->sum('total')];
             });
         } else {
             $monthsDiff = $startDate->diffInMonths($endDate);
@@ -214,7 +214,7 @@ class DashboardController extends Controller
                     $monthEnd = $endDate->copy();
                 }
 
-                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->whereBetween('created_at', [$monthStart, $monthEnd])->sum('total')];
+                return ['label' => $monthStart->format('M y'), 'date' => $monthStart->format('M Y'), 'value' => (float) Invoice::where('status', '!=', 'Cancelled')->billDatedBetween([$monthStart, $monthEnd])->sum('total')];
             });
         }
 

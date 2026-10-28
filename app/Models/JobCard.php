@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** @property int $jobs_count
+/** @property CarbonInterface|null $bill_date
+ * @property int $jobs_count
  * @property float|int $billed_total
  * @property-read BikeIntake $intake
  * @property-read Invoice|null $invoice
@@ -25,7 +27,7 @@ class JobCard extends Model
 
     protected function casts(): array
     {
-        return ['show_previous_balance_on_bill' => 'boolean', 'is_quick_job' => 'boolean', 'is_staff_bike' => 'boolean', 'quick_bike_details' => 'array'];
+        return ['bill_date' => 'date', 'show_previous_balance_on_bill' => 'boolean', 'is_quick_job' => 'boolean', 'is_staff_bike' => 'boolean', 'quick_bike_details' => 'array'];
     }
 
     protected static function booted(): void
@@ -78,6 +80,7 @@ class JobCard extends Model
         return $this->belongsTo(Bike::class, 'quick_bike_id');
     }
 
+    /** @return BelongsTo<Technician, $this> */
     public function staffBikeOwner(): BelongsTo
     {
         return $this->belongsTo(Technician::class, 'staff_bike_owner_id');
@@ -117,6 +120,7 @@ class JobCard extends Model
         return $this->is_quick_job ? ($this->quick_complaint ?: 'Quick job') : ($this->intake?->complaint ?? '');
     }
 
+    /** @return HasMany<JobCardPart, $this> */
     public function parts(): HasMany
     {
         return $this->hasMany(JobCardPart::class);

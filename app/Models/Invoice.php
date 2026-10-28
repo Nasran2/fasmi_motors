@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /** @property float|string $hold_amount
  * @property Carbon|null $link_expires_at
@@ -22,7 +23,22 @@ class Invoice extends Model
 
     protected function casts(): array
     {
-        return ['link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'parts_deleted_at' => 'datetime', 'link_enabled' => 'boolean', 'is_accident_quotation' => 'boolean'];
+        return ['bill_date' => 'datetime', 'link_expires_at' => 'datetime', 'due_date' => 'date', 'last_opened_at' => 'datetime', 'sms_sent_at' => 'datetime', 'cancelled_at' => 'datetime', 'parts_deleted_at' => 'datetime', 'link_enabled' => 'boolean', 'is_accident_quotation' => 'boolean'];
+    }
+
+    public function getBillDateAttribute($value): ?Carbon
+    {
+        return $value ? Carbon::parse($value) : ($this->created_at ? Carbon::parse($this->created_at) : null);
+    }
+
+    public function scopeBillDatedBetween(Builder $query, array $dates): Builder
+    {
+        return $query->whereBetween(DB::raw('COALESCE(invoices.bill_date, invoices.created_at)'), $dates);
+    }
+
+    public function scopeBillDatedOn(Builder $query, $date, string $operator = '='): Builder
+    {
+        return $query->whereDate(DB::raw('COALESCE(invoices.bill_date, invoices.created_at)'), $operator, $date);
     }
 
     /** @return BelongsTo<JobCard, $this> */
@@ -66,6 +82,7 @@ class Invoice extends Model
         return $this->belongsTo(Customer::class);
     }
 
+    /** @return BelongsTo<Bike, $this> */
     public function bike(): BelongsTo
     {
         return $this->belongsTo(Bike::class);
@@ -88,11 +105,13 @@ class Invoice extends Model
         return $this->hasMany(SaleReturn::class)->latest();
     }
 
+    /** @return HasMany<InvoiceCharge, $this> */
     public function charges(): HasMany
     {
         return $this->hasMany(InvoiceCharge::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    /** @return BelongsTo<Invoice, $this> */
     public function sourceQuotation(): BelongsTo
     {
         return $this->belongsTo(self::class, 'source_quotation_id');

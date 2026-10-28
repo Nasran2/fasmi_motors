@@ -61,7 +61,7 @@ class WorkspacePageController extends Controller
             ['label' => 'Jobs Created', 'value' => JobCard::whereBetween('created_at', [$start, $end])->count(), 'icon' => 'clipboard', 'tone' => 'orange'],
             ['label' => 'Active Jobs', 'value' => JobCard::whereNotIn('status', $closedStatuses)->count(), 'icon' => 'clipboard', 'tone' => 'blue'],
             ['label' => 'Completed Today', 'value' => JobCard::whereIn('status', ['Completed', 'Billed', 'Delivered'])->whereBetween('updated_at', [$start, $end])->count(), 'icon' => 'check', 'tone' => 'green'],
-            ['label' => 'Sales Today', 'value' => (float) Invoice::whereBetween('created_at', [$start, $end])->sum('total'), 'icon' => 'money', 'tone' => 'violet', 'money' => true],
+            ['label' => 'Sales Today', 'value' => (float) Invoice::billDatedBetween([$start, $end])->sum('total'), 'icon' => 'money', 'tone' => 'violet', 'money' => true],
             ['label' => 'Collected Today', 'value' => (float) Payment::whereBetween('paid_at', [$start, $end])->sum('amount'), 'icon' => 'wallet', 'tone' => 'teal', 'money' => true],
             ['label' => 'Expenses Today', 'value' => (float) Expense::whereBetween('expense_date', [$start->toDateString(), $end->toDateString()])->sum('amount'), 'icon' => 'warning', 'tone' => 'rose', 'money' => true],
             ['label' => 'Outstanding Due', 'value' => (float) Invoice::sum('due_amount'), 'icon' => 'bank', 'tone' => 'navy', 'money' => true],
@@ -85,7 +85,7 @@ class WorkspacePageController extends Controller
         $jobs = JobCard::whereBetween('created_at', [$start, $end]);
         $totalJobs = (clone $jobs)->count();
         $completedJobs = (clone $jobs)->whereIn('status', ['Completed', 'Billed', 'Delivered'])->count();
-        $revenue = (float) Invoice::whereBetween('created_at', [$start, $end])->sum('total');
+        $revenue = (float) Invoice::billDatedBetween([$start, $end])->sum('total');
         $turnaroundJobs = (clone $jobs)->whereIn('status', ['Completed', 'Billed', 'Delivered'])->get(['created_at', 'updated_at']);
         $averageHours = $turnaroundJobs->isEmpty() ? 0 : round($turnaroundJobs->avg(fn (JobCard $job) => $job->created_at->diffInMinutes($job->updated_at) / 60), 1);
 

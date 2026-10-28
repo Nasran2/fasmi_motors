@@ -31,7 +31,7 @@ class JobPaymentAllocationService
             if ($invoiceIds !== null && $invoices->where('due_amount', '>', 0)->count() !== count(array_unique($invoiceIds))) {
                 throw ValidationException::withMessages(['invoice_ids' => 'A selected bill is no longer payable. Refresh and select the bills again.']);
             }
-            $invoices = $invoices->sortBy(fn ($invoice) => ($oldestFirst || $invoice->id !== $primary->id ? '1' : '0').$invoice->created_at->format('Y-m-d H:i:s').sprintf('%020d', $invoice->id))->values();
+            $invoices = $invoices->sortBy(fn ($invoice) => ($oldestFirst || $invoice->id !== $primary->id ? '1' : '0').$invoice->bill_date->format('Y-m-d H:i:s').sprintf('%020d', $invoice->id))->values();
             $settlement = app(SettlementService::class);
             $nonCash = array_values(array_filter($rows, fn ($row) => $row['method'] !== 'Cash'));
             $cash = array_values(array_filter($rows, fn ($row) => $row['method'] === 'Cash'));

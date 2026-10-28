@@ -11,7 +11,7 @@
     <x-flash/>
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         @foreach([['Today Advances','Rs. '.number_format($stats['today'],2)],['This Month','Rs. '.number_format($stats['month'],2)],['Pending Deductions','Rs. '.number_format($stats['pending'],2)],['Advance Balance','Rs. '.number_format($stats['balance'],2)]] as [$label,$value])
-            <article class="panel !p-4"><p class="text-xs font-bold text-slate-500">{{ $label }}</p><p class="mt-2 text-xl font-black">{{ $value }}</p></article>
+            <article data-print-summary class="panel !p-4"><p class="text-xs font-bold text-slate-500">{{ $label }}</p><p class="mt-2 text-xl font-black">{{ $value }}</p></article>
         @endforeach
     </div>
     <form id="advance-form" method="POST" action="{{ route('technicians.advances.store') }}" class="panel">
@@ -37,7 +37,7 @@
                         <td>{{ $advance->status }}</td>
                         <td>
                             <div class="flex flex-wrap items-center gap-2">
-                                <button type="button" onclick="window.print()" class="btn-secondary !px-3 !py-2">Receipt</button>
+                                <button type="button" data-print-title="Staff Advance Receipt" onclick="window.workshopPrint(event)" class="btn-secondary !px-3 !py-2">Receipt</button>
                                 @if(auth()->user()->canAccess('technician.advances'))
                                     @if($advance->status === 'Pending Deduction' && $advance->salary_sheet_id === null)
                                         @php

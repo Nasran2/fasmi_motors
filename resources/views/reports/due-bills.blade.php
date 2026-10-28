@@ -25,7 +25,7 @@
           <tbody class="divide-y divide-slate-100">
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3">{{ $row->created_at->format("d M Y") }}</td>
+              <td class="px-4 py-3">{{ $row->bill_date->format("d M Y") }}</td>
 <td class="px-4 py-3">{{ $row->number }}</td>
 <td class="px-4 py-3">{{ $row->customer?->name ?? $row->jobCard?->customer?->name ?? 'Walk-in' }}</td>
 <td class="px-4 py-3">{{ $row->customer?->phone ?? $row->jobCard?->customer?->phone }}</td>

@@ -519,6 +519,7 @@
                                 <span class="text-xs font-black uppercase text-slate-500">Total Payable</span>
                                 <span class="text-2xl font-black text-indigo-600" x-text="'Rs. ' + formatNumber(cart.total)"></span>
                             </div>
+                            <div class="grid gap-3 sm:grid-cols-2"><label><span class="label">Bill date</span><input type="date" x-model="billDate" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label><label><span class="label">Payment date</span><input type="date" x-model="paymentDate" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label></div>
                             <label class="block"><span class="label uppercase">Payment Method</span>
                                 <select x-model="paymentMethod" @change="accountId=defaultPaymentAccount(paymentMethod); activePaymentIndex=null" class="field">
                                     @if(session('shop_mode', 'workshop') === 'helmet')
@@ -750,6 +751,7 @@
                 accountId: '',
                 paidAmount: 0,
                 activePaymentIndex: null,
+                billDate: @js(today()->toDateString()), paymentDate: @js(today()->toDateString()),
                 chequeDate: '', chequeNumber: '', chequeBank: '', extraPayments: [],
                 isSubmitting: false,
                 submissionToken: crypto.randomUUID(),
@@ -1494,6 +1496,8 @@
                         store_id: this.storeId,
                         discount: this.cart.discount,
                         tax: this.cart.tax,
+                        bill_date: this.billDate,
+                        paid_at: this.paymentDate,
                         payments: payments,
                         paid_amount: type === 'Quotation' || this.paymentMethod === 'Credit/Due' ? 0 : Math.min(Number(this.paidAmount), this.cart.total),
                         payment_method: type === 'Quotation' ? null : this.paymentMethod,

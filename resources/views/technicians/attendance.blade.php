@@ -65,7 +65,8 @@
                   <option value="{{ $t->id }}" @selected($row['technician_id'] == $t->id)>{{ $t->name }}</option>
                   @endforeach
                 </select>
-                @if($row['will_create_technician'])
+                @if($row['identity_warning'] ?? null)<p class="mt-1 text-xs text-red-700">{{ $row['identity_warning'] }}</p>
+                @elseif($row['will_create_technician'])
                 <span class="block mt-1 text-[9px] text-red-600 font-bold uppercase tracking-wider">Will Auto-Create</span>
                 @endif
               </td>
@@ -203,6 +204,7 @@
 
       </div>
 
+      <p id="attendancePreviewMessage" role="status" aria-live="polite" class="mb-3 text-sm text-slate-600"></p>
       <div class="border-t border-slate-100 pt-4 flex justify-between items-center">
         <div id="finalizedWarning" class="text-xs font-bold text-red-600 hidden">
           ⚠️ Warning: This date is included in finalized salary sheet. Unlock paysheet before saving.
@@ -326,14 +328,8 @@
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1.5">
                   <button type="button" onclick="editAttendance('{{ $row->technician_id }}', '{{ $row->date->toDateString() }}', '{{ $row->status }}', '{{ $row->in_time ? substr($row->in_time, 0, 5) : '' }}', '{{ $row->out_time ? substr($row->out_time, 0, 5) : '' }}', '{{ $row->ot_amount }}', '{{ $row->deduction_amount }}', '{{ $row->is_manual_edit }}', '{{ $row->note }}')" class="btn-secondary !py-0.5 !px-2 text-xs">Edit</button>
-                  <form method="POST" action="{{ route('technicians.attendance.store') }}" class="inline">
+                  <form method="POST" action="{{ route('technicians.attendance.recalculate', $row) }}" class="inline">
                     @csrf<x-submission-token/>
-                    <input type="hidden" name="technician_id" value="{{ $row->technician_id }}">
-                    <input type="hidden" name="date" value="{{ $row->date->toDateString() }}">
-                    <input type="hidden" name="status" value="{{ $row->status }}">
-                    <input type="hidden" name="in_time" value="{{ $row->in_time }}">
-                    <input type="hidden" name="out_time" value="{{ $row->out_time }}">
-                    <input type="hidden" name="is_manual_edit" value="0">
                     <button type="submit" class="btn-secondary !py-0.5 !px-2 text-xs text-blue-600">Recalculate</button>
                   </form>
                 </div>
@@ -443,184 +439,65 @@
   </div>
 
   <script>
-    const salarySettings = @json(\App\Models\SalarySetting::firstOrCreate([]));
-    const otSlabs = @json(\App\Models\OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get());
-    const techniciansData = @json($technicians->keyBy('id'));
+    let attendancePreviewTimer;
+    let attendancePreviewAbort;
+    let attendancePreviewVersion = 0;
 
-    function timeToMinutes(tStr) {
-      if (!tStr) return 0;
-      const parts = tStr.split(':');
-      return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    }
-
-    function parseTime12ToMinutes(time12) {
-      const match = time12.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-      if (!match) return 0;
-      let hrs = parseInt(match[1], 10);
-      const mins = parseInt(match[2], 10);
-      const meridian = match[3].toUpperCase();
-      if (meridian === 'PM' && hrs < 12) hrs += 12;
-      if (meridian === 'AM' && hrs === 12) hrs = 0;
-      return hrs * 60 + mins;
-    }
-
-    function checkFinalizedStatus() {
-      // Stub check - warnings can alert if needed
-    }
+    function checkFinalizedStatus() {}
 
     function calculateAttendanceFrontend() {
-      const isManual = document.getElementById('isManualEdit').checked;
-      const techId = document.getElementById('techSelect').value;
-      const status = document.getElementById('statusSelect').value;
-      const inTimeStr = document.getElementById('inTimeInput').value;
-      const outTimeStr = document.getElementById('outTimeInput').value;
-
-      const workingHoursInput = document.getElementById('workingHoursInput');
-      const lateMinutesInput = document.getElementById('lateMinutesInput');
-      const earlyLeaveMinutesInput = document.getElementById('earlyLeaveMinutesInput');
-      const otMinutesInput = document.getElementById('otMinutesInput');
-      const otAmountInput = document.getElementById('otAmountInput');
-      const deductionAmountInput = document.getElementById('deductionAmountInput');
-
-      if (isManual) {
-        otAmountInput.removeAttribute('readonly');
-        deductionAmountInput.removeAttribute('readonly');
-        otAmountInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
-        deductionAmountInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
-        return;
-      } else {
-        otAmountInput.setAttribute('readonly', 'true');
-        deductionAmountInput.setAttribute('readonly', 'true');
-        otAmountInput.classList.add('bg-slate-50', 'cursor-not-allowed');
-        deductionAmountInput.classList.add('bg-slate-50', 'cursor-not-allowed');
+      clearTimeout(attendancePreviewTimer);
+      attendancePreviewAbort?.abort();
+      const version = ++attendancePreviewVersion;
+      const manual = document.getElementById('isManualEdit').checked;
+      const save = document.getElementById('saveAttendanceBtn');
+      const message = document.getElementById('attendancePreviewMessage');
+      const fields = {workingHoursInput: 'working_hours', lateMinutesInput: 'late_minutes', earlyLeaveMinutesInput: 'early_leave_minutes', otMinutesInput: 'ot_minutes', otAmountInput: 'ot_amount', deductionAmountInput: 'deduction_amount'};
+      for (const id of ['otAmountInput', 'deductionAmountInput']) {
+        const input = document.getElementById(id);
+        input.readOnly = !manual;
+        input.classList.toggle('bg-slate-50', !manual);
+        input.classList.toggle('cursor-not-allowed', !manual);
       }
-
-      const nonWork = ['Absent', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday'];
-      if (nonWork.includes(status) || !techId) {
-        workingHoursInput.value = 0;
-        lateMinutesInput.value = 0;
-        earlyLeaveMinutesInput.value = 0;
-        otMinutesInput.value = 0;
-        otAmountInput.value = 0.00;
-        
-        let ded = 0;
-        if (techId && (status === 'Absent' || status === 'No Pay Leave')) {
-          ded = parseFloat(techniciansData[techId].no_pay_deduction_rate) || 0;
-        }
-        deductionAmountInput.value = ded.toFixed(2);
+      if (manual) {
+        save.disabled = false;
+        message.textContent = 'Manual amounts will override the calculated amounts.';
         return;
       }
-
-      if (!inTimeStr || !outTimeStr) {
+      const params = new URLSearchParams({
+        technician_id: document.getElementById('techSelect').value,
+        date: document.getElementById('dateInput').value,
+        status: document.getElementById('statusSelect').value,
+        in_time: document.getElementById('inTimeInput').value,
+        out_time: document.getElementById('outTimeInput').value,
+      });
+      Object.keys(fields).forEach(id => document.getElementById(id).value = '');
+      if (!params.get('technician_id') || !params.get('date')) {
+        save.disabled = true;
+        message.textContent = 'Select a staff member and date to calculate attendance.';
         return;
       }
-
-      const inMin = timeToMinutes(inTimeStr);
-      const outMin = timeToMinutes(outTimeStr);
-
-      const workingMins = Math.max(0, outMin - inMin);
-      workingHoursInput.value = (workingMins / 60).toFixed(2);
-
-      let lateMins = 0;
-      let lateDeduction = 0;
-      const openMin = parseTime12ToMinutes(salarySettings.opening_time || '08:30 AM');
-      if (salarySettings.enable_late_deduction && inMin > openMin) {
-        const diff = inMin - openMin;
-        if (diff > salarySettings.late_grace_minutes) {
-          lateMins = diff;
-          if (salarySettings.late_deduction_type === 'Fixed amount') {
-            lateDeduction = parseFloat(salarySettings.late_deduction_amount) || 0;
-          } else {
-            lateDeduction = diff * (parseFloat(salarySettings.late_deduction_amount) || 0);
-          }
+      save.disabled = true;
+      message.textContent = 'Calculating attendance…';
+      attendancePreviewTimer = setTimeout(async () => {
+        const controller = new AbortController();
+        attendancePreviewAbort = controller;
+        try {
+          const response = await fetch(@json(route('technicians.attendance.preview')) + '?' + params, {headers: {Accept: 'application/json'}, signal: controller.signal});
+          const data = await response.json();
+          if (version !== attendancePreviewVersion) return;
+          if (!response.ok) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Attendance could not be calculated.');
+          Object.entries(fields).forEach(([id, key]) => {
+            document.getElementById(id).value = ['working_hours', 'ot_amount', 'deduction_amount'].includes(key) ? Number(data[key]).toFixed(2) : data[key];
+          });
+          message.textContent = 'Calculated from the saved attendance rules. Status: ' + data.status;
+          save.disabled = false;
+        } catch (error) {
+          if (version !== attendancePreviewVersion || error.name === 'AbortError') return;
+          message.textContent = error.message || 'Attendance preview failed. Change an input to retry.';
+          save.disabled = true;
         }
-      }
-      lateMinutesInput.value = lateMins;
-
-      let earlyLeaveMins = 0;
-      let earlyLeaveDeduction = 0;
-      const closeMin = parseTime12ToMinutes(salarySettings.closing_time || '05:00 PM');
-      if (salarySettings.enable_early_leave_deduction && outMin < closeMin) {
-        const diff = closeMin - outMin;
-        if (diff > salarySettings.early_leave_grace_minutes) {
-          earlyLeaveMins = diff;
-          if (salarySettings.early_leave_deduction_type === 'Fixed amount') {
-            earlyLeaveDeduction = parseFloat(salarySettings.early_leave_deduction_amount) || 0;
-          } else if (salarySettings.early_leave_deduction_type === 'Per minute amount') {
-            earlyLeaveDeduction = diff * (parseFloat(salarySettings.early_leave_deduction_amount) || 0);
-          }
-        }
-      }
-      earlyLeaveMinutesInput.value = earlyLeaveMins;
-
-      // Half Day cutoff check
-      let isHalfDay = false;
-      let halfDayDeduction = 0;
-      if (salarySettings.enable_half_day) {
-        const morningCut = parseTime12ToMinutes(salarySettings.morning_half_day_cutoff || '12:30 PM');
-        const eveningCut = parseTime12ToMinutes(salarySettings.evening_half_day_cutoff || '01:30 PM');
-        
-        if (inMin > morningCut || outMin < eveningCut || status === 'Half Day' || status === 'Morning Half Day' || status === 'Evening Half Day') {
-          isHalfDay = true;
-          const tech = techniciansData[techId];
-          const dailyRate = tech.salary_type === 'Daily' ? parseFloat(tech.daily_salary) : (parseFloat(tech.basic_salary) / 26);
-          
-          if (salarySettings.half_day_deduction_type === 'Half of daily salary') {
-            halfDayDeduction = dailyRate / 2;
-          } else {
-            halfDayDeduction = parseFloat(salarySettings.half_day_deduction_amount) || 0;
-          }
-          
-          lateDeduction = 0;
-          earlyLeaveDeduction = 0;
-        }
-      }
-
-      let otMins = 0;
-      let otAmt = 0;
-      if (salarySettings.enable_ot && outMin > closeMin) {
-        const diff = outMin - closeMin;
-        if (diff > salarySettings.ot_grace_minutes_after_closing) {
-          otMins = diff;
-          
-          if (otSlabs && otSlabs.length > 0) {
-            let matchedSlab = null;
-            const roundMethod = salarySettings.ot_round_method;
-            
-            if (roundMethod === 'Ceiling slab') {
-              matchedSlab = otSlabs.find(s => diff <= s.to_minutes);
-              if (!matchedSlab) matchedSlab = otSlabs[otSlabs.length - 1];
-            } else if (roundMethod === 'Floor slab') {
-              matchedSlab = [...otSlabs].reverse().find(s => diff >= s.from_minutes);
-              if (!matchedSlab) matchedSlab = otSlabs[0];
-            } else if (roundMethod === 'Nearest slab') {
-              matchedSlab = otSlabs.map(s => ({ slab: s, diff: Math.abs((s.from_minutes + s.to_minutes)/2 - diff) })).sort((a,b)=>a.diff-b.diff)[0].slab;
-            } else {
-              matchedSlab = otSlabs.find(s => diff >= s.from_minutes && diff <= s.to_minutes);
-            }
-
-            if (matchedSlab) {
-              if (matchedSlab.calculation_rule === 'Fixed for this range') {
-                otAmt = parseFloat(matchedSlab.amount);
-              } else {
-                otAmt = otSlabs.filter(s => s.from_minutes <= matchedSlab.from_minutes).reduce((acc, s) => acc + parseFloat(s.amount), 0);
-              }
-            }
-          } else {
-            const slabMins = parseInt(salarySettings.ot_slab_minutes) || 30;
-            const amtPerSlab = parseFloat(salarySettings.ot_amount_per_slab) || 0;
-            let count = 0;
-            if (salarySettings.ot_round_method === 'Ceiling') count = Math.ceil(diff / slabMins);
-            else if (salarySettings.ot_round_method === 'Floor') count = Math.floor(diff / slabMins);
-            else count = Math.round(diff / slabMins);
-            
-            otAmt = count * amtPerSlab;
-          }
-        }
-      }
-      otMinutesInput.value = otMins;
-      otAmountInput.value = otAmt.toFixed(2);
-      deductionAmountInput.value = (lateDeduction + earlyLeaveDeduction + halfDayDeduction).toFixed(2);
+      }, 200);
     }
 
     function editAttendance(techId, date, status, inTime, outTime, otAmount, deductionAmount, manual, note) {
@@ -653,6 +530,8 @@
       document.getElementById('editReasonInput').removeAttribute('required');
       calculateAttendanceFrontend();
     }
+
+    calculateAttendanceFrontend();
 
     function openBulkModal() {
       document.getElementById('bulkModal').showModal();

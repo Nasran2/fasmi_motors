@@ -7,7 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Services\AccountService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\PrintDocument;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -66,17 +66,16 @@ class AccountExportController extends Controller
             'spare_parts' => 'Spare Parts Ledger',
             'bank' => 'Bank Account Ledger',
             'cash' => 'Cash Book',
-            default => 'Ledger',
         };
 
-        $pdf = Pdf::loadView('accounts.exports.ledger-pdf', [
+        $pdf = PrintDocument::pdf('accounts.exports.ledger-pdf', [
             'transactions' => $transactions,
             'title' => $title,
             'from' => $from,
             'to' => $to,
             'totals' => $totals,
             'printedBy' => $request->user(),
-        ])->setPaper('a4', 'portrait');
+        ]);
 
         if ($request->has('print')) {
             return $pdf->stream("{$type}_ledger_".now()->format('Ymd_His').'.pdf');

@@ -155,7 +155,7 @@
             <button type="submit" class="reminders-button icon" aria-label="Search" title="Search"><flux:icon.magnifying-glass/></button>
         </form>
         @if(request()->filled('q'))<a href="{{ url()->current() }}" class="reminders-button icon" aria-label="Clear search" title="Clear search"><flux:icon.x-mark/></a>@endif
-        <button type="button" onclick="window.print()" class="reminders-button icon" aria-label="Print reminders" title="Print reminders"><flux:icon.printer/></button>
+        <button type="button" onclick="window.workshopPrint(event)" class="reminders-button icon" aria-label="Print reminders" title="Print reminders"><flux:icon.printer/></button>
         </div>
     </div>
 

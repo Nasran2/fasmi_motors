@@ -467,49 +467,12 @@ input[readonly]:not([data-flux-control]) {
 .badge-pending { @apply inline-block rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700; }
 .badge-delivered { @apply inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700; }
 
+/* Native browser printing uses the separate document assembled by printing.js. */
+#workshop-print-root { display: none; }
 @media print {
-    @page {
-        size: landscape;
-        margin: 12mm;
-    }
-    body.workshop-shell {
-        display: block !important;
-        background: #fff !important;
-    }
-    body.workshop-shell > [data-flux-main] {
-        padding: 0 !important;
-        margin: 0 !important;
-        background: #fff !important;
-        max-width: 100% !important;
-        width: 100% !important;
-    }
-    .panel {
-        border: none !important;
-        box-shadow: none !important;
-        padding-inline: 0 !important;
-        background: transparent !important;
-    }
-    table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        font-size: 11px !important;
-    }
-    th, td {
-        border-bottom: 1px solid #e2e8f0 !important;
-        color: #000 !important;
-        padding: 6px 8px !important;
-    }
-    th {
-        background-color: #f8fafc !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    .overflow-x-auto {
-        overflow: visible !important;
-    }
-    table, .panel, .rounded-xl {
-        border-radius: 0 !important;
-    }
+    body.workshop-shell { display: block !important; margin: 0 !important; padding: 0 !important; background: white !important; }
+    body.workshop-shell > :not(#workshop-print-root) { display: none !important; }
+    body.workshop-shell > #workshop-print-root { display: block !important; }
 }
 
 /* Payment fields adapt to the form's width, including narrow payment sidebars. */

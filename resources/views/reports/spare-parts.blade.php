@@ -24,7 +24,7 @@
           <tbody class="divide-y divide-slate-100">
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3">{{ $row->invoice?->created_at->format("d M Y") }}</td>
+              <td class="px-4 py-3">{{ $row->invoice?->bill_date->format("d M Y") }}</td>
 <td class="px-4 py-3">{{ $row->invoice?->number }}</td>
 <td class="px-4 py-3">{{ $row->product?->name }}</td>
 <td class="px-4 py-3">{{ $row->quantity-$row->returned_quantity }}</td>

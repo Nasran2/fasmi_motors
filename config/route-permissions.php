@@ -41,6 +41,8 @@ return [
         'jobs.create' => 'job_card.create',
         'jobs.quick.*' => 'job_card.create',
         'jobs.store' => 'job_card.create',
+        'jobs.bike-number' => 'job_card.edit',
+        'jobs.bill-details' => 'job_card.edit',
         'jobs.update' => 'job_card.edit',
         'jobs.*' => 'job_card.view',
 
@@ -87,6 +89,7 @@ return [
         'sales.parts' => 'sales.parts_sales',
         'sales.quotations' => 'sales.view_invoices',
         'sales.accident-quotations.*' => 'sales.parts_sales',
+        'sales.invoices.details' => 'job_card.edit',
         'sales.invoices.cancel' => 'sales.cancel_invoice',
         'sales.invoices.pdf' => 'sales.view_invoices',
         'sales.invoices' => 'sales.view_invoices',
@@ -99,6 +102,7 @@ return [
         'sales.public-links' => 'sales.public_links',
         'sales.public-links.*' => 'sales.public_links',
 
+        'technicians.attendance' => 'technician.attendance',
         'technicians.attendance.*' => 'technician.attendance',
         'technicians.salaries.*' => 'technician.salaries',
         'technicians.advances.*' => 'technician.advances',

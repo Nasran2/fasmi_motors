@@ -7,11 +7,11 @@
 
     <div class="panel border border-slate-200 bg-white">
       <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div data-print-summary>
           <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Main Account opening carried forward</p>
           <p class="mt-2 text-2xl font-black text-slate-900">Rs. {{ number_format($mainOpening, 2) }}</p>
         </div>
-        <div class="text-right">
+        <div data-print-summary class="text-right">
           <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Opening cash balance for this period</p>
           <p class="mt-2 text-2xl font-black text-slate-900">Rs. {{ number_format($opening, 2) }}</p>
         </div>
@@ -30,7 +30,7 @@
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
             <tr>
               <th class="px-3 py-3">Entry</th>
-              <th class="px-3 py-3">Recorded at</th>
+              <th class="px-3 py-3">Payment / entry date</th>
               <th class="px-3 py-3">Reference / Description</th>
               <th class="px-3 py-3 text-right">Cash in (Rs.)</th>
               <th class="px-3 py-3 text-right">Cash out (Rs.)</th>
@@ -48,9 +48,9 @@
               <tr class="hover:bg-slate-50">
                 <td class="px-3 py-3">{{ $row->cash_book_sequence }}</td>
                 <td class="px-3 py-3 whitespace-nowrap">
-                  {{ $row->created_at?->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->created_at?->format('h:i:s A') }}</span>
+                  {{ $row->transaction_date->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->transaction_date->format('h:i:s A') }}</span>
                   @if($row->created_at?->toDateString() !== $row->transaction_date->toDateString())
-                    <br><span class="text-xs text-slate-500">Transaction date: {{ $row->transaction_date->format('d M Y') }}</span>
+                    <br><span class="text-xs text-slate-500">Recorded: {{ $row->created_at?->format('d M Y h:i A') }}</span>
                   @endif
                 </td>
                 <td class="px-3 py-3 max-w-sm break-words">

@@ -237,7 +237,7 @@
             <div class="document-type">{{ $isQuotation ? 'Quotation' : ($invoice->invoice_type === 'Job Card Bill' ? 'Service Invoice' : 'Sales Invoice') }}</div>
             <div class="document-number">{{ $invoice->number }}</div>
             <table class="meta">
-                <tr><td>Date</td><td>{{ $invoice->created_at->format('d M Y') }}</td></tr>
+                <tr><td>Date</td><td>{{ $invoice->bill_date->format('d M Y') }}</td></tr>
                 @if(!$isQuotation)
                     @if((float) $summaryPaid > 0 || (float) $summaryHold > 0 || $invoice->status === 'Paid')
                         <tr><td>Status</td><td>{{ $summaryStatus }}</td></tr>

@@ -57,7 +57,7 @@ class PaymentCorrectionService
                 if (! $receipt->cheque_id) {
                     AccountTransaction::where('reference_type', $receipt->getMorphClass())->where('reference_id', $receipt->id)
                         ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()
-                        ->each(fn ($entry) => $accounts->reverseTransaction($entry, $data['reason']));
+                        ->each(fn ($entry) => $accounts->reverseTransaction($entry, $data['reason'], $entry->transaction_date));
                     $document->paid_amount = round((float) $document->paid_amount - (float) $receipt->amount, 2);
                     $document->due_amount = round((float) $document->due_amount + (float) $receipt->amount, 2);
                 }

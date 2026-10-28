@@ -17,6 +17,14 @@
     <style>
         body { background: #f8fafc; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         @media print {
+            article { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+            article [class*="bg-"] { background: #fff !important; color: #162337 !important; }
+            article [class*="text-white"] { color: #162337 !important; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+            thead { display: table-header-group; }
+            tfoot { display: table-row-group; }
+            footer { break-inside: avoid; page-break-inside: avoid; }
+
             body { background: white; margin: 0; padding: 0; }
             .no-print { display: none !important; }
             @if($paperSize === '80mm')
@@ -63,7 +71,7 @@
         <div>
             <small class="text-slate-500 font-bold uppercase text-[10px]">Technician</small>
             <p class="font-black text-lg">{{ $sheet->technician->name }}</p>
-            <p class="text-xs text-slate-500">{{ $sheet->technician->salary_type }} salary</p>
+            <p class="text-xs text-slate-500">{{ data_get($sheet->calculation_snapshot, 'technician.salary_type', $sheet->technician->salary_type) }} salary</p>
         </div>
         <div class="text-right">
             <small class="text-slate-500 font-bold uppercase text-[10px]">Status</small>
@@ -85,6 +93,7 @@
                 <p><strong>{{ $sheet->carried_to_next_month_days }}</strong> carried forward</p>
             </div>
         </div>
+        <p class="mt-2 text-xs text-slate-700">{{ data_get($sheet->calculation_snapshot, 'earnings.pay_basis') }}</p>
         @if(! empty($sheet->excluded_dates))
             <p class="mt-2 text-xs text-red-700"><strong>Excluded / carried forward:</strong> {{ collect($sheet->excluded_dates)->map(fn ($date) => \Carbon\Carbon::parse($date)->format('d M Y'))->join(', ') }}</p>
         @endif
@@ -109,7 +118,7 @@
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>
           <dl class="mt-3 space-y-2 text-sm">
-            @foreach(['Basic salary'=>$sheet->basic_salary,'Attendance salary'=>$sheet->attendance_salary_amount,'OT amount'=>$sheet->ot_amount,'Commission'=>$sheet->commission,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
+            @foreach(['Base earnings'=>$sheet->base_earnings,'OT amount'=>$sheet->ot_amount,'Commission'=>$sheet->commission,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
                 <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
             @endforeach
             <div class="flex justify-between border-t border-emerald-200 pt-2 font-black text-emerald-700 mt-3">
@@ -212,5 +221,6 @@
   </article>
 </div>
 
+@if(request()->boolean('print'))<script>window.addEventListener('load', async () => { if (document.fonts) await document.fonts.ready; window.print(); }, {once:true});</script>@endif
 </body>
 </html>

@@ -16,7 +16,7 @@ final class PreviousCustomerBalance
     {
         $job->loadMissing('intake.bike');
         $current ??= $job->invoice;
-        $customerId = $current?->customer_id ?? $job->customer_id;
+        $customerId = $current->customer_id ?? $job->customer_id;
         if (! $customerId) {
             return collect();
         }
@@ -30,18 +30,18 @@ final class PreviousCustomerBalance
             ->when($current, function ($query) use ($current) {
                 // Reopening a bill must not include bills issued after it.
                 $query->where(function ($query) use ($current) {
-                    $query->where('created_at', '<', $current->created_at)
+                    $query->whereRaw('COALESCE(invoices.bill_date, invoices.created_at) < ?', [$current->bill_date])
                         ->orWhere(function ($query) use ($current) {
-                            $query->where('created_at', $current->created_at)->where('id', '<', $current->id);
+                            $query->whereRaw('COALESCE(invoices.bill_date, invoices.created_at) = ?', [$current->bill_date])->where('id', '<', $current->id);
                         })
                         ->orWhere(function ($query) use ($current) {
                             // An old balance can be recorded later, including on the bill's date.
                             $query->whereIn('invoice_type', ['Opening Balance', 'Opening Due'])
-                                ->whereDate('created_at', '<=', $current->created_at->toDateString());
+                                ->billDatedOn($current->bill_date->toDateString(), '<=');
                         });
                 });
             })
-            ->orderBy('created_at')->orderBy('id')->get();
+            ->orderByRaw('COALESCE(invoices.bill_date, invoices.created_at)')->orderBy('id')->get();
 
         $completedDates = DB::table('job_card_status_logs')
             ->whereIn('job_card_id', $invoices->pluck('job_card_id')->filter())
@@ -50,7 +50,7 @@ final class PreviousCustomerBalance
 
         return $invoices->map(fn (Invoice $invoice) => [
             'reference' => $invoice->jobCard->number ?? $invoice->number,
-            'date' => Carbon::parse($completedDates->get($invoice->job_card_id) ?? $invoice->created_at)->format('d M Y'),
+            'date' => Carbon::parse($invoice->getRawOriginal('bill_date') ?? $completedDates->get($invoice->job_card_id) ?? $invoice->created_at)->format('d M Y'),
             'amount' => (float) $invoice->due_amount,
             'invoice_id' => $invoice->id,
             'invoice_number' => $invoice->number,

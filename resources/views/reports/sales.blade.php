@@ -2,25 +2,26 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Sales Report',
-      'subtitle' => 'Invoice-date sales after returns. Paid, held cheques, and outstanding balances are shown separately.',
+      'subtitle' => 'Sales by bill date after returns. Paid, held and due amounts are current balances; use Payment Collections for receipts on a selected payment date.',
     ])
 
-    @include('reports._stats')
+    <a href="{{ route('reports.collections', request()->only(['from', 'to', 'date_range', 'customer_id', 'bike_id', 'payment_method', 'search'])) }}" class="btn-secondary print:hidden">View receipts by payment date</a>
+    @include('reports._stats', ['statLabels' => ['paid_amount' => 'Paid to date', 'held_amount' => 'Held to date', 'due_amount' => 'Current due']])
 
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white print:border-none print:shadow-none">
       <div class="overflow-x-auto">
         <table id="reportTable" class="w-full text-left text-sm whitespace-nowrap">
           <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
             <tr>
-              <th class="px-4 py-3 font-bold">Date</th>
+              <th class="px-4 py-3 font-bold">Bill date</th>
 <th class="px-4 py-3 font-bold">Invoice No</th>
 <th class="px-4 py-3 font-bold">Invoice Type</th>
 <th class="px-4 py-3 font-bold">Customer</th>
 <th class="px-4 py-3 font-bold">Bike Number</th>
 <th class="px-4 py-3 font-bold">Total Amount</th>
-<th class="px-4 py-3 font-bold">Paid Amount</th>
-<th class="px-4 py-3 font-bold">Held Amount</th>
-<th class="px-4 py-3 font-bold">Due Amount</th>
+<th class="px-4 py-3 font-bold">Paid to date</th>
+<th class="px-4 py-3 font-bold">Held to date</th>
+<th class="px-4 py-3 font-bold">Current due</th>
 <th class="px-4 py-3 font-bold">Payment Method</th>
 <th class="px-4 py-3 font-bold">Status</th>
             </tr>
@@ -28,7 +29,7 @@
           <tbody class="divide-y divide-slate-100">
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3">{{ $row->created_at->format("d M Y h:i A") }}</td>
+              <td class="px-4 py-3">{{ $row->bill_date->format("d M Y h:i A") }}</td>
 <td class="px-4 py-3">{{ $row->number }}</td>
 <td class="px-4 py-3">{{ $row->invoice_type }}</td>
 <td class="px-4 py-3">{{ $row->customer?->name ?? $row->jobCard?->customer?->name ?? $row->bike?->customer?->name ?? 'Walk-in' }}</td>

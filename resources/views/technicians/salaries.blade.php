@@ -92,6 +92,7 @@
           <div>
             <p class="text-[10px] font-black uppercase tracking-[.18em] text-blue-700">Salary Cycle</p>
             <h3 id="preview-cycle-label" class="mt-1 text-base font-black text-slate-900">Calendar Month Salary</h3>
+            <p id="preview-pay-basis" class="mt-1 text-xs text-slate-700"></p>
             <p id="preview-cycle-period" class="mt-0.5 text-xs font-bold text-slate-600">Select technician and month to preview.</p>
           </div>
           <span id="preview-cycle-badge" class="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-wider text-blue-700 shadow-sm">Calendar Month Salary</span>
@@ -193,7 +194,11 @@
                   </form>
                   <button type="button" onclick="openPaymentModal('finalize', '{{ route('technicians.salaries.finalize', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}', '{{ route('technicians.salaries.repair-deductions', $sheet) }}')" class="btn-primary !px-2.5 !py-1 text-xs">Finalize</button>
                   @elseif($sheet->status !== 'Paid')
+                  @if((float) $sheet->balance_amount > 0)
                   <button type="button" onclick="openPaymentModal('pay', '{{ route('technicians.salaries.pay', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}', '{{ route('technicians.salaries.repair-deductions', $sheet) }}')" class="btn-secondary !px-2.5 !py-1 text-xs text-emerald-600">Mark Paid</button>
+                  @else
+                  <span class="text-xs text-slate-500">No cash due</span>
+                  @endif
                   @if($sheet->status === 'Finalized' && (float) $sheet->paid_amount === 0.0)
                   <form method="POST" action="{{ route('technicians.salaries.reopen', $sheet) }}" data-confirm="Reopen this unpaid paysheet? Its deductions will be reversed until you finalize it again.">
                     @csrf<x-submission-token/>
@@ -203,12 +208,10 @@
                   @endif
                   @endif
                   
-                  <button type="button" onclick="viewBreakdown('{{ $sheet->number }}', '{{ $sheet->technician->name }}', '{{ $sheet->period_start->format('F Y') }}', '{{ $sheet->basic_salary }}', '{{ $sheet->ot_amount }}', '{{ $sheet->commission }}', '{{ $sheet->advances }}', '{{ $sheet->late_deduction }}', '{{ $sheet->early_leave_deduction }}', '{{ $sheet->half_day_deduction }}', '{{ $sheet->no_pay_deduction }}', '{{ $sheet->own_bike_deduction }}', '{{ $sheet->epf_employee }}', '{{ $sheet->other_deductions }}', '{{ $sheet->net_payable }}', '{{ $sheet->paid_amount }}', '{{ $sheet->balance_amount }}', '{{ $sheet->payment_method }}', '{{ $sheet->created_at->format('d M Y') }}')" class="btn-secondary !px-2.5 !py-1 text-xs">
+                  <button type="button" data-breakdown="{{ json_encode([$sheet->number, $sheet->technician->name, $salaryMonthLabel ?? $sheet->period_start->format('F Y'), $sheet->base_earnings, $sheet->ot_amount, $sheet->commission, $sheet->advances, $sheet->late_deduction, $sheet->early_leave_deduction, $sheet->half_day_deduction, $sheet->no_pay_deduction, $sheet->own_bike_deduction, $sheet->epf_employee, (float) $sheet->other_deductions + (float) $sheet->manual_deductions + (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0), $sheet->net_payable, $sheet->paid_amount, $sheet->balance_amount, $sheet->payment_method, $sheet->created_at->format('d M Y'), $sheet->gross_salary, $sheet->total_deductions, (float) $sheet->allowances + (float) $sheet->manual_additions + (float) $sheet->worked_on_leave_pay]) }}" onclick="viewBreakdown(...JSON.parse(this.dataset.breakdown))" class="btn-secondary !px-2.5 !py-1 text-xs">
                     🔎 View
                   </button>
-                  <button type="button" onclick="window.print()" class="btn-secondary !px-2.5 !py-1 text-xs">
-                    🖨️
-                  </button>
+                  <a target="_blank" href="{{ route('technicians.salaries.slip', ['sheet' => $sheet, 'print' => 1]) }}" class="btn-secondary !px-2.5 !py-1 text-xs" aria-label="Print salary slip {{ $sheet->number }}">🖨️</a>
                 </div>
               </td>
             </tr>
@@ -239,13 +242,13 @@
         <div class="text-center pb-4 border-b border-slate-100">
           <h2 class="text-lg font-black tracking-tight text-red-600 uppercase">Fasmir Motors</h2>
           <p class="text-[10px] text-slate-400">Bike Repair Center & Spare Parts</p>
-          <div class="mt-2 text-slate-800 font-bold">PAYSHEET: <span id="mdNumber" class="text-red-600"></span></div>
+          <div data-print-summary class="mt-2 text-slate-800 font-bold"><span>PAYSHEET:</span> <strong id="mdNumber" class="text-red-600"></strong></div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 border-b border-slate-100 pb-3">
-          <div><span class="text-slate-400">Technician:</span> <strong id="mdTech" class="text-slate-900 block text-sm"></strong></div>
+          <div data-print-summary><span class="text-slate-400">Technician:</span> <strong id="mdTech" class="text-slate-900 block text-sm"></strong></div>
           <div class="text-right">
-            <div><span class="text-slate-400">Salary Period:</span> <strong id="mdPeriod" class="text-slate-900 block"></strong></div>
+            <div data-print-summary><span class="text-slate-400">Salary Period:</span> <strong id="mdPeriod" class="text-slate-900 block"></strong></div>
             <div><span class="text-slate-400">Generated Date:</span> <span id="mdDate" class="text-slate-500"></span></div>
           </div>
         </div>
@@ -255,7 +258,7 @@
           <h4 class="font-extrabold text-green-700 uppercase tracking-wide border-b border-green-100 pb-1 mb-2">➕ Income / Additions</h4>
           <table class="w-full text-slate-700">
             <tr>
-              <td class="py-1">Basic Salary</td>
+              <td class="py-1">Base earnings</td>
               <td class="text-right font-mono font-bold">Rs. <span id="mdBasic"></span></td>
             </tr>
             <tr>
@@ -266,6 +269,7 @@
               <td class="py-1">Commissions</td>
               <td class="text-right font-mono font-bold text-green-600">Rs. <span id="mdCommission"></span></td>
             </tr>
+            <tr><td class="py-1">Allowances and other earnings</td><td class="text-right font-mono">Rs. <span id="mdExtraEarnings"></span></td></tr>
             <tr class="border-t border-slate-100 font-extrabold text-slate-900">
               <td class="py-2">Gross Salary</td>
               <td class="text-right font-mono">Rs. <span id="mdGross"></span></td>
@@ -341,7 +345,7 @@
         {{-- Print Action --}}
         <div class="flex justify-end gap-2 pt-4 print:hidden">
           <button type="button" onclick="closeBreakdown()" class="btn-secondary">Close</button>
-          <button type="button" onclick="window.print()" class="btn-primary shadow-lg shadow-red-200">🖨️ Print Paysheet</button>
+          <button type="button" data-print-title="Salary Paysheet" onclick="window.workshopPrint(event)" class="btn-primary shadow-lg shadow-red-200">🖨️ Print Paysheet</button>
         </div>
       </div>
     </dialog>
@@ -349,7 +353,7 @@
   </div>
 
   <script>
-    function viewBreakdown(number, name, period, basic, ot, commission, advances, late, early, half, noPay, bike, epf, other, net, paid, balance, method, date) {
+    function viewBreakdown(number, name, period, basic, ot, commission, advances, late, early, half, noPay, bike, epf, other, net, paid, balance, method, date, savedGross, savedDeductions, extraEarnings) {
       const basicVal = parseFloat(basic) || 0;
       const otVal = parseFloat(ot) || 0;
       const commVal = parseFloat(commission) || 0;
@@ -362,8 +366,8 @@
       const epfVal = parseFloat(epf) || 0;
       const otherVal = parseFloat(other) || 0;
 
-      const gross = basicVal + otVal + commVal;
-      const totalDeductions = advancesVal + lateVal + earlyVal + halfVal + noPayVal + bikeVal + epfVal + otherVal;
+      const gross = parseFloat(savedGross) || 0;
+      const totalDeductions = parseFloat(savedDeductions) || 0;
 
       document.getElementById('mdNumber').textContent = number;
       document.getElementById('mdTech').textContent = name;
@@ -374,6 +378,7 @@
       document.getElementById('mdBasic').textContent = basicVal.toFixed(2);
       document.getElementById('mdOt').textContent = otVal.toFixed(2);
       document.getElementById('mdCommission').textContent = commVal.toFixed(2);
+      document.getElementById('mdExtraEarnings').textContent = (parseFloat(extraEarnings) || 0).toFixed(2);
       document.getElementById('mdGross').textContent = gross.toFixed(2);
 
       document.getElementById('mdAdvances').textContent = advancesVal.toFixed(2);
@@ -624,6 +629,7 @@
             : '—';
         const attendance = data.attendance_summary || data.attendance || {};
 
+        document.getElementById('preview-pay-basis').textContent = data.pay_basis || '';
         document.getElementById('preview-cycle-label').textContent = data.salary_cycle_label || 'Calendar Month Salary';
         document.getElementById('preview-cycle-badge').textContent = data.salary_cycle_label || 'Calendar Month Salary';
         document.getElementById('preview-cycle-period').textContent = `Salary Month: ${data.salary_month_label || ''} · Salary Period: ${fmtDate(data.salary_period_start)} to ${fmtDate(data.salary_period_end)}`;

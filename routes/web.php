@@ -19,6 +19,7 @@ use App\Http\Controllers\DataManagementController;
 use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\GlobalSearchController;
+use App\Http\Controllers\InvoiceDetailsController;
 use App\Http\Controllers\JobAdvanceController;
 use App\Http\Controllers\JobCardController;
 use App\Http\Controllers\JobDuePaymentController;
@@ -86,6 +87,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('job-cards/{job}/parts/multiple', [JobCardController::class, 'addMultipleParts'])->name('jobs.parts.store_multiple');
     Route::post('job-cards/{job}/parts/{part}/update', [JobCardController::class, 'updatePart'])->name('jobs.parts.update');
     Route::delete('job-cards/{job}/parts/{part}', [JobCardController::class, 'deletePart'])->name('jobs.parts.destroy');
+    Route::put('job-cards/{job}/bike-number', [JobCardController::class, 'bikeNumber'])->name('jobs.bike-number');
+    Route::put('job-cards/{job}/bill-details', [JobCardController::class, 'billDetails'])->name('jobs.bill-details');
     Route::post('job-cards/{job}/invoice', [JobCardController::class, 'invoice'])->name('jobs.invoice');
     Route::post('job-cards/{job}/due-payment', JobDuePaymentController::class)->name('jobs.dues.payment');
     Route::post('job-cards/{job}/advances', JobAdvanceController::class)->name('jobs.advances.store');
@@ -151,6 +154,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('sales/accident-quotations', [AccidentQuotationController::class, 'store'])->name('sales.accident-quotations.store');
     Route::get('sales/invoices', [SalesBillingController::class, 'invoices'])->name('sales.invoices');
     Route::get('sales/invoices/{invoice}', [SalesBillingController::class, 'invoiceShow'])->name('sales.invoices.show');
+    Route::put('sales/invoices/{invoice}/details', InvoiceDetailsController::class)->name('sales.invoices.details');
     Route::get('sales/invoices/{invoice}/pdf', [SalesBillingController::class, 'invoicePdf'])->name('sales.invoices.pdf');
     Route::delete('sales/invoices/{invoice}', [SalesBillingController::class, 'cancelInvoice'])->name('sales.invoices.cancel');
     Route::get('sales/payments', [SalesBillingController::class, 'payments'])->name('sales.payments');
@@ -165,7 +169,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::get('technicians/create', [TechnicianController::class, 'create'])->name('technicians.create');
     Route::get('technicians/{technician}/edit', [TechnicianController::class, 'edit'])->name('technicians.edit');
     Route::get('technicians/attendance', [TechnicianController::class, 'attendanceIndex'])->name('technicians.attendance.index');
+    Route::get('technicians/attendance/preview', [TechnicianController::class, 'attendancePreview'])->name('technicians.attendance.preview');
     Route::post('technicians/attendance', [TechnicianController::class, 'attendanceStore'])->name('technicians.attendance.store');
+    Route::post('technicians/attendance/{record}/recalculate', [TechnicianController::class, 'attendanceRecalculate'])->name('technicians.attendance.recalculate');
     Route::post('technicians/attendance/range', [TechnicianController::class, 'attendanceRangeStore'])->name('technicians.attendance.range.store');
     Route::post('technicians/attendance/import/preview', [TechnicianController::class, 'attendanceImportPreview'])->name('technicians.attendance.import.preview');
     Route::post('technicians/attendance/import/{batch}/confirm', [TechnicianController::class, 'attendanceImportConfirm'])->name('technicians.attendance.import.confirm');

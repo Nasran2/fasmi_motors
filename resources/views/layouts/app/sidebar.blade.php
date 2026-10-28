@@ -32,13 +32,17 @@
             <div class="relative mt-3 border-t border-white/10 bg-[#06162f]/80 pt-3 backdrop-blur"><x-desktop-user-menu :name="auth()->user()->name" /></div>
         </flux:sidebar>
 
+        <script type="application/json" id="workshop-print-config">{!! \Illuminate\Support\Js::encode(\App\Support\PrintDocument::configuration() + [
+            'title' => $title ?? 'Report',
+            'reportUrl' => request()->routeIs('reports.*') ? request()->fullUrlWithQuery(['print' => 1, 'page' => null, 'export_csv' => null]) : null,
+        ]) !!}</script>
         @php($layoutNotifications = app(\App\Services\WorkshopNotificationService::class)->summary(auth()->user()))
         <header class="workshop-topbar [grid-area:header] sticky top-0 z-30 hidden h-[68px] items-center gap-4 border-b border-slate-200 bg-white/95 px-5 shadow-sm backdrop-blur lg:flex print:hidden">
             <button type="button" aria-label="Menu" class="grid size-10 shrink-0 place-items-center rounded-lg text-[#0b2447] hover:bg-slate-100"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
             
             <div class="ml-auto flex items-center gap-3">
                 <x-workshop-notifications :summary="$layoutNotifications" />
-                <span class="grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer" onclick="window.print()" title="Print">
+                <span class="grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer" onclick="window.workshopPrint(event)" title="Print">
                     <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
                 </span>
                 <span class="grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer" onclick="document.documentElement.requestFullscreen()" title="Fullscreen">

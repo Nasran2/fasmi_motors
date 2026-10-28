@@ -8,7 +8,7 @@ use App\Models\AccountTransaction;
 use App\Models\DailyClosing;
 use App\Models\Invoice;
 use App\Services\AccountService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\PrintDocument;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +23,7 @@ class DailyClosingController extends BaseAccountController
         $expected = collect(['main', 'spare_parts', 'bank', 'cash'])->mapWithKeys(fn ($type) => [$type => $this->calculate($type, $date)])->all();
         $closing = DailyClosing::whereDate('closing_date', $date)->first();
         $closings = DailyClosing::with('closer')->whereDate('closing_date', $date)->latest()->paginate(20)->withQueryString();
-        $bills = Invoice::with(['customer', 'bike', 'jobCard.intake.bike'])->whereDate('created_at', $date)->where('status', '!=', 'Cancelled')->orderByDesc('created_at')->get();
+        $bills = Invoice::with(['customer', 'bike', 'jobCard.intake.bike'])->billDatedOn($date)->where('status', '!=', 'Cancelled')->orderByDesc('created_at')->get();
         $billGroups = collect([
             'Job Income' => $bills->where('invoice_type', 'Job Card Bill'),
             'Spare Parts Sales' => $bills->where('invoice_type', 'Parts Sale'),
@@ -91,14 +91,14 @@ class DailyClosingController extends BaseAccountController
         $closing = DailyClosing::whereDate('closing_date', $date)->first();
         $rows = collect(['main' => 'Main Account', 'spare_parts' => 'Spare Parts', 'bank' => 'Bank Account', 'cash' => 'Cash Book'])->map(function ($label, $type) use ($date, $closing) {
             $expected = $this->calculate($type, $date);
-            $actual = (float) ($closing?->{"{$type}_actual_balance"} ?? $expected['closing']);
+            $actual = (float) ($closing->{"{$type}_actual_balance"} ?? $expected['closing']);
 
             return [$label, $expected['opening'], $expected['income'], $expected['expense'], $expected['closing'], $actual, $actual - $expected['closing']];
         })->values()->all();
         if ($request->input('format') === 'excel') {
             return Excel::download(new DailyClosingExport($rows), "daily_closing_{$date}.xlsx");
         }
-        $pdf = Pdf::loadView('accounts.exports.daily-closing-pdf', compact('date', 'rows', 'closing') + ['printedBy' => $request->user()]);
+        $pdf = PrintDocument::pdf('accounts.exports.daily-closing-pdf', compact('date', 'rows', 'closing') + ['printedBy' => $request->user()]);
 
         return $request->boolean('print') ? $pdf->stream("daily_closing_{$date}.pdf") : $pdf->download("daily_closing_{$date}.pdf");
     }

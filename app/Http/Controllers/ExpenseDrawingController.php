@@ -8,8 +8,8 @@ use App\Models\Drawing;
 use App\Models\Expense;
 use App\Models\FinancialCategory;
 use App\Services\AccountService;
+use App\Support\PrintDocument;
 use App\Support\SpreadsheetSafeText;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -156,19 +156,24 @@ class ExpenseDrawingController extends Controller
         abort_unless(in_array($module, ['expense', 'drawing'], true), 404);
         [$from, $to] = $this->range($r);
         $date = $module.'_date';
-        $rows = ($module === 'expense' ? Expense::with('account', 'creator') : Drawing::with('account', 'creator'))->whereBetween($date, [$from, $to])->get();
+        $rows = ($module === 'expense' ? Expense::with('account', 'creator') : Drawing::with('account', 'creator'))->whereBetween($date, [$from, $to])
+            ->when($r->q, fn ($q, $value) => $q->where(fn ($q) => $q->where('number', 'like', "%{$value}%")->orWhere('note', 'like', "%{$value}%")->orWhere('reference_number', 'like', "%{$value}%")->when($module === 'expense', fn ($q) => $q->orWhere('description', 'like', "%{$value}%"))))
+            ->when($r->category, fn ($q, $value) => $q->where($module === 'expense' ? 'category' : 'drawing_type', $value))
+            ->when($r->account_id, fn ($q, $value) => $q->where('account_id', $value))
+            ->when($r->payment_method, fn ($q, $value) => $q->where('payment_method', $value))
+            ->orderBy($date)->orderBy('id')->get();
         if ($r->format === 'excel') {
             return response()->streamDownload(function () use ($rows, $module, $date) {
                 $f = fopen('php://output', 'w');
                 fputcsv($f, ['Date', 'Number', 'Category / Person', 'Account', 'Method', 'Amount', 'Status']);
                 foreach ($rows as $x) {
-                    fputcsv($f, SpreadsheetSafeText::row([$x->$date?->format('Y-m-d'), $x->number, $module === 'expense' ? $x->category : $x->person_name, $x->account?->name, $x->payment_method, $x->amount, $x->status]));
+                    fputcsv($f, SpreadsheetSafeText::row([$x->getAttribute($date)?->format('Y-m-d'), $x->number, $module === 'expense' ? $x->category : $x->getAttribute('person_name'), $x->account?->getAttribute('name'), $x->payment_method, $x->amount, $x->status]));
                 }
                 fclose($f);
             }, "{$module}-report.csv", ['Content-Type' => 'text/csv']);
         }
 
-        return Pdf::loadView('finance-management.report', compact('rows', 'module', 'from', 'to'))->download("{$module}-report.pdf");
+        return PrintDocument::pdf('finance-management.report', compact('rows', 'module', 'from', 'to'))->download("{$module}-report.pdf");
     }
 
     private function range(Request $r)

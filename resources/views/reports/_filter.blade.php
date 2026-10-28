@@ -11,6 +11,19 @@
 
 @php
   $report = str_replace('reports.', '', request()->route()->getName());
+  $dateBasis = match ($report) {
+      'index', 'spare-parts', 'due-bills', 'customer-due' => 'Bill date',
+      'profit-loss' => 'Bill / expense dates and salary period end',
+      'collections' => 'Payment date',
+      'main-account', 'spare-parts-account', 'bank-account', 'cash-book' => 'Payment / entry date',
+      'purchases', 'supplier-dues' => 'Purchase date',
+      'expenses' => 'Expense date', 'drawings' => 'Drawing date',
+      'salary' => 'Salary period', 'epf', 'etf' => 'Contribution month',
+      'attendance' => 'Attendance date', 'daily-closing' => 'Closing date',
+      'service-reminders' => 'Reminder due date', 'job-cards' => 'Job creation date',
+      'technicians' => 'Job / commission / attendance dates and salary period end',
+      default => 'Record date',
+  };
   $reportFields = \App\Support\ReportFilters::fields($report);
 @endphp
 
@@ -20,6 +33,7 @@
     <p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Reports</p>
     <h1 class="page-title">{{ $title }}</h1>
     <p class="page-subtitle">{{ $subtitle ?? '' }}</p>
+    @unless($snapshot ?? false)<p class="mt-1 text-xs font-semibold text-slate-500">Date filter: {{ $dateBasis }}</p>@endunless
   </div>
   <div class="flex flex-wrap gap-2">
     @if(auth()->user()->canAccess('reports.print'))
@@ -27,13 +41,6 @@
       <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
       Print / PDF
     </a>
-    @if(request()->boolean('print') && !request()->boolean('export_csv'))
-    <script>
-      window.addEventListener('load', function() {
-          window.print();
-      });
-    </script>
-    @endif
     @endif
     @if(auth()->user()->canAccess('reports.export_excel'))
       <a href="{{ request()->fullUrlWithQuery(['export_csv' => 1, 'print' => null, 'page' => null]) }}" class="btn-secondary flex items-center gap-1.5">
@@ -105,7 +112,7 @@
   $activeFilters = collect(request()->only($filterKeys))->filter(fn($value) => $value !== null && $value !== '' && $value !== []);
 @endphp
 @if($activeFilters->isNotEmpty())
-<p class="text-sm text-slate-600">Filters:
+<p data-print-filters class="text-sm text-slate-600">Filters:
 @foreach($reportFields as $field)
 @if(request()->filled($field['name']))<span class="mr-3">{{ $field['label'] }}: {{ $field['options'][request($field['name'])] ?? request($field['name']) }}</span>@endif
 @endforeach
@@ -121,7 +128,7 @@
     </div>
     <div class="text-right">
       <h2 class="text-xl font-bold">{{ $title }}</h2>
-      <p class="text-sm text-slate-500">{{ ($snapshot ?? false) ? 'Current stock snapshot' : ($range === 'all_time' ? 'All time' : $from->format('d M Y').' — '.$to->format('d M Y')) }}</p>
+      <p class="text-sm text-slate-500">{{ ($snapshot ?? false) ? 'Current stock snapshot' : ($range === 'all_time' ? 'All time' : $from->format('d M Y').' — '.$to->format('d M Y')) }}@unless($snapshot ?? false) · {{ $dateBasis }}@endunless</p>
       <p class="text-xs text-slate-400">Generated: {{ now()->format('d M Y h:i A') }} by {{ auth()->user()->name }}</p>
     </div>
   </div>

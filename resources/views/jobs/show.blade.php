@@ -21,6 +21,7 @@
 <div class="space-y-5">
 <x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
 <x-flash/>
+<x-bill-details-form :job="$job"/>
 @include('jobs.partials.spare-parts')
 <div class="grid gap-5 xl:grid-cols-3" x-data="{
     discountPercentage: @js(old('discount_percentage', $job->discount_percentage ?? 0)),
@@ -186,6 +187,11 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: Math.max(0, jobTotal + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0) - {{ $advanceTotal }})})">
             @csrf<x-submission-token/>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <label><span class="label">Bill date</span><input type="date" name="bill_date" value="{{ old('bill_date', $job->bill_date?->toDateString() ?? today()->toDateString()) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
+                <label><span class="label">Payment date</span><input type="date" name="paid_at" value="{{ old('paid_at', today()->toDateString()) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
+            </div>
+            <p class="text-xs text-slate-500">Sales use the bill date. Receipts and cash movements use the payment date.</p>
             @if($job->repair_staff)
             <div class="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
                 <p class="text-sm font-bold">Staff bike payment · {{ $job->repair_staff->name }}</p>
@@ -309,7 +315,11 @@
                                 </div>
                                 @else
                                 <p class="text-xs text-slate-600">
-                                    @if(str_starts_with($log->note ?? '', 'Advance '))
+                                    @if(str_starts_with($log->note ?? '', 'Bike number:'))
+                                    Bike number corrected by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>
+                                    @elseif(str_starts_with($log->note ?? '', 'Bill details:'))
+                                    Bill details corrected by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>
+                                    @elseif(str_starts_with($log->note ?? '', 'Advance '))
                                     Advance recorded by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>
                                     @else
                                     Status changed from <span class="font-extrabold text-slate-500">{{ $log->old_status }}</span> to <span class="font-extrabold text-emerald-600">{{ $log->new_status }}</span> by <span class="font-bold text-slate-800">{{ $log->changer_name ?: 'System' }}</span>

@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Invoice;
+use App\Models\JobAdvance;
 use App\Models\JobCard;
 use App\Models\PaymentCorrection;
 use App\Models\Product;
@@ -13,6 +14,8 @@ use App\Models\ProductCategory;
 use App\Models\Store;
 use App\Models\Technician;
 use App\Services\AccountService;
+use App\Services\BikeRegistrationService;
+use App\Services\BillDetailsService;
 use App\Services\JobPartService;
 use App\Services\SettlementService;
 use App\Services\StaffBikeRepairService;
@@ -29,9 +32,16 @@ class JobCardController extends Controller
 {
     public function index(Request $r)
     {
-        $r->validate(['bike_id' => 'nullable|integer|min:1']);
-        $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest();
-        if ($r->filled('bike_id')) {
+        $data = $r->validate(['bike_id' => 'nullable|integer|min:1', 'bike_search' => 'nullable|string|max:60']);
+        $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest()->latest('id');
+        $search = preg_replace('/[^a-z0-9]/i', '', $data['bike_search'] ?? '');
+        if ($search !== '') {
+            $normalize = fn ($column) => "LOWER(REPLACE(REPLACE(REPLACE(REPLACE({$column}, ' ', ''), '-', ''), '.', ''), '/', ''))";
+            $match = fn ($bike) => $bike->whereRaw($normalize('number').' LIKE ?', ['%'.strtolower($search).'%']);
+            $q->where(fn ($jobs) => $jobs->whereHas('intake.bike', $match)->orWhereHas('quickBike', $match)
+                ->orWhere(fn ($quick) => $quick->where('is_quick_job', true)->whereNull('quick_bike_id')
+                    ->whereRaw($normalize("JSON_UNQUOTE(JSON_EXTRACT(quick_bike_details, '$.number'))").' LIKE ?', ['%'.strtolower($search).'%'])));
+        } elseif ($r->filled('bike_id')) {
             $q->where(fn ($query) => $query->where('quick_bike_id', $r->integer('bike_id'))
                 ->orWhereHas('intake', fn ($intake) => $intake->where('bike_id', $r->integer('bike_id'))));
         }
@@ -45,6 +55,13 @@ class JobCardController extends Controller
 
         $jobs = $q->paginate(15)->withQueryString();
         $previousBalancesByJob = $jobs->getCollection()->mapWithKeys(fn (JobCard $job) => [$job->id => PreviousCustomerBalance::forJob($job)]);
+
+        if ($r->expectsJson()) {
+            return response()->json([
+                'html' => view('jobs.partials.list', compact('jobs', 'previousBalancesByJob'))->render(),
+                'total' => $jobs->total(),
+            ])->header('Cache-Control', 'no-store')->header('Vary', 'Accept');
+        }
 
         return view('jobs.index', [
             'jobs' => $jobs,
@@ -112,7 +129,7 @@ class JobCardController extends Controller
             ->get();
 
         $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments');
-        $advances = \App\Models\JobAdvance::with('account', 'cheque')->where('job_card_id', $job->id)->whereNull('payment_id')->orderBy('id')->get();
+        $advances = JobAdvance::with('account', 'cheque')->where('job_card_id', $job->id)->whereNull('payment_id')->orderBy('id')->get();
         $previousBalances = PreviousCustomerBalance::forJob($job);
         $oldDue = PreviousCustomerBalance::total($previousBalances);
         $relatedInvoiceIds = PreviousCustomerBalance::forJob($job, includeSettled: true)->pluck('invoice_id')->push($job->invoice?->id)->filter();
@@ -148,6 +165,24 @@ class JobCardController extends Controller
             'selectedProductId' => request()->integer('product') ?: null,
             'selectedStoreId' => request()->integer('store') ?: null,
         ]);
+    }
+
+    public function bikeNumber(Request $request, JobCard $job, BikeRegistrationService $service)
+    {
+        try {
+            $service->correct($job, $request->validateWithBag('bikeNumber', BikeRegistrationService::rules()));
+        } catch (ValidationException $exception) {
+            throw $exception->errorBag('bikeNumber');
+        }
+
+        return back()->with('success', 'Bike number corrected across all linked intakes, job cards, bills and reports.');
+    }
+
+    public function billDetails(Request $request, JobCard $job, BillDetailsService $service)
+    {
+        $service->updateJob($job, $request->validate(BillDetailsService::rules()));
+
+        return back()->with('success', 'Bill date updated. Existing payment dates are unchanged.');
     }
 
     public function update(Request $r, JobCard $job)
@@ -355,6 +390,7 @@ class JobCardController extends Controller
 
     public function invoice(Request $r, JobCard $job, WorkshopService $service)
     {
+        $dates = $r->validate(['bill_date' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today', 'paid_at' => 'sometimes|required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today']);
         $labels = $r->validate([
             'show_previous_balance_on_bill' => 'sometimes|required|boolean',
             'include_previous_balance' => 'sometimes|required|boolean',
@@ -376,11 +412,14 @@ class JobCardController extends Controller
         $input = $r->all();
         $input['account_id'] ??= Account::systemAccount('main')->id;
         $rows = $settlement->rows($input);
-        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows, $labels, $salaryRepair, $repair) {
+        $invoice = DB::transaction(function () use ($r, $job, $service, $settlement, $rows, $labels, $salaryRepair, $repair, $dates) {
             if ($salaryRepair && $job->repair_staff) {
                 Technician::whereKey($job->repair_staff->id)->lockForUpdate()->firstOrFail();
             }
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
+            if (! empty($dates['bill_date'])) {
+                $job->update(['bill_date' => $dates['bill_date']]);
+            }
             if ($labels) {
                 $job->update($labels);
             }
@@ -388,7 +427,7 @@ class JobCardController extends Controller
                 $job->update(['show_previous_balance_on_bill' => $r->boolean('show_previous_balance_on_bill')]);
             }
 
-            $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id, ! $salaryRepair && $r->boolean('include_previous_balance', true));
+            $invoice = $service->invoice($job, $settlement->total($rows), count($rows) > 1 ? 'Mixed' : ($rows[0]['method'] ?? 'Credit/Due'), null, $rows, $r->parts_technician_id, ! $salaryRepair && $r->boolean('include_previous_balance', true), $dates['paid_at'] ?? null);
             if ($salaryRepair) {
                 app(StaffBikeRepairService::class)->createPlan($job, [
                     'deduction_type' => $repair['repair_deduction_type'],

@@ -197,6 +197,9 @@
     .search-dropdown .ts-control .item { padding:0 !important; background:transparent !important; border:0 !important; border-radius:0 !important; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
     .search-dropdown .ts-control input { min-height:0 !important; height:auto !important; padding:0 !important; border:0 !important; background:transparent !important; box-shadow:none !important; border-radius:0 !important; font-size:14px !important; }
     .search-filter.has-query .ts-control .item { display:none; }
+    .search-dropdown-menu .dropdown-input-wrap { padding:8px; border-bottom:1px solid #e2e8f0; }
+    .search-dropdown-menu .dropdown-input { width:100%; min-height:40px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-size:14px; background:#fff; color:#0f172a; }
+    .search-dropdown-menu .dropdown-input:focus { border-color:#ed142b; box-shadow:0 0 0 2px #ed142b15; }
     .search-dropdown-menu { z-index:10000; background:#fff; color:#1e293b; border-radius:8px !important; margin:0 !important; }
     .search-dropdown-menu .ts-dropdown-content { max-height:240px; overscroll-behavior:contain; }
     .search-dropdown-menu .option { padding:11px 14px !important; color:#334155; overflow-wrap:anywhere; line-height:1.45; border-bottom:1px solid #f1f5f9; }
@@ -289,9 +292,19 @@
             Array.from(elements).forEach(el => {
                 if(!el.tomselect) {
                     const searchableFilter = el.hasAttribute('data-search-filter');
+                    const liveBikeFilter = el.hasAttribute('data-bike-search');
                     const control = new TomSelect(el, {
-                        plugins: searchableFilter ? [] : ['remove_button'],
+                        plugins: liveBikeFilter ? ['dropdown_input'] : (searchableFilter ? [] : ['remove_button']),
                         maxOptions: null,
+                        ...(liveBikeFilter ? {
+                            refreshThrottle: 0,
+                            hidePlaceholder: false,
+                            score(query) {
+                                const normalize = value => String(value).replace(/[^a-z0-9]/gi, '').toLowerCase();
+                                const search = normalize(query);
+                                return item => !search ? 1 : (item.value !== '' && normalize(item.text).includes(search) ? 1 : 0);
+                            },
+                        } : {}),
                         ...(searchableFilter ? {
                             allowEmptyOption: true,
                             create: false,
@@ -299,7 +312,10 @@
                             wrapperClass: 'ts-wrapper search-dropdown search-filter',
                             dropdownClass: 'ts-dropdown search-dropdown-menu',
                             copyClassesToDropdown: false,
-                            onType(query) { this.wrapper.classList.toggle('has-query', Boolean(query)); },
+                            onType(query) {
+                                this.wrapper.classList.toggle('has-query', !liveBikeFilter && Boolean(query));
+                                if (liveBikeFilter) el.dispatchEvent(new CustomEvent('bike-search-input', {bubbles: true, detail: {query}}));
+                            },
                             onChange() { this.wrapper.classList.remove('has-query'); },
                             onBlur() { this.wrapper.classList.remove('has-query'); },
                         } : {}),

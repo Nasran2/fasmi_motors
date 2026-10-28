@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Support\PrintDocument;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Dompdf\FontMetrics;
 use Illuminate\Database\Eloquent\Builder;
@@ -81,6 +82,7 @@ class ProductPdfExport
         $weights = array_sum(array_map(fn ($column) => self::COLUMNS[$column][1], $columns));
         $rowHeight = $landscape ? 16 : 14.5;
         $pages = (int) ceil($total / $perPage);
+        $identity = PrintDocument::configuration();
         $ink = [0.12, 0.18, 0.28];
         $line = [0.84, 0.87, 0.91];
         foreach ($products->chunk($perPage)->values() as $index => $rows) {
@@ -90,7 +92,7 @@ class ProductPdfExport
             $page = $from + $index;
             $first = ($page - 1) * $perPage + 1;
             $last = $first + $rows->count() - 1;
-            $canvas->text($margin, 15, 'Products & Stock', $bold, 14, $ink);
+            $canvas->text($margin, 15, $identity['business'].' | Products & Stock', $bold, 14, $ink);
             $canvas->text($margin, 36, 'Products '.$first.'-'.$last.' of '.$total.' | Export pages '.$from.'-'.$to.' | '.now()->format('d M Y, H:i'), $font, 7.5, $ink);
             $canvas->filled_rectangle($margin, 52, $width - 2 * $margin, 20, [0.92, 0.94, 0.97]);
             $x = $margin;

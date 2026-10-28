@@ -142,13 +142,28 @@ class TechnicianController extends Controller
         ]);
     }
 
+    public function attendancePreview(Request $request, AttendanceCalculationService $calculator)
+    {
+        $data = $request->validate([
+            'technician_id' => ['required', 'integer', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late'])],
+            'in_time' => ['nullable', 'date_format:H:i'],
+            'out_time' => ['nullable', 'date_format:H:i'],
+        ]);
+
+        return response()->json($calculator->calculateDailyAttendance(
+            Technician::findOrFail($data['technician_id']), $data['date'], $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null,
+        ));
+    }
+
     public function attendanceStore(Request $request, AttendanceCalculationService $calculator)
     {
         $bulk = $request->has('technician_ids') && is_array($request->input('technician_ids'));
         $ids = $bulk ? $request->input('technician_ids') : [$request->input('technician_id')];
 
         $request->validate([
-            'date' => ['required', 'date'],
+            'date' => ['required', 'date_format:Y-m-d'],
             'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late'])],
             'in_time' => ['nullable', 'date_format:H:i'],
             'out_time' => ['nullable', 'date_format:H:i'],
@@ -159,104 +174,135 @@ class TechnicianController extends Controller
             'is_manual_edit' => ['nullable'],
         ]);
 
-        if (! $bulk) {
+        if ($bulk) {
             $request->validate([
-                'technician_id' => ['required', 'exists:technicians,id'],
+                'technician_ids' => ['required', 'array', 'min:1', 'max:500'],
+                'technician_ids.*' => ['required', 'integer', 'distinct', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
+            ]);
+        } else {
+            $request->validate([
+                'technician_id' => ['required', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
             ]);
         }
 
         $date = $request->input('date');
-        $savedCount = 0;
+        $savedCount = DB::transaction(function () use ($ids, $bulk, $date, $request, $calculator) {
+            $savedCount = 0;
+            sort($ids, SORT_NUMERIC);
 
-        foreach ($ids as $techId) {
-            if (! $techId) {
-                continue;
-            }
-
-            $technician = Technician::findOrFail($techId);
-
-            // 1. Check finalized salary sheets
-            $isFinalized = TechnicianSalarySheet::where('technician_id', $technician->id)
-                ->whereDate('period_start', '<=', $date)
-                ->whereDate('period_end', '>=', $date)
-                ->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])
-                ->exists();
-            if ($isFinalized) {
-                if ($bulk) {
+            foreach ($ids as $techId) {
+                if (! $techId) {
                     continue;
                 }
-                throw ValidationException::withMessages(['date' => "This attendance for {$technician->name} is included in finalized salary. Reopen paysheet before editing."]);
-            }
 
-            $oldRecord = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->first();
+                $technician = Technician::lockForUpdate()->findOrFail($techId);
 
-            // Edit reason is required if updating existing
-            if ($oldRecord && empty($request->edit_reason) && ! $bulk) {
-                throw ValidationException::withMessages(['edit_reason' => 'Edit Reason is required when updating attendance record.']);
-            }
+                // 1. Check finalized salary sheets
+                $isFinalized = TechnicianSalarySheet::where('technician_id', $technician->id)
+                    ->whereDate('period_start', '<=', $date)
+                    ->whereDate('period_end', '>=', $date)
+                    ->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])
+                    ->exists();
+                if ($isFinalized) {
+                    if ($bulk) {
+                        continue;
+                    }
+                    throw ValidationException::withMessages(['date' => "This attendance for {$technician->name} is included in finalized salary. Reopen paysheet before editing."]);
+                }
 
-            $status = $request->input('status');
-            $isManual = $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
+                $oldRecord = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->first();
 
-            $metrics = $calculator->calculateDailyAttendance(
-                $technician,
-                $date,
-                $status,
-                $request->input('in_time'),
-                $request->input('out_time'),
-                $isManual ? [
-                    'ot_amount' => $request->filled('ot_amount') ? (float) $request->input('ot_amount') : null,
-                    'deduction_amount' => $request->filled('deduction_amount') ? (float) $request->input('deduction_amount') : null,
-                ] : []
-            );
-            $status = $metrics['status'];
+                // Edit reason is required if updating existing
+                if ($oldRecord && empty($request->edit_reason) && ! $bulk) {
+                    throw ValidationException::withMessages(['edit_reason' => 'Edit Reason is required when updating attendance record.']);
+                }
 
-            $payload = array_merge($request->only(['date', 'in_time', 'out_time', 'note', 'edit_reason']), $metrics, [
-                'technician_id' => $technician->id,
-                'status' => $status,
-                'is_manual_edit' => $isManual,
-                'is_manual_entry' => true,
-                'edited_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
+                $status = $request->input('status');
+                $isManual = $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
 
-            if (! $oldRecord) {
-                $payload['created_by'] = auth()->id();
-            } else {
-                // Log Audit Log
-                AuditLog::create([
-                    'user_id' => auth()->id(),
-                    'event' => 'Attendance Edited',
-                    'auditable_type' => $technician->getMorphClass(),
-                    'auditable_id' => $technician->id,
-                    'old_values' => [
-                        'date' => $oldRecord->date->toDateString(),
-                        'in_time' => $oldRecord->in_time,
-                        'out_time' => $oldRecord->out_time,
-                        'ot_amount' => $oldRecord->ot_amount,
-                        'deduction_amount' => $oldRecord->deduction_amount,
-                        'status' => $oldRecord->status,
-                        'edit_reason' => $oldRecord->edit_reason,
-                    ],
-                    'new_values' => [
-                        'date' => $date,
-                        'in_time' => $request->input('in_time'),
-                        'out_time' => $request->input('out_time'),
-                        'ot_amount' => $metrics['ot_amount'],
-                        'deduction_amount' => $metrics['deduction_amount'],
-                        'status' => $status,
-                        'edit_reason' => $request->input('edit_reason'),
-                    ],
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
+                $metrics = $calculator->calculateDailyAttendance(
+                    $technician,
+                    $date,
+                    $status,
+                    $request->input('in_time'),
+                    $request->input('out_time'),
+                    $isManual ? [
+                        'ot_amount' => $request->filled('ot_amount') ? (float) $request->input('ot_amount') : null,
+                        'deduction_amount' => $request->filled('deduction_amount') ? (float) $request->input('deduction_amount') : null,
+                    ] : []
+                );
+                $status = $metrics['status'];
+
+                $payload = array_merge($request->only(['date', 'in_time', 'out_time', 'note', 'edit_reason']), $metrics, [
+                    'technician_id' => $technician->id,
+                    'status' => $status,
+                    'is_manual_edit' => $isManual,
+                    'is_manual_entry' => true,
+                    'edited_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
                 ]);
+
+                if (! $oldRecord) {
+                    $payload['created_by'] = auth()->id();
+                } else {
+                    // Log Audit Log
+                    AuditLog::create([
+                        'user_id' => auth()->id(),
+                        'event' => 'Attendance Edited',
+                        'auditable_type' => $technician->getMorphClass(),
+                        'auditable_id' => $technician->id,
+                        'old_values' => [
+                            'date' => $oldRecord->date->toDateString(),
+                            'in_time' => $oldRecord->in_time,
+                            'out_time' => $oldRecord->out_time,
+                            'ot_amount' => $oldRecord->ot_amount,
+                            'deduction_amount' => $oldRecord->deduction_amount,
+                            'status' => $oldRecord->status,
+                            'edit_reason' => $oldRecord->edit_reason,
+                        ],
+                        'new_values' => [
+                            'date' => $date,
+                            'in_time' => $request->input('in_time'),
+                            'out_time' => $request->input('out_time'),
+                            'ot_amount' => $metrics['ot_amount'],
+                            'deduction_amount' => $metrics['deduction_amount'],
+                            'status' => $status,
+                            'edit_reason' => $request->input('edit_reason'),
+                        ],
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                    ]);
+                }
+
+                TechnicianAttendance::updateOrCreate(['technician_id' => $technician->id, 'date' => $date], $payload);
+                $savedCount++;
             }
 
-            TechnicianAttendance::updateOrCreate(['technician_id' => $technician->id, 'date' => $date], $payload);
-            $savedCount++;
-        }
+            return $savedCount;
+        }, 3);
 
         return back()->with('success', "Attendance saved for {$savedCount} technician(s) and metrics calculated.");
+    }
+
+    public function attendanceRecalculate(Request $request, TechnicianAttendance $record, AttendanceCalculationService $calculator)
+    {
+        DB::transaction(function () use ($request, $record, $calculator) {
+            $staff = Technician::whereKey($record->technician_id)->lockForUpdate()->firstOrFail();
+            $record = TechnicianAttendance::lockForUpdate()->findOrFail($record->id);
+            $date = Carbon::parse($record->date)->toDateString();
+            if (TechnicianSalarySheet::where('technician_id', $staff->id)->whereDate('period_start', '<=', $date)->whereDate('period_end', '>=', $date)->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])->exists()) {
+                throw ValidationException::withMessages(['date' => 'Reopen the finalized paysheet before recalculating this attendance.']);
+            }
+            $before = $record->getAttributes();
+            $metrics = $calculator->calculateDailyAttendance($staff, $date, $record->status,
+                $record->in_time ? substr($record->in_time, 0, 5) : null,
+                $record->out_time ? substr($record->out_time, 0, 5) : null,
+                ['break_minutes' => $record->break_minutes, 'auto_filled_checkout' => $record->is_auto_checkout]);
+            $record->update($metrics + ['is_manual_edit' => false, 'edit_reason' => 'Recalculated using current attendance settings', 'edited_by' => auth()->id(), 'updated_by' => auth()->id()]);
+            AuditLog::create(['user_id' => auth()->id(), 'event' => 'Attendance Recalculated', 'auditable_type' => $staff->getMorphClass(), 'auditable_id' => $staff->id, 'old_values' => $before, 'new_values' => $record->getAttributes(), 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+        }, 3);
+
+        return back()->with('success', 'Attendance recalculated.');
     }
 
     public function attendanceImportPreview(Request $request, AttendanceImportService $importer)
@@ -279,7 +325,7 @@ class TechnicianController extends Controller
     {
         $data = $request->validate([
             'technician_ids' => ['required', 'array', 'min:1'], 'technician_ids.*' => ['required', 'distinct', 'exists:technicians,id'],
-            'date_from' => ['required', 'date'], 'date_to' => ['required', 'date', 'after_or_equal:date_from'],
+            'date_from' => ['required', 'date_format:Y-m-d'], 'date_to' => ['required', 'date_format:Y-m-d', 'after_or_equal:date_from'],
             'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday'])],
             'in_time' => ['nullable', 'date_format:H:i'], 'out_time' => ['nullable', 'date_format:H:i'], 'note' => ['nullable', 'max:1000'],
         ]);
@@ -288,66 +334,81 @@ class TechnicianController extends Controller
         if ($from->diffInDays($to) > 62) {
             throw ValidationException::withMessages(['date_to' => 'Bulk attendance is limited to 63 days at a time.']);
         }
-        $saved = 0;
-        foreach ($from->copy()->daysUntil($to) as $date) {
-            foreach ($data['technician_ids'] as $technicianId) {
-                $technician = Technician::findOrFail($technicianId);
-                if (TechnicianSalarySheet::where('technician_id', $technicianId)
-                    ->whereDate('period_start', '<=', $date)
-                    ->whereDate('period_end', '>=', $date)
-                    ->whereIn('status', ['Finalized', 'Paid', 'Partially Paid'])
-                    ->exists()) {
-                    continue;
+        $saved = DB::transaction(function () use ($from, $to, $data, $calculator) {
+            $saved = 0;
+            $staff = Technician::whereIn('id', $data['technician_ids'])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            foreach ($from->copy()->daysUntil($to) as $date) {
+                foreach ($data['technician_ids'] as $technicianId) {
+                    $technician = $staff->get($technicianId);
+                    if (TechnicianSalarySheet::where('technician_id', $technicianId)
+                        ->whereDate('period_start', '<=', $date)
+                        ->whereDate('period_end', '>=', $date)
+                        ->whereIn('status', ['Finalized', 'Paid', 'Partially Paid'])
+                        ->exists()) {
+                        continue;
+                    }
+                    $existing = TechnicianAttendance::where('technician_id', $technicianId)->whereDate('date', $date)->first();
+                    $metrics = $calculator->calculateDailyAttendance($technician, $date, $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null);
+                    TechnicianAttendance::updateOrCreate(['technician_id' => $technicianId, 'date' => $date->toDateString()], array_merge($metrics, [
+                        'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? null, 'note' => $data['note'] ?? 'Bulk attendance entry',
+                        'is_manual_entry' => true, 'is_manual_edit' => (bool) $existing, 'created_by' => $existing?->created_by ?? auth()->id(), 'edited_by' => $existing ? auth()->id() : null, 'updated_by' => auth()->id(),
+                    ]));
+                    $saved++;
                 }
-                $existing = TechnicianAttendance::where('technician_id', $technicianId)->whereDate('date', $date)->first();
-                $metrics = $calculator->calculateDailyAttendance($technician, $date, $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null);
-                TechnicianAttendance::updateOrCreate(['technician_id' => $technicianId, 'date' => $date->toDateString()], array_merge($metrics, [
-                    'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? null, 'note' => $data['note'] ?? 'Bulk attendance entry',
-                    'is_manual_entry' => true, 'is_manual_edit' => (bool) $existing, 'created_by' => $existing?->created_by ?? auth()->id(), 'edited_by' => $existing ? auth()->id() : null, 'updated_by' => auth()->id(),
-                ]));
-                $saved++;
             }
-        }
+
+            return $saved;
+        }, 3);
 
         return back()->with('success', "{$saved} daily attendance records saved across the selected period.");
     }
 
     public function attendanceImportConfirm(Request $request, AttendanceImportBatch $batch, AttendanceImportService $importer, AttendanceCalculationService $calculator)
     {
-        abort_unless($batch->imported_by === auth()->id() && $batch->status === 'Preview', 403);
+        $request->validate([
+            'rows' => ['nullable', 'array'], 'rows.*.row' => ['required', 'integer', 'distinct'],
+            'rows.*.date' => ['required', 'date_format:Y-m-d'],
+            'rows.*.check_in' => ['nullable', 'date_format:H:i,H:i:s'], 'rows.*.check_out' => ['nullable', 'date_format:H:i,H:i:s'],
+            'rows.*.technician_id' => ['nullable', 'integer', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
+        ]);
 
-        if ($request->has('rows') && is_array($request->input('rows'))) {
-            $submittedRows = collect($request->input('rows'))->keyBy('row');
-            $updatedPreviewData = [];
-            foreach ($batch->preview_data as $item) {
-                $rowId = $item['row'];
-                if ($submittedRows->has($rowId)) {
-                    $rowInput = $submittedRows->get($rowId);
-                    $item['date'] = $rowInput['date'] ?? $item['date'];
-                    $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
-                    $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
-                    if ($checkout !== $item['check_out']) {
-                        $item['auto_filled_checkout'] = false;
+        return DB::transaction(function () use ($request, $batch, $importer, $calculator) {
+            $batch = AttendanceImportBatch::lockForUpdate()->findOrFail($batch->id);
+            abort_unless($batch->imported_by === auth()->id() && $batch->status === 'Preview', 403);
+
+            if ($request->has('rows') && is_array($request->input('rows'))) {
+                $submittedRows = collect($request->input('rows'))->keyBy('row');
+                $updatedPreviewData = [];
+                foreach ($batch->preview_data as $item) {
+                    $rowId = $item['row'];
+                    if ($submittedRows->has($rowId)) {
+                        $rowInput = $submittedRows->get($rowId);
+                        $item['date'] = $rowInput['date'] ?? $item['date'];
+                        $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
+                        $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
+                        if ($checkout !== $item['check_out']) {
+                            $item['auto_filled_checkout'] = false;
+                        }
+                        $item['check_out'] = $checkout;
+                        if (! empty($rowInput['technician_id'])) {
+                            $item['technician_id'] = (int) $rowInput['technician_id'];
+                            $item['will_create_technician'] = false;
+                        } else {
+                            $item['technician_id'] = null;
+                            $item['will_create_technician'] = true;
+                        }
                     }
-                    $item['check_out'] = $checkout;
-                    if (! empty($rowInput['technician_id'])) {
-                        $item['technician_id'] = (int) $rowInput['technician_id'];
-                        $item['will_create_technician'] = false;
-                    } else {
-                        $item['technician_id'] = null;
-                        $item['will_create_technician'] = true;
-                    }
+                    $updatedPreviewData[] = $item;
                 }
-                $updatedPreviewData[] = $item;
+                $batch->update(['preview_data' => $updatedPreviewData]);
             }
-            $batch->update(['preview_data' => $updatedPreviewData]);
-        }
 
-        $batch = $importer->confirm($batch, $calculator, auth()->id());
-        AuditLog::create(['user_id' => auth()->id(), 'event' => 'Attendance Import Completed', 'auditable_type' => $batch->getMorphClass(), 'auditable_id' => $batch->id, 'old_values' => null, 'new_values' => $batch->only(['file_name', 'total_rows', 'success_rows', 'skipped_rows', 'duplicate_rows', 'error_rows', 'status']), 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
+            $batch = $importer->confirm($batch, $calculator, auth()->id());
+            AuditLog::create(['user_id' => auth()->id(), 'event' => 'Attendance Import Completed', 'auditable_type' => $batch->getMorphClass(), 'auditable_id' => $batch->id, 'old_values' => null, 'new_values' => $batch->only(['file_name', 'total_rows', 'success_rows', 'skipped_rows', 'duplicate_rows', 'error_rows', 'status']), 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
-        return redirect()->route('technicians.attendance.index', ['month' => $batch->month?->format('Y-m')])
-            ->with('success', "Import complete: {$batch->success_rows} saved, {$batch->duplicate_rows} updated duplicates, {$batch->skipped_rows} skipped, {$batch->error_rows} errors.");
+            return redirect()->route('technicians.attendance.index', ['month' => $batch->month?->format('Y-m')])
+                ->with('success', "Import complete: {$batch->success_rows} saved, {$batch->duplicate_rows} updated duplicates, {$batch->skipped_rows} skipped, {$batch->error_rows} errors.");
+        }, 3);
     }
 
     private function calculateAttendance($technician, $date, &$status, $inTime, $outTime, $manualOtAmount = null, $manualDeductionAmount = null, $isManualEdit = false)
@@ -517,11 +578,11 @@ class TechnicianController extends Controller
         return $metrics;
     }
 
-    public function attendance(Request $request, Technician $technician)
+    public function attendance(Request $request, Technician $technician, AttendanceCalculationService $calculator)
     {
         $request->merge(['technician_id' => $technician->id]);
 
-        return $this->attendanceStore($request);
+        return $this->attendanceStore($request, $calculator);
     }
 
     public function salaries(Request $request)
@@ -702,10 +763,10 @@ class TechnicianController extends Controller
         abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be finalized.');
 
         $data = $request->validate([
-            'amount' => ['nullable', 'numeric', 'min:0'],
+            'amount' => ['nullable', 'numeric', 'min:0', 'decimal:0,2', 'max:999999999999.99'],
             'account_id' => ['nullable', 'exists:accounts,id'],
             'payment_method' => ['nullable', 'string', 'max:50'],
-            'payment_date' => ['nullable', 'date'],
+            'payment_date' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
             'payment_note' => ['nullable', 'max:1000'],
             'repair_selection_reviewed' => ['nullable', 'boolean'],
             'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0', 'decimal:0,2'],
@@ -736,17 +797,29 @@ class TechnicianController extends Controller
         if ($request->routeIs('technicians.salaries.pay') && $request->has('bike_installments')) {
             throw ValidationException::withMessages(['bike_installments' => 'Repair deductions were already applied when salary was finalized. Reopen an unpaid sheet to change them.']);
         }
-        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'account_id' => ['required', 'exists:accounts,id'], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000']]);
+        $data = $request->validate(['amount' => ['required', 'numeric', 'min:0.01', 'decimal:0,2', 'max:999999999999.99'], 'account_id' => ['required', Rule::exists('accounts', 'id')->where('active', true)->where('shop_type', session('shop_mode', 'workshop'))], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'payment_note' => ['nullable', 'max:1000']]);
         DB::transaction(function () use ($sheet, $data) {
             Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
-            $paid = (float) $sheet->paid_amount + (float) $data['amount'];
+            $paid = ((int) round((float) $sheet->paid_amount * 100) + (int) round((float) $data['amount'] * 100)) / 100;
+            $date = Carbon::parse($data['payment_date'] ?? today())->startOfDay();
             $balance = round((float) $sheet->net_payable - $paid, 2);
             $overpaid = max(0, -$balance);
-            $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'] ?? today(), 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? now() : null, 'paid_by' => auth()->id()]);
+            $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $date, 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? $date : null, 'paid_by' => auth()->id()]);
             app(SalaryRepairCorrectionService::class)->syncOverpayment($sheet, 'Automatically carried forward from an overpaid salary.');
-            app(AccountService::class)->outgoing('main', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $data['payment_date'] ?? today(), 'salary');
+            $account = Account::findOrFail($data['account_id']);
+            $type = match ($account->code) {
+                Account::systemCode('main') => 'main',
+                Account::systemCode('spare_parts') => 'spare_parts',
+                Account::systemCode('bank') => 'bank',
+                default => 'cash',
+            };
+            $accounts = app(AccountService::class);
+            $accounts->recordTransaction($type, 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $data['payment_note'] ?? null, $account->id, $date, 'salary');
+            if ($type !== 'bank' && $data['payment_method'] !== 'Cash') {
+                $accounts->recordTransaction('bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, null, $date, 'salary');
+            }
         });
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
@@ -767,6 +840,9 @@ class TechnicianController extends Controller
         abort_unless($sheet->status === 'Draft', 422, 'Only Draft salary sheets can be deleted.');
 
         DB::transaction(function () use ($sheet) {
+            Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
+            $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
+            abort_unless($sheet->status === 'Draft' && (float) $sheet->paid_amount === 0.0, 422, 'Only unpaid Draft salary sheets can be deleted.');
             TechnicianContribution::where('salary_sheet_id', $sheet->id)->delete();
             $sheet->additions()->delete();
             $sheet->paymentDeductions()->delete();
@@ -1000,6 +1076,7 @@ class TechnicianController extends Controller
         $technician = null;
         $historyPeriod = null;
         $workedJobs = collect();
+        $financialHistory = collect();
         $jobCommissions = collect();
         $workedJobsFrom = null;
         $workedJobsTo = null;
@@ -1083,6 +1160,21 @@ class TechnicianController extends Controller
             $workedJobsFrom = $separateJobsRange ? ($request->filled('jobs_from') ? Carbon::parse($request->jobs_from)->startOfDay() : null) : $from;
             $workedJobsTo = $separateJobsRange ? ($request->filled('jobs_to') ? Carbon::parse($request->jobs_to)->endOfDay() : null) : $to;
             if ($technician) {
+                $financialHistory = $technician->advances->map(fn ($advance) => [
+                    'date' => Carbon::parse($advance->payment_date)->toDateString(),
+                    'display_date' => Carbon::parse($advance->payment_date)->format('d M Y'),
+                    'label' => 'Advance '.$advance->number,
+                    'amount' => $advance->amount,
+                    'status' => $advance->status,
+                    'key' => 'advance-'.sprintf('%020d', $advance->id),
+                ])->toBase()->concat($technician->bikeDeductions->map(fn ($deduction) => [
+                    'date' => Carbon::parse($deduction->start_month)->toDateString(),
+                    'display_date' => Carbon::parse($deduction->start_month)->format('M Y'),
+                    'label' => 'Bike '.$deduction->bike?->number,
+                    'amount' => $deduction->recoverable_balance,
+                    'status' => $deduction->status,
+                    'key' => 'bike-'.sprintf('%020d', $deduction->id),
+                ]))->sortBy([['date', 'asc'], ['key', 'asc']])->values();
                 $workedJobs = $separateJobsRange
                     ? $technician->jobs()->with('intake.bike.customer', 'invoice')
                         ->when($workedJobsFrom, fn ($q) => $q->where('created_at', '>=', $workedJobsFrom))
@@ -1095,7 +1187,7 @@ class TechnicianController extends Controller
             }
         }
 
-        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'historyPeriod' => $historyPeriod, 'workedJobs' => $workedJobs, 'jobCommissions' => $jobCommissions, 'workedJobsFrom' => $workedJobsFrom, 'workedJobsTo' => $workedJobsTo, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
+        return view('technicians.history', ['technicians' => $this->technicians(), 'technician' => $technician, 'historyPeriod' => $historyPeriod, 'workedJobs' => $workedJobs, 'financialHistory' => $financialHistory, 'jobCommissions' => $jobCommissions, 'workedJobsFrom' => $workedJobsFrom, 'workedJobsTo' => $workedJobsTo, 'auditLogs' => $technician ? AuditLog::where('auditable_type', $technician->getMorphClass())->where('auditable_id', $technician->id)->latest()->limit(50)->get() : collect()]);
     }
 
     private function technicians()
@@ -1118,16 +1210,17 @@ class TechnicianController extends Controller
             'joining_date' => ['nullable', 'date'],
             'active' => ['required', 'boolean'],
             'basic_salary' => ['required', 'numeric', 'min:0'],
-            'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly'])],
+            'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly', 'Hourly'])],
             'salary_period_mode' => ['sometimes', 'required', Rule::in(['system_default', 'normal_calendar', 'custom_start'])],
             'salary_start_day' => ['exclude_unless:salary_period_mode,custom_start', 'required', 'integer', 'min:1', 'max:31'],
             'daily_salary' => ['nullable', 'numeric', 'min:0'],
+            'hourly_salary' => ['required_if:salary_type,Hourly', 'nullable', 'numeric', 'min:0', 'decimal:0,2', Rule::when($request->input('salary_type') === 'Hourly', 'gt:0')],
             'ot_rate' => ['nullable', 'numeric', 'min:0'],
             'late_deduction_rate' => ['nullable', 'numeric', 'min:0'],
             'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'],
             'commission_enabled' => ['nullable', 'boolean'],
             'commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
-            'parts_commission_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
+            'parts_commission_percentage' => ['sometimes', 'required', 'numeric', 'min:0', 'max:100'],
             'commission_type' => ['required', 'max:100'],
             'epf_number' => ['nullable', 'max:50'],
             'etf_number' => ['nullable', 'max:50'],
