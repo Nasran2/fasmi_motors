@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TechnicianAttendance extends Model
 {
@@ -23,7 +24,8 @@ class TechnicianAttendance extends Model
         ];
     }
 
-    public function technician()
+    /** @return BelongsTo<Technician, $this> */
+    public function technician(): BelongsTo
     {
         return $this->belongsTo(Technician::class);
     }

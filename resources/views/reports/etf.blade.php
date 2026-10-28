@@ -1,39 +1,12 @@
 <x-layouts::app title="ETF Report">
   <div class="space-y-6">
-    @component('reports._filter', [
+    @include('reports._filter', [
       'from' => $from, 'to' => $to, 'range' => $range,
       'title' => 'ETF Report',
       'subtitle' => 'View company ETF contribution',
     ])
-    
-    @slot('filters')
-      <div>
-        <label class="label">Technician</label>
-        <select name="technician">
-          <option value="">All</option>
-          @foreach($technicians as $t)
-            <option value="{{ $t->id }}" @selected(request("technician")==$t->id)>{{ $t->name }}</option>
-          @endforeach
-        </select>
-      </div>
-    @endslot
-    @endcomponent
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
-      @foreach($stats ?? [] as $label => $value)
-      <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
-        <div class="absolute right-0 top-0 h-full w-1 bg-red-600 opacity-0 transition-opacity group-hover:opacity-100"></div>
-        <p class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold mb-1.5">{{ ucwords(str_replace('_', ' ', $label)) }}</p>
-        <p class="text-2xl font-black text-slate-800">
-          @if(is_numeric($value))
-            Rs. {{ number_format($value, 2) }}
-          @else
-            {{ $value }}
-          @endif
-        </p>
-      </div>
-      @endforeach
-    </div>
+    @include('reports._stats')
 
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white print:border-none print:shadow-none">
       <div class="overflow-x-auto">

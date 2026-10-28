@@ -2,28 +2,10 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Spare Parts Sales Report',
-      'subtitle' => 'View spare parts sales, cost, profit, and stock usage',
+      'subtitle' => 'Net parts revenue after returns and discounts, excluding sales tax.',
     ])
-    
-    @slot('filters')
-      <div><label class="label">Search</label><input type="text" name="search" value="{{ request('search') }}" placeholder="Product name, sku..."></div>
-    @endslot
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
-      @foreach($stats ?? [] as $label => $value)
-      <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
-        <div class="absolute right-0 top-0 h-full w-1 bg-red-600 opacity-0 transition-opacity group-hover:opacity-100"></div>
-        <p class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold mb-1.5">{{ ucwords(str_replace('_', ' ', $label)) }}</p>
-        <p class="text-2xl font-black {{ str_contains($label, 'expense') || str_contains($label, 'due') || str_contains($label, 'absent') ? 'text-red-600' : (str_contains($label, 'profit') || str_contains($label, 'income') || str_contains($label, 'sales') || str_contains($label, 'present') ? 'text-green-600' : 'text-slate-800') }}">
-          @if(is_numeric($value) && (str_contains($label, 'total') || str_contains($label, 'amount') || str_contains($label, 'sales') || str_contains($label, 'cost') || str_contains($label, 'profit') || str_contains($label, 'income') || str_contains($label, 'balance') || str_contains($label, 'value') || str_contains($label, 'gross') || str_contains($label, 'net') || str_contains($label, 'epf') || str_contains($label, 'advances')))
-            Rs. {{ number_format($value, 2) }}
-          @else
-            {{ is_numeric($value) ? number_format($value) : $value }}
-          @endif
-        </p>
-      </div>
-      @endforeach
-    </div>
+    @include('reports._stats')
 
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white print:border-none print:shadow-none">
       <div class="overflow-x-auto">
@@ -36,7 +18,7 @@
 <th class="px-4 py-3 font-bold">Qty</th>
 <th class="px-4 py-3 font-bold">Cost Price</th>
 <th class="px-4 py-3 font-bold">Selling Price</th>
-<th class="px-4 py-3 font-bold">Total</th>
+<th class="px-4 py-3 font-bold">Net Sales (excl. tax)</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -48,7 +30,7 @@
 <td class="px-4 py-3">{{ $row->quantity-$row->returned_quantity }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->cost_price, 2) }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->unit_price, 2) }}</td>
-<td class="px-4 py-3">{{ "Rs. " . number_format($row->total-round($row->total*$row->returned_quantity/$row->quantity,2), 2) }}</td>
+<td class="px-4 py-3">{{ "Rs. " . number_format(\App\Support\ReportAccounting::itemRevenue($row), 2) }}</td>
             </tr>
             @empty
             <tr>

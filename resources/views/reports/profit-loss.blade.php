@@ -2,12 +2,12 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Profit & Loss Report',
-      'subtitle' => 'Outer product purchases are included in Expenses, so Stock Parts Cost excludes them.',
+      'subtitle' => 'Accrual basis, excluding sales tax and opening balances. Returns and discounts reduce revenue. External parts are expensed once; salary is recognized at period end.',
     ])
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3">
       <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm text-center">
-        <p class="text-xs text-slate-500 uppercase tracking-wider font-extrabold mb-1">Total Income</p>
+        <p class="text-xs text-slate-500 uppercase tracking-wider font-extrabold mb-1">Gross Profit</p>
         <p class="text-2xl font-black text-green-600">Rs. {{ number_format($totalIncome, 2) }}</p>
       </div>
       <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm text-center">
@@ -20,6 +20,7 @@
       </div>
     </div>
 
+    <p class="text-sm text-slate-600">Net sales revenue: <strong>Rs. {{ number_format($totalRevenue, 2) }}</strong>. Owner drawings are shown separately and do not reduce profit.</p>
     <div class="grid gap-6 lg:grid-cols-2 print:grid-cols-2">
       
       {{-- INCOME --}}
@@ -29,7 +30,7 @@
         </div>
         <div class="p-4 space-y-4">
           <div class="flex justify-between items-center pb-2 border-b border-slate-100 border-dashed">
-            <span class="text-sm font-bold text-slate-600">Service Income (Direct)</span>
+            <span class="text-sm font-bold text-slate-600">Service and Additional Charges</span>
             <span class="font-bold">Rs. {{ number_format($serviceIncome, 2) }}</span>
           </div>
           <div class="flex justify-between items-center pb-2 border-b border-slate-100 border-dashed">
@@ -49,7 +50,7 @@
             <span class="font-bold">Rs. {{ number_format($otherIncome, 2) }}</span>
           </div>
           <div class="flex justify-between items-center pt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <span class="text-sm font-black uppercase tracking-wider text-slate-800">Total Income</span>
+            <span class="text-sm font-black uppercase tracking-wider text-slate-800">Gross Profit</span>
             <span class="text-lg font-black text-green-600">Rs. {{ number_format($totalIncome, 2) }}</span>
           </div>
         </div>
@@ -86,5 +87,14 @@
       </div>
 
     </div>
+    <table id="reportTable" class="hidden">
+      <thead><tr><th>Item</th><th>Amount (Rs.)</th></tr></thead>
+      <tbody>
+        @foreach(['Service and other charges' => $serviceIncome, 'Parts sales' => $partsSales, 'Other income' => $otherIncome, 'Net sales revenue' => $totalRevenue, 'Stock parts cost' => $partsCost, 'Gross profit' => $totalIncome, 'Operating expenses' => $totalExpenses, 'Net profit' => $netProfit, 'Owner drawings' => $totalDrawings] as $label => $value)
+        <tr><td>{{ $label }}</td><td>{{ number_format($value, 2, '.', '') }}</td></tr>
+        @endforeach
+        @foreach($expenseByCategory as $expense)<tr><td>Expense: {{ $expense->category }}</td><td>{{ number_format($expense->total, 2, '.', '') }}</td></tr>@endforeach
+      </tbody>
+    </table>
   </div>
 </x-layouts::app>

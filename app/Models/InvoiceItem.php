@@ -5,11 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** @property-read Product|null $product */
+/**
+ * @property-read Product|null $product
+ * @property float|string $returned_quantity
+ */
 class InvoiceItem extends Model
 {
     protected $guarded = [];
 
+    /** @return BelongsTo<Invoice, $this> */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

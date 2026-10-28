@@ -2,28 +2,10 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Daily Closing Report',
-      'subtitle' => 'View daily closed balances, bill totals, deductions, and adjustments',
+      'subtitle' => 'Saved daily ledger totals. Main and spare parts include bank/cash movements; physical ledgers are not added again.',
     ])
-    
-    @slot('filters')
-      <div><label class="label">Search</label><input type="date" name="search" value="{{ request('search') }}" class="field"></div>
-    @endslot
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
-      @foreach($stats ?? [] as $label => $value)
-      <div class="panel bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
-        <div class="absolute right-0 top-0 h-full w-1 bg-red-600 opacity-0 transition-opacity group-hover:opacity-100"></div>
-        <p class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold mb-1.5">{{ ucwords(str_replace('_', ' ', $label)) }}</p>
-        <p class="text-2xl font-black {{ str_contains($label, 'expense') || str_contains($label, 'due') || str_contains($label, 'absent') ? 'text-red-600' : (str_contains($label, 'profit') || str_contains($label, 'income') || str_contains($label, 'sales') || str_contains($label, 'present') ? 'text-green-600' : 'text-slate-800') }}">
-          @if(is_numeric($value) && (str_contains($label, 'total') || str_contains($label, 'amount') || str_contains($label, 'sales') || str_contains($label, 'cost') || str_contains($label, 'profit') || str_contains($label, 'income') || str_contains($label, 'balance') || str_contains($label, 'value') || str_contains($label, 'gross') || str_contains($label, 'net') || str_contains($label, 'epf') || str_contains($label, 'advances')))
-            Rs. {{ number_format($value, 2) }}
-          @else
-            {{ is_numeric($value) ? number_format($value) : $value }}
-          @endif
-        </p>
-      </div>
-      @endforeach
-    </div>
+    @include('reports._stats')
 
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white print:border-none print:shadow-none">
       <div class="overflow-x-auto">
@@ -43,7 +25,7 @@
               <td class="px-4 py-3">{{ $row->closing_date->format("d M Y") }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->main_income, 2) }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->spare_parts_income, 2) }}</td>
-              <td class="px-4 py-3">Rs. {{ number_format($row->main_expense + $row->spare_parts_expense + $row->bank_expense + $row->cash_expense, 2) }}</td>
+              <td class="px-4 py-3">Rs. {{ number_format($row->main_expense + $row->spare_parts_expense, 2) }}</td>
               <td class="px-4 py-3">{{ $row->closer?->name }}</td>
             </tr>
             @empty

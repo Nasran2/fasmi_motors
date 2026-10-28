@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SmsLog extends Model
 {
@@ -15,7 +16,8 @@ class SmsLog extends Model
         return $this->morphTo();
     }
 
-    public function sender()
+    /** @return BelongsTo<User, $this> */
+    public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sent_by');
     }
