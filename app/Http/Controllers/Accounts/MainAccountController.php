@@ -12,7 +12,7 @@ class MainAccountController extends BaseAccountController
     {
         $d = $this->ledgerData($request, 'main');
         $p = $d['periodTransactions'];
-        $d += ['title' => 'Main Account Ledger', 'subtitle' => 'Service income, other income, expenses, and transfers', 'type' => 'main', 'cards' => ['Opening Balance' => $d['totals']['opening'], 'Service Income' => $p->whereIn('category', ['service', 'labor', 'washing'])->sum('credit'), 'Other Income' => $p->whereNotIn('category', ['service', 'labor', 'washing'])->where('transaction_type', 'income')->sum('credit'), 'Expenses' => $p->where('transaction_type', 'expense')->sum('debit'), 'Drawings' => $p->where('transaction_type', 'drawing')->sum('debit'), 'Transfer In' => $d['totals']['transfer_in'], 'Transfer Out' => $d['totals']['transfer_out'], 'Closing Balance' => $d['totals']['closing']]];
+        $d += ['title' => 'Main Account Ledger', 'subtitle' => 'Service income, other income, expenses, and transfers', 'type' => 'main', 'cards' => ['Opening Balance' => $d['totals']['opening'], 'Service Income' => $p->whereIn('category', ['service', 'labor'])->sum('credit'), 'Other Income' => $p->whereNotIn('category', ['service', 'labor'])->where('transaction_type', 'income')->sum('credit'), 'Expenses' => $p->where('transaction_type', 'expense')->sum('debit'), 'Drawings' => $p->where('transaction_type', 'drawing')->sum('debit'), 'Transfer In' => $d['totals']['transfer_in'], 'Transfer Out' => $d['totals']['transfer_out'], 'Closing Balance' => $d['totals']['closing']]];
 
         return view('accounts.ledger', $d);
     }

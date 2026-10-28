@@ -86,13 +86,11 @@ class WorkshopService
                 $technician = Technician::find($job->main_technician_id);
                 if ($technician && $technician->commission_enabled) {
 
-                    // 1. Regular Commission (Labor / Total)
+                    // Regular job commission includes service and labor only.
                     if ((float) $technician->commission_percentage > 0) {
                         $base = 0;
-                        if (stripos($technician->commission_type, 'labor') !== false) {
-                            $base = $job->labor_total;
-                        } elseif (stripos($technician->commission_type, 'bill') !== false) {
-                            $base = $job->total;
+                        if (preg_match('/service|labou?r|bill/i', $technician->commission_type)) {
+                            $base = $job->service_labor_commission_base;
                         }
 
                         if ($base > 0) {
@@ -100,7 +98,7 @@ class WorkshopService
                                 'technician_id' => $technician->id,
                                 'job_card_id' => $job->id,
                                 'invoice_id' => $invoice->id,
-                                'commission_type' => 'Job Card - '.$technician->commission_type,
+                                'commission_type' => JobCommissionService::TYPE,
                                 'percentage' => (float) $technician->commission_percentage,
                                 'base_amount' => $base,
                                 'amount' => round($base * ((float) $technician->commission_percentage / 100), 2),
@@ -141,6 +139,8 @@ class WorkshopService
                     }
                 }
             }
+
+            app(WashingCommissionService::class)->sync($job);
 
             return $invoice;
         });

@@ -35,7 +35,10 @@ class FinanceController extends Controller
             $e = Expense::create($v + ['vendor' => $r->vendor, 'note' => $r->note, 'created_by' => auth()->id()]);
 
             $accountService = app(AccountService::class);
-            $accountService->outgoing('main', (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], $v['expense_date'], $v['category']);
+            $account = Account::where('active', true)->findOrFail($v['account_id']);
+            $type = collect(['main', 'spare_parts', 'bank', 'washing'])->first(fn ($type) => $account->id === Account::systemAccount($type)?->id);
+            abort_unless($type, 422, 'Select a configured system account.');
+            $accountService->outgoing($type, (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], $v['expense_date'], $v['category'], $type !== 'bank');
         });
 
         return back()->with('success', 'Expense recorded in the ledger.');
@@ -58,7 +61,7 @@ class FinanceController extends Controller
     public function transfer(Request $r, WorkshopService $service)
     {
         $v = $r->validate(['from_account_id' => ['required', 'exists:accounts,id', Rule::notIn([$r->to_account_id])], 'to_account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|min:0.01', 'transfer_date' => 'required|date']);
-        $types = collect(['main', 'spare_parts', 'bank', 'cash'])->mapWithKeys(fn ($type) => [Account::systemAccount($type)?->id => $type]);
+        $types = collect(['main', 'spare_parts', 'bank', 'washing', 'cash'])->mapWithKeys(fn ($type) => [Account::systemAccount($type)?->id => $type]);
         abort_unless($types->has($v['from_account_id']) && $types->has($v['to_account_id']), 422, 'Use the configured system accounts.');
         $r->merge(['from_account' => $types[$v['from_account_id']], 'to_account' => $types[$v['to_account_id']], 'reference' => $r->reference_number]);
 

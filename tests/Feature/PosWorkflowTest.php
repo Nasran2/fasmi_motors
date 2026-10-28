@@ -11,7 +11,7 @@ use App\Models\User;
 test('POS renders working action controls with visible shortcut labels', function () {
     $user = User::factory()->create();
 
-    $this->actingAs($user)->get(route('sales.parts'))->assertOk()
+    $this->actingAs($user)->withOpenCashier()->get(route('sales.parts'))->assertOk()
         ->assertSeeText('Alt+Q')->assertSeeText('Alt+H')->assertSeeText('Alt+M')
         ->assertSeeText('Alt+C')->assertSeeText('Alt+K')->assertSeeText('Alt+B')
         ->assertSee('handleShortcut($event)', false)
@@ -24,7 +24,7 @@ test('quotation saves a printable document and notes without moving stock or cre
     $product = Product::create(['code' => 'QUOTE-001', 'name' => 'Quoted Part', 'cost_price' => 40, 'selling_price' => 100, 'active' => true]);
     StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 0]);
 
-    $response = $this->actingAs($user)->postJson(route('sales.parts.store'), [
+    $response = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
         'customer_mode' => 'new', 'customer_name' => 'POS Quote Customer', 'customer_phone' => '0771234567',
         'store_id' => $store->id, 'invoice_type' => 'Quotation', 'paid_amount' => 0,
         'internal_note' => 'Call before ordering', 'customer_note' => 'Price valid for seven days',
@@ -52,7 +52,7 @@ test('paid POS sale keeps its bill printable and records the selected payment', 
     $product = Product::create(['code' => 'POS-001', 'name' => 'POS Sale Part', 'cost_price' => 40, 'selling_price' => 100, 'active' => true]);
     StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 3]);
 
-    $response = $this->actingAs($user)->postJson(route('sales.parts.store'), [
+    $response = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
         'customer_mode' => 'walkin', 'store_id' => $store->id, 'invoice_type' => 'Parts Sale',
         'paid_amount' => 100, 'payment_method' => 'Card', 'account_id' => $account->id,
         'customer_note' => 'Keep this receipt',
@@ -77,7 +77,7 @@ test('edited POS item name quantity and price appear on the saved quotation and 
 
     foreach (['Quotation', 'Parts Sale'] as $type) {
         $isQuote = $type === 'Quotation';
-        $response = $this->actingAs($user)->postJson(route('sales.parts.store'), [
+        $response = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
             'customer_mode' => 'walkin', 'store_id' => $store->id, 'invoice_type' => $type,
             'paid_amount' => $isQuote ? 0 : 250,
             'payment_method' => $isQuote ? null : 'Card',

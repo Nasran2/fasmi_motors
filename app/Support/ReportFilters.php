@@ -37,7 +37,7 @@ final class ReportFilters
             $states = ['Paid', 'Partially Paid', 'Unpaid', 'Hold', 'Partially Paid / Hold'];
             $select('status', 'Payment status', array_combine($states, $states));
         }
-        if (in_array($report, ['index', 'spare-parts', 'purchases', 'expenses', 'drawings', 'collections', 'main-account', 'spare-parts-account', 'bank-account'])) {
+        if (in_array($report, ['index', 'spare-parts', 'purchases', 'expenses', 'drawings', 'collections', 'main-account', 'spare-parts-account', 'bank-account', 'washing-account'])) {
             $methods = ['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR', 'Credit/Due', 'Mixed', 'Online', 'Other'];
             if ($report === 'collections') {
                 $methods = array_merge($methods, ['Salary Deduction', 'Manual Clearance']);
@@ -95,9 +95,9 @@ final class ReportFilters
             $select('direction', 'Cash direction', ['in' => 'Cash in', 'out' => 'Cash out']);
             $select('created_by', 'Added by', User::withTrashed()->whereIn('id', (clone $cash)->select('created_by'))->orderBy('name')->pluck('name', 'id')->all(), true);
         }
-        if (in_array($report, ['main-account', 'spare-parts-account', 'bank-account'])) {
+        if (in_array($report, ['main-account', 'spare-parts-account', 'bank-account', 'washing-account'])) {
             $types = AccountTransaction::where('account_id', Account::systemAccount(match ($report) {
-                'main-account' => 'main', 'spare-parts-account' => 'spare_parts', default => 'bank'
+                'main-account' => 'main', 'spare-parts-account' => 'spare_parts', 'washing-account' => 'washing', default => 'bank'
             })->id)->distinct()->pluck('transaction_type');
             $select('type', 'Transaction type', $types->mapWithKeys(fn ($type) => [$type => ucwords(str_replace('_', ' ', $type))])->all());
         }

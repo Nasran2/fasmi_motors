@@ -20,7 +20,7 @@ use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
-    $this->actingAs($this->user);
+    $this->actingAs($this->user)->withOpenCashier();
     Account::ensureSystemAccounts();
     $customer = Customer::create(['name' => 'Correction Customer', 'phone' => '0771234555']);
     $bike = $customer->bikes()->create(['number' => 'VO-1783', 'model' => 'Honda']);
@@ -48,7 +48,7 @@ test('payment correction reverses and replaces the receipt with mandatory histor
         ->and($replacement->note)->toBe('Original note')->and($log->before['method'])->toBe('Cash')
         ->and((float) $log->before['received_amount'])->toBe(1000.0)->and((float) $log->after['received_amount'])->toBe(500.0)
         ->and($log->changed_by)->toBe($this->user->id)->and($this->job->fresh()->status)->toBe('Billed')
-        ->and(Account::systemAccount('main')->balance)->toBe(300.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(200.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)
         ->and(Account::systemAccount('bank')->balance)->toBe(500.0);
     expect(AccountTransaction::where('reference_id', $this->receipt->id)->where('status', 'reversed')->count())->toBe(2);
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Status History & Change Logs')
@@ -149,9 +149,9 @@ test('payment corrections do not change the recorded job completion date', funct
 
 test('view-only users and unrelated or other-shop receipts cannot be corrected', function () {
     $role = Role::create(['name' => 'Correction Viewer', 'permissions' => ['job_card.view']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->put(route('jobs.payments.update', [$this->job, $this->receipt]), $this->correction)->assertForbidden();
-    $this->actingAs($this->user);
+    $this->actingAs($this->user)->withOpenCashier();
     $other = Customer::create(['name' => 'Unrelated', 'phone' => '0771212121']);
     $this->invoice->update(['job_card_id' => null, 'customer_id' => $other->id]);
     $this->put(route('jobs.payments.update', [$this->job, $this->receipt]), $this->correction)->assertNotFound();
@@ -168,7 +168,7 @@ test('mixed receipts keep all other payments and allocation totals when one amou
     $this->put(route('jobs.payments.update', [$this->job, $cash]), array_replace($this->correction, ['amount' => 200]))->assertSessionHasNoErrors();
     expect((float) $this->invoice->fresh()->paid_amount)->toBe(500.0)->and((float) $this->invoice->fresh()->due_amount)->toBe(500.0)
         ->and($this->invoice->fresh()->payment_method)->toBe('Mixed')->and($card->fresh()->status)->toBe('Completed')->and((float) $card->fresh()->amount)->toBe(300.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(300.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(200.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)
         ->and(Account::systemAccount('bank')->balance)->toBe(300.0);
 });
 

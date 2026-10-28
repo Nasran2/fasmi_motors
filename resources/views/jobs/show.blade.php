@@ -23,6 +23,9 @@
 <x-flash/>
 <x-bill-details-form :job="$job"/>
 @include('jobs.partials.spare-parts')
+@if($job->status !== 'Cancelled')
+<section class="panel mb-5"><form method="POST" action="{{ route('jobs.washing-assignment', $job) }}" class="space-y-4">@csrf<x-submission-token />@method('PUT')<div class="flex flex-wrap justify-between gap-2"><h2 class="font-bold">Washing Assignment</h2><p class="text-sm text-blue-700">@if($job->washing_person_id)Washing commission: Rs. {{ number_format((float) $job->washing_total * (float) $job->washing_commission_percentage / 100, 2) }}@else Assign a washing person to earn commission @endif</p></div><x-washing-assignment :job="$job" :technicians="$technicians" /><div class="flex justify-end"><button class="btn-secondary">Update Washing Assignment</button></div></form></section>
+@endif
 <div class="grid gap-5 xl:grid-cols-3" x-data="{
     discountPercentage: @js(old('discount_percentage', $job->discount_percentage ?? 0)),
     fixedDiscount: @js(old('fixed_discount', $job->fixed_discount ?? 0)),
@@ -98,7 +101,9 @@
         <h2 class="mb-4 font-bold">Bill summary</h2>
         <dl class="space-y-2 text-sm">
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
-            <div class="flex justify-between"><dt>Service & labor</dt><dd x-text="'Rs. ' + money(subtotal - partsTotal)">Rs. {{ number_format($job->service_total+$job->labor_total+$job->washing_total+$job->other_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Service & labor</dt><dd id="job-summary-service-labor" x-text="'Rs. ' + money((Number(serviceTotal) || 0) + (Number(laborTotal) || 0))">Rs. {{ number_format($job->service_total+$job->labor_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Washing</dt><dd id="job-summary-washing" x-text="'Rs. ' + money(washingTotal)">Rs. {{ number_format($job->washing_total,2) }}</dd></div>
+            <div class="flex justify-between"><dt>Other charges</dt><dd x-text="'Rs. ' + money(otherTotal)">Rs. {{ number_format($job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
             <div class="flex justify-between text-sm font-semibold text-slate-500"><dt>{{ $paymentSummary['previousBalance'] > $oldDue ? 'Earlier balances included' : 'Earlier unpaid balances' }}</dt><dd class="font-bold text-red-600">Rs. {{ number_format($paymentSummary['previousBalance'],2) }}</dd></div>

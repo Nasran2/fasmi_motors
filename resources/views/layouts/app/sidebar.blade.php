@@ -39,6 +39,7 @@
         @php($layoutNotifications = app(\App\Services\WorkshopNotificationService::class)->summary(auth()->user()))
         <header class="workshop-topbar [grid-area:header] sticky top-0 z-30 hidden h-[68px] items-center gap-4 border-b border-slate-200 bg-white/95 px-5 shadow-sm backdrop-blur lg:flex print:hidden">
             <button type="button" aria-label="Menu" class="grid size-10 shrink-0 place-items-center rounded-lg text-[#0b2447] hover:bg-slate-100"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+            <x-cashier-control /><x-collection-control />
             
             <div class="ml-auto flex items-center gap-3">
                 <x-workshop-notifications :summary="$layoutNotifications" />
@@ -75,9 +76,10 @@
         <flux:header class="border-b border-slate-200 bg-white lg:hidden print:hidden">
             <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" data-testid="mobile-sidebar-toggle" />
 
-            <span class="ml-2 text-sm font-black italic"><span class="text-red-600">FASMIR</span> MOTORS</span>
+            <span class="ml-2 hidden text-sm font-black italic sm:inline"><span class="text-red-600">FASMIR</span> MOTORS</span>
 
             <flux:spacer />
+            <x-cashier-control /><x-collection-control />
 
             <x-workshop-notifications :summary="$layoutNotifications" />
 

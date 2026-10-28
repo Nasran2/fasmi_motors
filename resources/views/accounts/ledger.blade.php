@@ -1,11 +1,12 @@
 <x-layouts::app :title="$title">
 @php
  $ranges=['today'=>'Today','yesterday'=>'Yesterday','this_week'=>'This Week','this_month'=>'This Month','last_month'=>'Last Month','this_year'=>'This Year'];
- $reverseRoute=match($type){'main'=>'accounts.main-ledger.reverse','spare_parts'=>'accounts.spare-parts-ledger.reverse','bank'=>'accounts.bank-ledger.reverse',default=>'accounts.cash-book.reverse'};
+ $reverseRoute=match($type){'main'=>'accounts.main-ledger.reverse','spare_parts'=>'accounts.spare-parts-ledger.reverse','bank'=>'accounts.bank-ledger.reverse','washing'=>'accounts.washing-ledger.reverse',default=>'accounts.cash-book.reverse'};
  $help=match(true){
   ($cardMode??false)=>'This page shows non-cash payments and their bank settlement records.',
-  $type==='main'=>'This page shows money related to service, labor, washing, other income, expenses, drawings, and transfers. Spare parts sales are shown separately in Spare Parts Ledger.',
+  $type==='main'=>'This page shows money related to service, labor, other income, expenses, drawings, and transfers. Spare parts sales are shown separately in Spare Parts Ledger.',
   $type==='spare_parts'=>'This page shows all money related to spare parts. The full spare parts sale amount goes here, not only the profit.',
+  $type==='washing'=>'Washing charges are shown separately from service and labor. Unpaid or held charges do not increase the received balance until payment settles. Technician service and labor commission excludes washing.',
   $type==='bank'=>'This page shows money received or paid through bank, card, QR, and cheque. Pending cheques stay in Cheque Payments until cleared.',
   default=>'This page shows only physical cash. Card, bank transfer, QR, and cheque payments are not counted as cash.'};
  $filterTitle=match($type){'spare_parts'=>'Select Date & Filter Parts Transactions','bank'=>'Select Date & Filter Bank Transactions','cash'=>'Select Date & Filter Cash Records',default=>'Select Date & Filter Transactions'};

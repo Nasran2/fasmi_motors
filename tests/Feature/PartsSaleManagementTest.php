@@ -16,7 +16,7 @@ use App\Models\User;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
-    $this->actingAs($this->user);
+    $this->actingAs($this->user)->withOpenCashier();
     Account::ensureSystemAccounts('workshop');
     $this->store = Store::create(['name' => 'Return Store', 'active' => true]);
     $this->product = Product::create(['code' => 'RETURN-PART', 'name' => 'Brake Pad', 'cost_price' => 40, 'selling_price' => 100, 'unit' => 'pcs', 'active' => true]);
@@ -104,7 +104,7 @@ test('edits require refund confirmation and unauthorized users cannot return or 
     $this->putJson(route('sales.parts.update', $sale), ['items' => [['id' => $sale->items()->first()->id, 'product_id' => $this->product->id, 'quantity' => 1, 'unit_price' => 100, 'discount' => 0]], 'discount' => 0, 'tax' => 0, 'reason' => 'Reduce covered total'])->assertUnprocessable();
     expect(($this->stockQuantity)())->toBe(8.0)->and((float) $sale->fresh()->total)->toBe(200.0);
     $role = Role::create(['name' => 'Read Only Sales', 'permissions' => ['sales.view_invoices']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('sales.parts.index'))->assertOk();
     $this->delete(route('sales.parts.destroy', $sale), ['reason' => 'Unauthorized delete'])->assertForbidden();
     $this->post(route('sales.parts.return.store', $sale), ['quantities' => [$sale->items()->first()->id => 1], 'reason' => 'Unauthorized return'])->assertForbidden();
@@ -292,11 +292,11 @@ test('batch quantities follow the chosen restock or expense action', function ($
 test('edit preview requires sales permission and refunding requires refund permission', function () {
     $sale = ($this->makeSale)(['paid_amount' => 200, 'payment_method' => 'Cash']);
     $role = Role::create(['name' => 'Edit Only Sales', 'permissions' => ['sales.parts_sales']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     ($this->confirmEdit)($sale, ($this->editPayload)($sale))->assertForbidden();
     expect(($this->ledgerBalance)('SPARE'))->toBe(200.0);
     $role->update(['permissions' => []]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->postJson(route('sales.parts.edit-preview', $sale), ($this->editPayload)($sale))->assertForbidden();
 });
 

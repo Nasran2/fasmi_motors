@@ -11,7 +11,7 @@ use App\Models\User;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::create(['code' => 'MAIN', 'name' => 'Main Account', 'type' => 'main', 'active' => true]);
 });
 
@@ -97,7 +97,7 @@ test('quick job input validation and permissions prevent invalid records', funct
     $this->post(route('jobs.quick.store'), ['washing_total' => -1, 'main_technician_id' => 99999, 'is_technician_bike' => 1])->assertSessionHasErrors(['washing_total', 'main_technician_id', 'technician_id']);
     expect(JobCard::count())->toBe(0)->and(Customer::count())->toBe(0);
     $role = Role::create(['name' => 'Quick Jobs Viewer', 'permissions' => ['job_card.view']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('jobs.quick.create'))->assertForbidden();
     $this->post(route('jobs.quick.store'), [])->assertForbidden();
 });

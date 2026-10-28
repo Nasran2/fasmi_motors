@@ -21,7 +21,7 @@ beforeEach(function () {
     Http::preventStrayRequests();
     Http::fake(['*' => Http::sequence()->push('OK:TEST-MSG', 200)->whenEmpty(Http::response('OK:TEST-MSG', 200))]);
     config(['app.url' => 'https://bills.example.com']);
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     SmsSetting::instance()->update(['enabled' => true, 'auto_sms_enabled' => true, 'textit_id' => 'test-id', 'textit_password' => 'test-secret']);
     $this->customer = Customer::create(['name' => 'SMS Customer', 'phone' => '0771234567', 'active' => true]);
     $this->bike = $this->customer->bikes()->create(['number' => 'WP SMS 100', 'model' => 'Honda']);

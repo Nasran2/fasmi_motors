@@ -60,6 +60,11 @@ class JobCard extends Model
         return (float) $this->parts_total + (float) $this->service_total + (float) $this->labor_total + (float) $this->washing_total + (float) $this->other_total;
     }
 
+    public function getServiceLaborCommissionBaseAttribute(): float
+    {
+        return round((float) $this->service_total + (float) $this->labor_total, 2);
+    }
+
     public function intake(): BelongsTo
     {
         return $this->belongsTo(BikeIntake::class, 'bike_intake_id');
@@ -68,6 +73,11 @@ class JobCard extends Model
     public function technician(): BelongsTo
     {
         return $this->belongsTo(Technician::class, 'main_technician_id');
+    }
+
+    public function washingPerson(): BelongsTo
+    {
+        return $this->belongsTo(Technician::class, 'washing_person_id')->withTrashed();
     }
 
     public function quickCustomer(): BelongsTo

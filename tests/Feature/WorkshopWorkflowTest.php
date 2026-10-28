@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->user = User::factory()->create(['email_verified_at' => now()]);
-    $this->actingAs($this->user);
+    $this->actingAs($this->user)->withOpenCashier();
     Store::create(['name' => 'Main Store', 'is_default' => true, 'active' => true]);
     foreach ([['MAIN', 'Main Account', 'main'], ['SPARE', 'Spare Parts Account', 'spare_parts'], ['BANK', 'Bank Account', 'bank']] as [$code, $name, $type]) {
         Account::create(compact('code', 'name', 'type'));

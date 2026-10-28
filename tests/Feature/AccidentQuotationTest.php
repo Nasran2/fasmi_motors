@@ -16,7 +16,7 @@ test('accident quotation combines products and flexible charges without moving s
     $product = Product::create(['code' => 'ACC-PART', 'name' => 'Headlamp', 'cost_price' => 80, 'selling_price' => 150, 'active' => true]);
     $stock = StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 5]);
 
-    $this->actingAs($user)->get(route('sales.accident-quotations.create'))->assertOk()->assertSeeText('Accident Bike Quotation');
+    $this->actingAs($user)->withOpenCashier()->get(route('sales.accident-quotations.create'))->assertOk()->assertSeeText('Accident Bike Quotation');
 
     $this->post(route('sales.accident-quotations.store'), [
         'customer_mode' => 'existing', 'customer_id' => $customer->id,
@@ -80,7 +80,7 @@ test('accident quotation can register a customer and bike with charges only', fu
     $user = User::factory()->create();
     $store = Store::create(['name' => 'New Quote Store', 'active' => true]);
 
-    $this->actingAs($user)->post(route('sales.accident-quotations.store'), [
+    $this->actingAs($user)->withOpenCashier()->post(route('sales.accident-quotations.store'), [
         'customer_mode' => 'new', 'customer_name' => 'New Rider', 'customer_phone' => '0712345678',
         'bike_mode' => 'new', 'bike_number' => 'cp-5678', 'bike_model' => 'Dio', 'bike_brand' => 'Honda',
         'store_id' => $store->id,
@@ -103,7 +103,7 @@ test('accident quotation rejects a bike belonging to another customer', function
     $bike = Bike::create(['customer_id' => $other->id, 'number' => 'WP-9999', 'model' => 'X']);
     $store = Store::create(['name' => 'Secure Quote Store', 'active' => true]);
 
-    $this->actingAs($user)->from(route('sales.accident-quotations.create'))->post(route('sales.accident-quotations.store'), [
+    $this->actingAs($user)->withOpenCashier()->from(route('sales.accident-quotations.create'))->post(route('sales.accident-quotations.store'), [
         'customer_mode' => 'existing', 'customer_id' => $customer->id,
         'bike_mode' => 'existing', 'bike_id' => $bike->id,
         'store_id' => $store->id,

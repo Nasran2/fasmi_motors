@@ -14,7 +14,7 @@ use App\Models\User;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 6)->startOfDay());
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $this->account = Account::systemAccount('main');
     $this->customer = Customer::create(['name' => 'Cheque Customer', 'phone' => '0771234500', 'active' => true]);
@@ -152,7 +152,7 @@ test('empty split payments support credit sales and quotations', function () {
 test('editing linked cheque details preserves its amount and moves its pending bank account', function () {
     $this->postJson(route('sales.parts.store'), $this->sale + ['payments' => [$this->cheque]])->assertOk();
     $cheque = Cheque::firstOrFail();
-    $values = $cheque->only(['cheque_type','party_name','related_reference','cheque_number','bank_name','branch','amount','bank_account_id','note']) + ['cheque_date' => $cheque->cheque_date->toDateString()];
+    $values = $cheque->only(['cheque_type', 'party_name', 'related_reference', 'cheque_number', 'bank_name', 'branch', 'amount', 'bank_account_id', 'note']) + ['cheque_date' => $cheque->cheque_date->toDateString()];
     $this->put(route('accounts.cheques.update', $cheque), array_replace($values, ['amount' => 600]))->assertSessionHasErrors('amount');
     $bank = Account::systemAccount('bank');
     $this->put(route('accounts.cheques.update', $cheque), array_replace($values, ['bank_account_id' => $bank->id, 'cheque_number' => 'CORRECTED-001']))->assertSessionHasNoErrors();

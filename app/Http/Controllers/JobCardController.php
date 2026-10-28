@@ -16,9 +16,11 @@ use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\BikeRegistrationService;
 use App\Services\BillDetailsService;
+use App\Services\JobCommissionService;
 use App\Services\JobPartService;
 use App\Services\SettlementService;
 use App\Services\StaffBikeRepairService;
+use App\Services\WashingCommissionService;
 use App\Services\WorkshopService;
 use App\Support\JobPaymentSummary;
 use App\Support\PreviousCustomerBalance;
@@ -80,8 +82,9 @@ class JobCardController extends Controller
 
     public function store(Request $r)
     {
-        $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'job_date' => 'sometimes|required|date_format:Y-m-d', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0']);
+        $v = $r->validate(['bike_intake_id' => 'required|exists:bike_intakes,id|unique:job_cards', 'job_date' => 'sometimes|required|date_format:Y-m-d', 'main_technician_id' => 'nullable|exists:technicians,id', 'priority' => 'required|in:Low,Normal,High,Urgent', 'estimated_amount' => 'nullable|numeric|min:0'] + WashingCommissionService::rules());
         $v['estimated_amount'] = $v['estimated_amount'] ?? 0;
+        $v += app(WashingCommissionService::class)->defaults();
         $job = DB::transaction(function () use ($v, $r) {
             $intake = BikeIntake::lockForUpdate()->findOrFail($v['bike_intake_id']);
             $createdAt = now()->setDateFrom($v['job_date'] ?? now());
@@ -216,7 +219,7 @@ class JobCardController extends Controller
                     'show_labor_on_bill' => 'nullable|boolean',
                     'service_name' => 'nullable|string|max:50',
                     'other_income_name' => 'nullable|string|max:50',
-                ]);
+                ] + WashingCommissionService::rules());
 
                 // Cleared amounts mean zero; omitted amounts keep their saved values.
                 foreach (['parts_total', 'service_total', 'labor_total', 'washing_total', 'other_total', 'tax'] as $field) {
@@ -278,6 +281,24 @@ class JobCardController extends Controller
 
             return back()->with('success', 'Job card updated.');
         });
+    }
+
+    public function washingAssignment(Request $request, JobCard $job, WashingCommissionService $service)
+    {
+        $values = $request->validate(WashingCommissionService::rules());
+        if (! array_key_exists('washing_person_id', $values) || ! array_key_exists('washing_commission_percentage', $values)) {
+            throw ValidationException::withMessages(['washing_person_id' => 'Select a washing assignment and commission rate.']);
+        }
+        DB::transaction(function () use ($job, $values, $service) {
+            $job = JobCard::lockForUpdate()->findOrFail($job->id);
+            if ($job->status === 'Cancelled') {
+                throw ValidationException::withMessages(['washing_person_id' => 'A cancelled job cannot be reassigned.']);
+            }
+            $job->update($values);
+            $service->sync($job);
+        });
+
+        return back()->with('success', 'Washing person and commission updated.');
     }
 
     public function addPart(Request $r, JobCard $job, JobPartService $parts)
@@ -503,6 +524,8 @@ class JobCardController extends Controller
             ]);
             app(SettlementService::class)->saveStatus($invoice);
             app(AccountService::class)->reallocateInvoiceReceipts($invoice);
+            app(JobCommissionService::class)->syncPending($job);
+            app(WashingCommissionService::class)->sync($job);
         }
     }
 

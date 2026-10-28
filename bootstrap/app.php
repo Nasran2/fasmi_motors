@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureRoutePermission;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\PreventDuplicateSubmission;
+use App\Http\Middleware\RequireOpenCashier;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'active.user' => EnsureUserIsActive::class,
             'route.permission' => EnsureRoutePermission::class,
+            'cashier.open' => RequireOpenCashier::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

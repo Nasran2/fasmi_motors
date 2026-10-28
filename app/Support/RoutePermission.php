@@ -60,6 +60,13 @@ final class RoutePermission
 
     public static function allows(User $user, string $routeName, ?string $workspaceSection = null, array $parameters = [], array $query = []): bool
     {
+        if (in_array($routeName, ['cashier.index', 'cashier.open', 'cashier.close', 'cashier.collections', 'cashier.opening-popup'], true)) {
+            return collect(['account.daily_closing', 'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
+                ->contains(fn ($permission) => $user->canAccess($permission));
+        }
+        if ($routeName === 'cashier.reopen') {
+            return $user->canAccess('account.reopen_closing');
+        }
         if ($routeName === 'sales.invoices.pdf') {
             return $user->canAccess('sales.view_invoices') || $user->canAccess('sales.parts_sales');
         }

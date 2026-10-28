@@ -88,6 +88,7 @@
 
             <!-- Right Side -->
             <div class="flex items-center justify-end gap-3 w-1/4">
+                <x-cashier-control /><x-collection-control />
                 @yield('pos-actions')
                 
                 <div class="ml-2 flex items-center gap-2 border-l border-white/20 pl-4">

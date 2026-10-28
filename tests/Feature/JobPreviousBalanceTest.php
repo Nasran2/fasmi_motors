@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
-    $this->actingAs($this->user);
+    $this->actingAs($this->user)->withOpenCashier();
     Account::create(['code' => 'MAIN', 'name' => 'Main Account', 'type' => 'main', 'active' => true]);
     $customer = Customer::create(['name' => 'Balance Test Customer', 'phone' => '0771234510', 'active' => true]);
     $bike = $customer->bikes()->create(['number' => 'OLD-DUE-100', 'model' => 'Yamaha FZ']);
@@ -265,7 +265,7 @@ test('forgotten balances cannot be dated after the current bill or added from a 
 
 test('viewing jobs does not grant permission to add previous debt', function () {
     $role = Role::create(['name' => 'Job balance viewer', 'permissions' => ['job_card.view']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('Add opening balance');
     $this->post(route('jobs.previous-balance.store', $this->job), [
         'previous_balance_amount' => 100, 'previous_balance_date' => '2026-09-20',

@@ -81,6 +81,7 @@
                 <label><span class="label">Priority <span class="text-red-500">*</span></span><select name="priority" class="field">@foreach(['Normal','Low','High','Urgent'] as $priority)<option @selected(old('priority','Normal')===$priority)>{{ $priority }}</option>@endforeach</select></label>
                 <label><span class="label">Estimated amount</span><input name="estimated_amount" value="{{ old('estimated_amount') }}" type="number" step=".01" class="field" placeholder="0.00"></label>
             </div>
+            <x-washing-assignment :technicians="$technicians" />
             <label><span class="label">Internal notes</span><textarea name="internal_notes" class="field min-h-28" rows="3" placeholder="Workshop instructions or internal notes...">{{ old('internal_notes') }}</textarea></label>
             <div class="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 pt-5 sm:flex-row"><a href="{{ route('jobs.index') }}" class="btn-secondary">Cancel</a><button class="btn-primary" @disabled($intakes->isEmpty())>Create Job Card</button></div>
         </form>

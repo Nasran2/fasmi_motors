@@ -9,7 +9,7 @@ test('starred products appear first in POS and can be rearranged', function () {
     $beta = Product::create(['code' => 'PIN-B', 'name' => 'Beta Part', 'selling_price' => 20, 'active' => true]);
     $charlie = Product::create(['code' => 'PIN-C', 'name' => 'Charlie Part', 'selling_price' => 30, 'active' => true]);
 
-    $this->actingAs($user)->get(route('products.index'))->assertOk()
+    $this->actingAs($user)->withOpenCashier()->get(route('products.index'))->assertOk()
         ->assertSee('Pin Alpha Part in POS');
     $this->post(route('products.pos-pin.toggle', $charlie))->assertRedirect();
     $this->post(route('products.pos-pin.toggle', $beta))->assertRedirect();
@@ -36,7 +36,7 @@ test('pin ordering rejects unpinned and other shop products', function () {
     $unpinned = Product::create(['code' => 'PIN-TWO', 'name' => 'Unpinned', 'active' => true]);
     $otherShop = Product::create(['code' => 'PIN-OTHER', 'name' => 'Other shop', 'active' => true, 'shop_type' => 'helmet', 'pos_pinned' => true, 'pos_pin_order' => 1]);
 
-    $this->actingAs($user)->putJson(route('products.pos-pins.order'), ['product_ids' => [$unpinned->id]])
+    $this->actingAs($user)->withOpenCashier()->putJson(route('products.pos-pins.order'), ['product_ids' => [$unpinned->id]])
         ->assertUnprocessable()->assertJsonValidationErrors('product_ids');
     $this->putJson(route('products.pos-pins.order'), ['product_ids' => [$otherShop->id]])
         ->assertUnprocessable()->assertJsonValidationErrors('product_ids');

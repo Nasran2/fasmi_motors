@@ -1,6 +1,7 @@
 import './jobListSearch';
 import './printing';
 import './partsSaleEdit';
+import './cashier';
 
 window.spreadsheetSafeText = (value) => {
     const text = String(value ?? '');

@@ -13,7 +13,7 @@ test('guests are redirected to the login page', function () {
 
 test('authenticated users can visit the dashboard', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    $this->actingAs($user)->withOpenCashier();
 
     $response = $this->get(route('dashboard'));
     $response->assertOk();
@@ -23,7 +23,7 @@ test('weekly dashboard series contains seven consecutive calendar days', functio
     $user = User::factory()->create();
     $weekStart = now()->startOfWeek();
 
-    $response = $this->actingAs($user)->get(route('dashboard', ['filter' => 'this_week']))->assertOk();
+    $response = $this->actingAs($user)->withOpenCashier()->get(route('dashboard', ['filter' => 'this_week']))->assertOk();
 
     foreach (range(0, 6) as $offset) {
         $response->assertSee('title="'.$weekStart->copy()->addDays($offset)->format('d M').'"', false);
@@ -47,7 +47,7 @@ test('dashboard totals and recent intake use persisted workshop data', function 
         'paid_amount' => 5000, 'due_amount' => 0, 'status' => 'Paid', 'public_token' => str_repeat('a', 48), 'created_by' => $user->id,
     ]);
 
-    $this->actingAs($user)->get(route('dashboard'))
+    $this->actingAs($user)->withOpenCashier()->get(route('dashboard'))
         ->assertOk()
         ->assertSeeText('WP TEST 1001')
         ->assertSeeText('Rs. 5,000.00');
@@ -62,7 +62,7 @@ test('job card intake picker is searchable across bike and customer details', fu
         'estimated_amount' => 0, 'advance_payment' => 0, 'is_service' => false, 'created_by' => $user->id,
     ]);
 
-    $this->actingAs($user)->get(route('jobs.create'))
+    $this->actingAs($user)->withOpenCashier()->get(route('jobs.create'))
         ->assertOk()
         ->assertSee('id="intake-search"', false)
         ->assertSee('data-search="in-search-0001 wp search 2026 yamaha fz searchable customer 0779876543"', false)

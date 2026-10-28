@@ -11,7 +11,7 @@ use App\Models\Payment;
 use App\Models\User;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create(['email_verified_at' => now()]));
+    $this->actingAs(User::factory()->create(['email_verified_at' => now()]))->withOpenCashier();
     Account::ensureSystemAccounts();
     $customer = Customer::create(['name' => 'Cash Customer', 'phone' => '0771234567']);
     $bike = $customer->bikes()->create(['number' => 'CHANGE-100', 'model' => 'Honda Dio']);

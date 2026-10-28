@@ -14,7 +14,7 @@ use App\Models\Technician;
 use App\Models\User;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $this->store = Store::create(['name' => 'Main Store', 'active' => true, 'is_default' => true]);
     $this->post(route('intakes.store'), ['bike_number' => 'OUT-2255', 'bike_model' => 'Honda Dio', 'phone' => '0771111122', 'customer_name' => 'Part Customer', 'complaint' => 'Test repair'])->assertSessionHasNoErrors();
@@ -106,7 +106,7 @@ test('outer purchase requires expense permission and ignores inactive accounts',
     $this->post(route('jobs.parts.outer', $this->job), $this->outerData)->assertSessionHasErrors('account_id');
     expect($this->job->parts()->count())->toBe(0)->and(Expense::count())->toBe(0);
     $role = Role::create(['name' => 'Job Parts Only', 'permissions' => ['job_card.add_parts', 'job_card.view']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->post(route('jobs.parts.outer', $this->job), $this->outerData)->assertForbidden();
     $this->post(route('jobs.products.store', $this->job), [])->assertForbidden();
 });

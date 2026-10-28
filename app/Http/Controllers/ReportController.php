@@ -25,6 +25,7 @@ use App\Models\TechnicianSalarySheet;
 use App\Support\CashBook;
 use App\Support\PrintDocument;
 use App\Support\ReportAccounting;
+use App\Support\WashingCharges;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -443,9 +444,17 @@ class ReportController extends Controller
         $opening = (float) $account->opening_balance + (clone $base)->where('transaction_date', '<', $from)->sum(DB::raw('credit - debit'));
         $closing = $opening + (clone $base)->whereBetween('transaction_date', [$from, $to])->sum(DB::raw('credit - debit'));
         $stats = ['filtered_in_amount' => (clone $q)->sum('credit'), 'filtered_out_amount' => (clone $q)->sum('debit'), 'opening_balance' => $opening, 'closing_balance' => $closing];
+        $extra = [];
+        if ($type === 'washing') {
+            $stats += WashingCharges::forPeriod($from, $to);
+            $washingQuery = $this->invoiceFilters(WashingCharges::queryForPeriod($from, $to), $r)
+                ->with($this->invoiceRelations())->orderByDesc('bill_date')->orderByDesc('id');
+            $extra['washingBills'] = $r->boolean('print') || $r->boolean('export_csv')
+                ? $washingQuery->get() : $washingQuery->paginate(25, ['*'], 'washing_page')->withQueryString();
+        }
         $rows = $this->rows($q->with('creator')->orderBy('transaction_date')->orderBy('id'), $r);
 
-        return $this->render($r, $view, compact('rows', 'stats', 'from', 'to'));
+        return $this->render($r, $view, compact('rows', 'stats', 'from', 'to') + $extra);
     }
 
     public function mainAccount(Request $r)
@@ -456,6 +465,11 @@ class ReportController extends Controller
     public function sparePartsAccount(Request $r)
     {
         return $this->accountReport($r, 'spare_parts', 'spare-parts-account');
+    }
+
+    public function washingAccount(Request $r)
+    {
+        return $this->accountReport($r, 'washing', 'washing-account');
     }
 
     public function bankAccount(Request $r)
@@ -520,7 +534,7 @@ class ReportController extends Controller
         $q = DailyClosing::with('closer')->whereBetween('closing_date', [$from->toDateString(), $to->toDateString()])->where('status', $r->input('status') ?: 'closed')
             ->when($r->search, fn ($q, $s) => $q->where('closing_date', 'like', "%{$s}%"));
         // Main and spare parts are logical ledgers; bank and cash mirror physical movements.
-        $stats = ['day_count' => (clone $q)->count(), 'main_income' => (clone $q)->sum('main_income'), 'spare_parts_income' => (clone $q)->sum('spare_parts_income'), 'bank_income' => (clone $q)->sum('bank_income'), 'total_expenses' => (clone $q)->sum(DB::raw('main_expense + spare_parts_expense'))];
+        $stats = ['day_count' => (clone $q)->count(), 'main_income' => (clone $q)->sum('main_income'), 'spare_parts_income' => (clone $q)->sum('spare_parts_income'), 'bank_income' => (clone $q)->sum('bank_income'), 'washing_income' => (clone $q)->sum('washing_income'), 'total_expenses' => (clone $q)->sum(DB::raw('main_expense + spare_parts_expense + washing_expense'))];
         $rows = $this->rows($q->latest('closing_date'), $r);
 
         return $this->render($r, 'daily-closing', compact('rows', 'stats', 'from', 'to'));

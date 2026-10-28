@@ -65,6 +65,7 @@ class ExpenseDrawingController extends Controller
 
     private function form(string $module)
     {
+        Account::ensureSystemAccounts();
         $accounts = Account::where('active', true)->get();
         $categories = FinancialCategory::where('module', $module)->where('active', true)->orderBy('name')->get();
         $default = $accounts->firstWhere('code', Account::systemCode($module === 'expense' ? 'main' : 'spare_parts'))?->id;
@@ -104,7 +105,12 @@ class ExpenseDrawingController extends Controller
         $base = ['account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|gt:0', 'payment_method' => 'required|in:Cash,Bank Transfer,Card,Cheque,QR', 'reference_number' => 'nullable|max:100', 'cheque_number' => 'nullable|required_if:payment_method,Cheque|max:100', 'note' => 'nullable|max:1000'];
         $specific = $module === 'expense' ? ['expense_date' => 'required|date', 'category' => 'required|max:100', 'description' => 'required|max:1000', 'vendor' => 'nullable|max:150', 'attachment' => 'nullable|file|max:4096'] : ['drawing_date' => 'required|date', 'person_name' => 'required|max:150', 'drawing_type' => 'required|max:100'];
         $v = $r->validate($base + $specific);
-        $accountType = $module === 'expense' ? 'main' : 'spare_parts';
+        $selectedAccount = Account::where('active', true)->findOrFail($v['account_id']);
+        $types = collect(['main', 'spare_parts', 'bank', 'washing'])->mapWithKeys(fn ($type) => [Account::systemAccount($type)->id => $type]);
+        $accountType = $module === 'expense' ? $types->get($selectedAccount->id) : 'spare_parts';
+        if (! $accountType) {
+            throw ValidationException::withMessages(['account_id' => 'Select a configured system account.']);
+        }
         DB::transaction(function () use ($v, $module, $service, $accountType, $r) {
             $account = Account::systemAccount($accountType);
             Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -123,7 +129,7 @@ class ExpenseDrawingController extends Controller
             }
 
             $service->recordTransaction($accountType, $module, (float) $v['amount'], ($module === 'expense' ? $v['description'] : "Drawing by {$v['person_name']}"), $record, $v['payment_method'], $v['note'] ?? null, $v['account_id'], $v[$module.'_date'], $module === 'expense' ? $v['category'] : $v['drawing_type']);
-            if ($v['payment_method'] !== 'Cash') {
+            if ($v['payment_method'] !== 'Cash' && $accountType !== 'bank') {
                 $service->recordTransaction('bank', $module, (float) $v['amount'], ucfirst($module)." {$record->number}", $record, $v['payment_method'], null, null, $v[$module.'_date']);
             }
 

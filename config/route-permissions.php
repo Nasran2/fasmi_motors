@@ -3,6 +3,9 @@
 return [
     'routes' => [
         'dashboard' => 'dashboard.view',
+        'notifications.clear' => 'dashboard.view',
+        'cashier.reopen' => 'account.reopen_closing',
+        'cashier.*' => 'account.daily_closing',
         'data-management.index' => 'settings.backup',
         'customers.excel.export' => ['customer.view', 'reports.export_excel'],
         'customers.excel.import' => 'customer.add',
@@ -43,6 +46,7 @@ return [
         'jobs.store' => 'job_card.create',
         'jobs.bike-number' => 'job_card.edit',
         'jobs.bill-details' => 'job_card.edit',
+        'jobs.washing-assignment' => 'job_card.edit',
         'jobs.update' => 'job_card.edit',
         'jobs.*' => 'job_card.view',
 
@@ -186,6 +190,8 @@ return [
 
         'accounts.main-ledger.reverse' => 'account.edit_ledger',
         'accounts.main-ledger.*' => 'account.view_main',
+        'accounts.washing-ledger.reverse' => 'account.edit_ledger',
+        'accounts.washing-ledger.*' => 'account.view_main',
         'accounts.spare-parts-ledger.reverse' => 'account.edit_ledger',
         'accounts.spare-parts-ledger.*' => 'account.view_spare_parts',
         'accounts.bank-ledger.reverse' => 'account.edit_ledger',

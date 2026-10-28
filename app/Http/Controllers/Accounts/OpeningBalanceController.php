@@ -21,7 +21,7 @@ class OpeningBalanceController extends BaseAccountController
 
     public function store(Request $request, AccountService $service)
     {
-        $v = $request->validate(['account_type' => 'required|in:main,spare_parts,bank,cash', 'opening_date' => 'required|date', 'amount' => 'required|numeric|gte:0', 'balance_type' => 'required|in:debit,credit', 'note' => 'nullable|string|max:1000', 'edit_reason' => 'nullable|string|min:5|max:500']);
+        $v = $request->validate(['account_type' => 'required|in:main,spare_parts,bank,washing,cash', 'opening_date' => 'required|date', 'amount' => 'required|numeric|gte:0', 'balance_type' => 'required|in:debit,credit', 'note' => 'nullable|string|max:1000', 'edit_reason' => 'nullable|string|min:5|max:500']);
         DB::transaction(function () use ($v, $service) {
             $account = Account::systemAccount($v['account_type']);
             abort_unless($account, 422, 'Configure the account first.');

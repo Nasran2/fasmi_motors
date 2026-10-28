@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     Account::query()->update(['opening_balance' => 100000]);
 });
@@ -55,8 +55,8 @@ test('full repair receipts allocate each component and reverse exact postings', 
 
 test('partial repair and due settlement use the same allocation and reject duplicate form requests', function () {
     $invoice = app(WorkshopService::class)->invoice(financialAuditJob(10000, 5000), 6000, 'Cash');
-    expect(Account::systemAccount('main')->balance)->toBe(102000.0)
-        ->and(Account::systemAccount('spare_parts')->balance)->toBe(104000.0);
+    expect(Account::systemAccount('main')->balance)->toBe(105000.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(101000.0);
     $data = ['customer_id' => $invoice->customer_id, 'invoice_id' => $invoice->id, 'amount' => 3000, 'method' => 'Cash', 'account_id' => Account::systemAccount('main')->id, 'paid_at' => today()->toDateString(), '_submission_token' => (string) Str::uuid()];
     $this->post(route('sales.payments.store'), $data)->assertSessionHasNoErrors();
     $this->post(route('sales.payments.store'), $data)->assertSessionHasNoErrors();
@@ -85,8 +85,8 @@ test('edited paid invoice reallocates existing receipts without duplicate income
     $invoice = app(WorkshopService::class)->invoice($job, 5000, 'Cash');
     $this->post(route('jobs.unlock', $job), ['status' => 'In Progress', 'reason' => 'Correct service charge'])->assertSessionHasNoErrors();
     $this->put(route('jobs.update', $job), ['status' => 'In Progress', 'service_total' => 4000])->assertSessionHasNoErrors();
-    expect(Account::systemAccount('spare_parts')->balance)->toBe(103333.33)
-        ->and(Account::systemAccount('main')->balance)->toBe(101666.67)
+    expect(Account::systemAccount('spare_parts')->balance)->toBe(101000.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(104000.0)
         ->and($invoice->fresh()->due_amount)->toEqual(7000);
     $this->delete(route('sales.payments.cancel', $invoice->payments()->first()), ['reason' => 'Cancel corrected payment'])->assertSessionHasNoErrors();
     expect(Account::systemAccount('spare_parts')->balance)->toBe(100000.0)
@@ -169,7 +169,7 @@ test('report searches use real relationships and remain within the selected ledg
         $this->get(route($route, ['search' => 'Audit', 'date_range' => 'this_month']))->assertOk();
     }
     $this->get(route('accounts.cash-book.index'))->assertOk()->assertViewHas('totals', fn ($totals) => $totals['credit'] === 2000.0);
-    $this->get(route('accounts.daily-closing.index'))->assertOk()->assertViewHas('summary', fn ($summary) => $summary['closing'] === 202000.0);
+    $this->get(route('accounts.daily-closing.index'))->assertOk()->assertViewHas('summary', fn ($summary) => $summary['accounts']['main']['closing'] + $summary['accounts']['spare_parts']['closing'] === 202000.0);
 });
 
 test('opening replacement requires reason and retains one net opening balance', function () {

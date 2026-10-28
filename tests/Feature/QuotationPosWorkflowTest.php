@@ -49,7 +49,7 @@ test('draft quotation opens in POS and checks out with products and charges only
     $account = Account::create(['code' => 'QUOTE-ACC', 'name' => 'Quote Account', 'type' => 'main', 'active' => true]);
     $quotation = posWorkflowQuotation($user, $store, $customer, $product);
 
-    $this->actingAs($user)->get(route('sales.quotations'))->assertOk()
+    $this->actingAs($user)->withOpenCashier()->get(route('sales.quotations'))->assertOk()
         ->assertSee(route('sales.parts', ['quotation' => $quotation->id]))
         ->assertSee('Cancel quotation');
     $this->get(route('sales.parts', ['quotation' => $quotation->id]))->assertOk()
@@ -83,7 +83,7 @@ test('charge-only quotation can be sold and a cancelled quotation cannot be open
     $account = Account::create(['code' => 'CHARGE-ACC', 'name' => 'Charge Account', 'type' => 'main', 'active' => true]);
     $quotation = posWorkflowQuotation($user, $store, $customer);
 
-    $this->actingAs($user)->postJson(route('sales.parts.store'), [
+    $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
         'source_quotation_id' => $quotation->id, 'customer_mode' => 'existing', 'customer_id' => $customer->id,
         'store_id' => $store->id, 'invoice_type' => 'Parts Sale', 'paid_amount' => 50,
         'payment_method' => 'Cash', 'account_id' => $account->id, 'items' => [],
@@ -104,7 +104,7 @@ test('accident bike quotation has no POS action and cannot be converted through 
     $quotation = posWorkflowQuotation($user, $store, $customer);
     $quotation->update(['is_accident_quotation' => true]);
 
-    $this->actingAs($user)->get(route('sales.quotations', ['type' => 'accident']))
+    $this->actingAs($user)->withOpenCashier()->get(route('sales.quotations', ['type' => 'accident']))
         ->assertOk()
         ->assertSee($quotation->number)
         ->assertDontSee(route('sales.parts', ['quotation' => $quotation->id]));

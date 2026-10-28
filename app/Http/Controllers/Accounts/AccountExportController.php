@@ -17,7 +17,7 @@ class AccountExportController extends Controller
 {
     public function export(Request $request, string $type)
     {
-        $validTypes = ['main', 'spare_parts', 'bank', 'cash'];
+        $validTypes = ['main', 'spare_parts', 'bank', 'washing', 'cash'];
         if (! in_array($type, $validTypes)) {
             abort(404);
         }
@@ -65,6 +65,7 @@ class AccountExportController extends Controller
             'main' => 'Main Account Ledger',
             'spare_parts' => 'Spare Parts Ledger',
             'bank' => 'Bank Account Ledger',
+            'washing' => 'Washing Account Ledger',
             'cash' => 'Cash Book',
         };
 

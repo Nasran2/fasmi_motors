@@ -16,7 +16,7 @@ use App\Support\JobPaymentSummary;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $customer = Customer::create(['name' => 'Combined Customer', 'phone' => '0779990055']);
     $bike = $customer->bikes()->create(['number' => 'VO-1783', 'model' => 'Bajaj']);

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::fake();
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     $this->intakeData = ['bike_number' => 'INTAKE-DATE-100', 'bike_model' => 'Honda Dio', 'complaint' => 'Service'];
 });
 

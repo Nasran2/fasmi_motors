@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Http;
 beforeEach(function () {
     Http::preventStrayRequests();
     Http::fake();
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $customer = Customer::create(['name' => 'Advance Balance Customer', 'phone' => '0771234567']);
     $bike = $customer->bikes()->create(['number' => 'ADV-BALANCE', 'model' => 'Yamaha']);

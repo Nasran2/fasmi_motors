@@ -19,14 +19,14 @@ class AccountTransferController extends BaseAccountController
         $transfers = AccountTransfer::with(['fromAccount', 'toAccount', 'creator'])->whereBetween('transfer_date', [$from, $to])
             ->when($request->status, fn ($q, $v) => $q->where('status', $v))->latest('transfer_date')->paginate(25)->withQueryString();
         $accounts = Account::where('active', true)->orderBy('name')->get();
-        $balances = collect(['main', 'spare_parts', 'bank', 'cash'])->mapWithKeys(fn ($type) => [$type => $this->balance($type)]);
+        $balances = collect(['main', 'spare_parts', 'bank', 'washing', 'cash'])->mapWithKeys(fn ($type) => [$type => $this->balance($type)]);
 
         return view('accounts.transfers', compact('transfers', 'accounts', 'balances', 'from', 'to', 'range'));
     }
 
     public function store(Request $request, AccountService $service)
     {
-        $v = $request->validate(['from_account' => 'required|in:main,spare_parts,bank,cash', 'to_account' => 'required|in:main,spare_parts,bank,cash|different:from_account', 'amount' => 'required|numeric|gt:0', 'transfer_date' => 'required|date', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000']);
+        $v = $request->validate(['from_account' => 'required|in:main,spare_parts,bank,washing,cash', 'to_account' => 'required|in:main,spare_parts,bank,washing,cash|different:from_account', 'amount' => 'required|numeric|gt:0', 'transfer_date' => 'required|date', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000']);
         DB::transaction(function () use ($v, $service) {
             $from = $this->account($v['from_account']);
             $to = $this->account($v['to_account']);

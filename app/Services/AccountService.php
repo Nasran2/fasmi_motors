@@ -7,6 +7,7 @@ use App\Models\AccountTransaction;
 use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\Payment;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -201,14 +202,12 @@ class AccountService
 
     public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): void
     {
-        $total = (int) round((float) $invoice->total * 100);
-        // Opening dues have no reliable parts/service breakdown and belong entirely to MAIN.
-        $parts = $invoice->isOpeningDue() ? 0 : min($total, (int) round((float) $invoice->parts_amount * 100));
         $amount = (int) round((float) $payment->amount * 100);
-        $share = $total > 0 ? (int) round($amount * $parts / $total) : 0;
-        foreach (['spare_parts' => $share, 'main' => $amount - $share] as $type => $cents) {
+        foreach ($this->paymentReceiptAllocation($invoice, $payment, $settledAt) as $type => $cents) {
             if ($cents > 0) {
-                $category = $invoice->isOpeningDue() ? 'opening_due' : ($type === 'main' ? 'service' : 'parts');
+                $category = $invoice->isOpeningDue() ? 'opening_due' : match ($type) {
+                    'main' => 'service', 'washing' => 'washing', default => 'parts'
+                };
                 $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at), $category);
             }
         }
@@ -218,25 +217,118 @@ class AccountService
         $this->reallocateInvoiceReceipts($invoice);
     }
 
-    public function reallocateInvoiceReceipts(Invoice $invoice): void
+    public function reallocateInvoiceReceipts(Invoice $invoice, CarbonInterface|string|null $fromDate = null, CarbonInterface|string|null $correctionDate = null): void
     {
         $cumulative = 0;
-        $previousParts = 0;
-        foreach ($invoice->payments()->where('status', 'Completed')->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->orderBy('id')->get() as $payment) {
+        $previous = ['spare_parts' => 0, 'washing' => 0, 'main' => 0];
+        foreach ($this->orderedReceipts($invoice) as $payment) {
             $cumulative += (int) round((float) $payment->amount * 100);
-            $targetParts = ! $invoice->isOpeningDue() && (float) $invoice->total > 0 ? (int) round($cumulative * min(1, (float) $invoice->parts_amount / (float) $invoice->total)) : 0;
-            $parts = ($targetParts - $previousParts) / 100;
-            $previousParts = $targetParts;
+            $target = $this->receiptAllocation($invoice, $cumulative);
+            $allocation = [];
+            foreach ($target as $type => $cents) {
+                $allocation[$type] = ($cents - $previous[$type]) / 100;
+            }
+            $previous = $target;
             // Cheques post on clearance; all other receipts post on their selected payment date.
             $effectiveDate = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('transaction_type', 'income')->oldest('transaction_date')->value('transaction_date') ?? $payment->paid_at;
-            foreach (['spare_parts' => $parts, 'main' => round((float) $payment->amount - $parts, 2)] as $type => $expected) {
+            if ($fromDate && Carbon::parse($effectiveDate)->lt($fromDate)) {
+                continue;
+            }
+            foreach ($allocation as $type => $expected) {
                 $entries = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('account_type', $type);
                 $actual = (float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit');
                 $difference = round($expected - $actual, 2);
                 if ($difference != 0) {
-                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $effectiveDate, 'invoice_revision');
+                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $correctionDate ?? $effectiveDate, 'invoice_revision');
                 }
             }
         }
+    }
+
+    /** Component budgets include the bill's discount/tax and always sum to its total. */
+    public function receiptComponentBudgets(Invoice $invoice): array
+    {
+        $total = max(0, (int) round((float) $invoice->total * 100));
+        if ($invoice->isOpeningDue()) {
+            return ['service' => 0, 'labor' => 0, 'washing' => 0, 'other' => $total, 'spare_parts' => 0];
+        }
+        $parts = max(0, (int) round((float) $invoice->parts_amount * 100));
+        $washing = max(0, (int) round((float) $invoice->washing_amount * 100));
+        $partsOnly = $invoice->invoice_type === 'Parts Sale' && $parts > 0
+            && (float) $invoice->service_amount + (float) $invoice->labor_amount + (float) $invoice->washing_amount + (float) $invoice->other_amount == 0;
+        $parts = $partsOnly ? $total : min($total, $parts);
+        $washing = min($total - $parts, $washing);
+        $main = $total - $parts - $washing;
+        $service = min($main, max(0, (int) round((float) $invoice->service_amount * 100)));
+        $labor = min($main - $service, max(0, (int) round((float) $invoice->labor_amount * 100)));
+
+        // Keep the existing full-bill account totals, including discount/tax
+        // treatment. Only the order of collecting those balances changes.
+        return ['service' => $service, 'labor' => $labor, 'washing' => $washing,
+            'other' => $main - $service - $labor, 'spare_parts' => $parts];
+    }
+
+    public function receiptComponentAllocation(Invoice $invoice, int $amount): array
+    {
+        $remaining = max(0, $amount);
+        $allocation = [];
+        foreach ($this->receiptComponentBudgets($invoice) as $type => $budget) {
+            $allocation[$type] = min($remaining, $budget);
+            $remaining -= $allocation[$type];
+        }
+        // Legacy zero-total receipts must still reconcile to their recorded money.
+        $allocation['other'] += $remaining;
+
+        return $allocation;
+    }
+
+    public function receiptAllocation(Invoice $invoice, int $amount): array
+    {
+        $parts = $this->receiptComponentAllocation($invoice, $amount);
+
+        return ['spare_parts' => $parts['spare_parts'], 'washing' => $parts['washing'],
+            'main' => $parts['service'] + $parts['labor'] + $parts['other']];
+    }
+
+    public function orderedReceipts(Invoice $invoice, ?Payment $current = null, CarbonInterface|string|null $settledAt = null)
+    {
+        $payments = $invoice->payments()->where('status', 'Completed')
+            ->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->get();
+        $dates = AccountTransaction::posted()->where('reference_type', (new Payment)->getMorphClass())
+            ->whereIn('reference_id', $payments->modelKeys())->where('transaction_type', 'income')
+            ->selectRaw('reference_id, MIN(transaction_date) as receipt_date')->groupBy('reference_id')->pluck('receipt_date', 'reference_id');
+
+        return $payments->sortBy(fn ($payment) => [
+            Carbon::parse($current?->id === $payment->id && $settledAt ? $settledAt : ($dates[$payment->id] ?? $payment->paid_at))->format('Y-m-d H:i:s'), $payment->id,
+        ])->values();
+    }
+
+    public function paymentComponentAllocation(Invoice $invoice, Payment $payment, CarbonInterface|string|null $settledAt = null): array
+    {
+        $cumulative = 0;
+        foreach ($this->orderedReceipts($invoice, $payment, $settledAt) as $receipt) {
+            $before = $this->receiptComponentAllocation($invoice, $cumulative);
+            $cumulative += (int) round((float) $receipt->amount * 100);
+            if ($receipt->id === $payment->id) {
+                $after = $this->receiptComponentAllocation($invoice, $cumulative);
+
+                $allocation = [];
+                foreach ($after as $type => $value) {
+                    $allocation[$type] = $value - $before[$type];
+                }
+
+                return $allocation;
+            }
+        }
+
+        return $this->receiptComponentAllocation($invoice, (int) round((float) $payment->amount * 100));
+    }
+
+    private function paymentReceiptAllocation(Invoice $invoice, Payment $payment, CarbonInterface|string|null $settledAt = null): array
+    {
+        $parts = $this->paymentComponentAllocation($invoice, $payment, $settledAt);
+
+        return ['spare_parts' => $parts['spare_parts'], 'washing' => $parts['washing'],
+            'main' => $parts['service'] + $parts['labor'] + $parts['other']];
     }
 }

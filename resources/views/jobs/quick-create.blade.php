@@ -45,6 +45,7 @@
                     </div>
                 </div>
             </section>
+            <section class="panel"><h2 class="mb-4 text-lg font-bold">Washing Assignment</h2><x-washing-assignment :technicians="$technicians" /></section>
             <div class="flex justify-end gap-3"><a href="{{ route('jobs.index') }}" class="btn-secondary">Cancel</a><button type="submit" class="btn-primary">Create Quick Job</button></div>
         </form>
     </div>

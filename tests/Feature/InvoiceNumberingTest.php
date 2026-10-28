@@ -18,7 +18,7 @@ test('quotation numbers reset monthly and invoice numbers reset daily', function
     StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 10]);
 
     $create = function (string $type) use ($user, $store, $account, $product): Invoice {
-        $id = $this->actingAs($user)->postJson(route('sales.parts.store'), [
+        $id = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
             'customer_mode' => 'walkin', 'store_id' => $store->id, 'invoice_type' => $type,
             'paid_amount' => $type === 'Quotation' ? 0 : 100,
             'payment_method' => $type === 'Quotation' ? null : 'Cash',

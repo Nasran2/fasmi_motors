@@ -10,7 +10,7 @@ use App\Models\User;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     $this->mainStore = Store::create(['name' => 'Main Store', 'is_default' => true, 'active' => true]);
     $this->posStore = Store::create(['name' => 'POS Counter', 'active' => true]);
     $this->category = ProductCategory::create(['name' => 'POS Parts']);
@@ -62,7 +62,7 @@ test('invalid POS products do not create inventory and zero opening stock is sup
 
 test('POS cashiers require product add permission to create products', function () {
     $role = Role::create(['name' => 'POS only', 'permissions' => ['sales.parts_sales']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('sales.parts'))->assertOk()->assertDontSee('id="pos-new-product-modal"', false);
     $this->postJson(route('sales.parts.products.store'), $this->productData)->assertForbidden();
     expect(Product::count())->toBe(0);

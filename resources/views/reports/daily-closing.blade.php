@@ -2,7 +2,7 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Daily Closing Report',
-      'subtitle' => 'Saved daily ledger totals. Main and spare parts include bank/cash movements; physical ledgers are not added again.',
+      'subtitle' => 'Saved daily ledger totals. Main, spare parts and washing include bank/cash movements; physical ledgers are not added again.',
     ])
 
     @include('reports._stats')
@@ -15,7 +15,7 @@
               <th class="px-4 py-3 font-bold">Date</th>
               <th class="px-4 py-3 font-bold">Main Income</th>
               <th class="px-4 py-3 font-bold">Spare Parts Income</th>
-              <th class="px-4 py-3 font-bold">Total Expenses</th>
+              <th class="px-4 py-3 font-bold">Washing Income</th><th class="px-4 py-3 font-bold">Bank Income</th><th class="px-4 py-3 font-bold">Total Money Out</th>
               <th class="px-4 py-3 font-bold">Closed By</th>
             </tr>
           </thead>
@@ -25,7 +25,7 @@
               <td class="px-4 py-3">{{ $row->closing_date->format("d M Y") }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->main_income, 2) }}</td>
               <td class="px-4 py-3">Rs. {{ number_format($row->spare_parts_income, 2) }}</td>
-              <td class="px-4 py-3">Rs. {{ number_format($row->main_expense + $row->spare_parts_expense, 2) }}</td>
+              <td class="px-4 py-3">Rs. {{ number_format($row->washing_income, 2) }}</td><td class="px-4 py-3">Rs. {{ number_format($row->bank_income, 2) }}</td><td class="px-4 py-3">Rs. {{ number_format($row->main_expense + $row->spare_parts_expense + $row->washing_expense, 2) }}</td>
               <td class="px-4 py-3">{{ $row->closer?->name }}</td>
             </tr>
             @empty

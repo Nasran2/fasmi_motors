@@ -13,7 +13,7 @@ use App\Models\TechnicianSalarySheet;
 use App\Models\User;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $this->staff = Technician::create(['name' => 'Correction Staff', 'phone' => '0774321000', 'salary_type' => 'Monthly', 'basic_salary' => 50000, 'active' => true, 'epf_eligible' => false, 'etf_eligible' => false]);
     $this->post(route('jobs.quick.store'), ['is_technician_bike' => 1, 'technician_id' => $this->staff->id, 'bike_number' => 'STAFF-CORRECTION', 'service_total' => 4250])->assertSessionHasNoErrors();
@@ -155,7 +155,7 @@ test('payment arrangement permission cannot correct applied salary deductions wi
     $sheet = correctionTestSalary();
     $payment = $sheet->repairPayments()->sole();
     $role = Role::create(['name' => 'Staff Repair Clerk', 'permissions' => ['technician.bike_deductions']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('technicians.salaries.repairs.edit', $payment))->assertForbidden();
     correctionTestUpdate($payment, 200)->assertForbidden();
     $this->put(route('technicians.bike-repairs.update', $this->job), ['payment_mode' => 'normal', 'reason' => 'Staff will settle the remaining balance directly'])->assertSessionHasNoErrors();

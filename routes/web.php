@@ -10,7 +10,9 @@ use App\Http\Controllers\Accounts\DailyClosingController;
 use App\Http\Controllers\Accounts\MainAccountController;
 use App\Http\Controllers\Accounts\OpeningBalanceController;
 use App\Http\Controllers\Accounts\SparePartsAccountController;
+use App\Http\Controllers\Accounts\WashingAccountController;
 use App\Http\Controllers\BikeIntakeController;
+use App\Http\Controllers\CashierController;
 use App\Http\Controllers\CustomerBikeController;
 use App\Http\Controllers\CustomerDueSmsController;
 use App\Http\Controllers\CustomerPaymentController;
@@ -47,7 +49,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login')->name('home');
 
-Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->group(function () {
+Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashier.open'])->group(function () {
+    Route::get('cashier', [CashierController::class, 'index'])->name('cashier.index');
+    Route::get('cashier/opening-popup', [CashierController::class, 'openingPopup'])->name('cashier.opening-popup');
+    Route::get('cashier/collections', [CashierController::class, 'collections'])->name('cashier.collections');
+    Route::post('cashier/open', [CashierController::class, 'open'])->name('cashier.open');
+    Route::post('cashier/{cashier}/close', [CashierController::class, 'close'])->name('cashier.close');
+    Route::post('cashier/{cashier}/reopen', [CashierController::class, 'reopen'])->name('cashier.reopen');
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('search', GlobalSearchController::class)->name('search');
     Route::post('notifications/clear', [WorkshopNotificationController::class, 'clear'])->name('notifications.clear');
@@ -79,6 +87,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::post('bike-ownership', [CustomerBikeController::class, 'ownershipStore'])->name('customers.ownership.store');
     Route::get('bike-intakes/lookup/{query}', [BikeIntakeController::class, 'lookup'])->name('intakes.lookup');
     Route::resource('bike-intakes', BikeIntakeController::class)->parameters(['bike-intakes' => 'intake'])->names('intakes');
+    Route::put('job-cards/{job}/washing-assignment', [JobCardController::class, 'washingAssignment'])->name('jobs.washing-assignment');
     Route::get('job-cards/quick/create', [QuickJobController::class, 'create'])->name('jobs.quick.create');
     Route::post('job-cards/quick', [QuickJobController::class, 'store'])->name('jobs.quick.store');
     Route::post('job-cards/{job}/parts', [JobCardController::class, 'addPart'])->name('jobs.parts.store');
@@ -243,6 +252,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
         Route::get('etf', [ReportController::class, 'etf'])->name('etf');
         Route::get('main-account', [ReportController::class, 'mainAccount'])->name('main-account');
         Route::get('spare-parts-account', [ReportController::class, 'sparePartsAccount'])->name('spare-parts-account');
+        Route::get('washing-account', [ReportController::class, 'washingAccount'])->name('washing-account');
         Route::get('bank-account', [ReportController::class, 'bankAccount'])->name('bank-account');
         Route::get('cash-book', [ReportController::class, 'cashBook'])->name('cash-book');
         Route::get('daily-closing', [ReportController::class, 'dailyClosing'])->name('daily-closing');
@@ -326,6 +336,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission'])->grou
     Route::prefix('accounts')->name('accounts.')->group(function () {
         Route::get('main-ledger', [MainAccountController::class, 'index'])->name('main-ledger.index');
         Route::post('main-ledger/{transaction}/reverse', [MainAccountController::class, 'reverse'])->name('main-ledger.reverse');
+
+        Route::get('washing-ledger', [WashingAccountController::class, 'index'])->name('washing-ledger.index');
+        Route::post('washing-ledger/{transaction}/reverse', [WashingAccountController::class, 'reverse'])->name('washing-ledger.reverse');
 
         Route::get('spare-parts-ledger', [SparePartsAccountController::class, 'index'])->name('spare-parts-ledger.index');
         Route::post('spare-parts-ledger/{transaction}/reverse', [SparePartsAccountController::class, 'reverse'])->name('spare-parts-ledger.reverse');

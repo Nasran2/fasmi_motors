@@ -23,7 +23,7 @@ test('job card invoices preserve vehicle technician and service details in both 
     $technician = Technician::create(['name' => 'Document Technician', 'phone' => '0776000003', 'active' => true]);
     $job = JobCard::create(['number' => 'JOB-DOC-001', 'bike_intake_id' => $intake->id, 'main_technician_id' => $technician->id, 'status' => 'Completed', 'priority' => 'Normal', 'created_by' => $user->id]);
     $invoice = Invoice::create(['number' => 'INV-DOC-JOB', 'job_card_id' => $job->id, 'customer_id' => $customer->id, 'invoice_type' => 'Job Card Bill', 'service_amount' => 700, 'subtotal' => 700, 'total' => 700, 'due_amount' => 700, 'public_token' => 'job-document-token', 'created_by' => $user->id]);
-    $this->actingAs($user);
+    $this->actingAs($user)->withOpenCashier();
 
     foreach (['a4' => [595.28, 841.89], 'a5' => [419.53, 595.28]] as $format => [$width, $height]) {
         $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => $format]))
@@ -51,7 +51,7 @@ test('quotation and bill have printable previews and downloadable PDFs', functio
             'customer_note' => 'Customer-facing note', 'internal_note' => 'Staff-only note',
             'items' => [['product_id' => $product->id, 'quantity' => 1, 'unit_price' => 125]],
         ];
-        $invoiceId = $this->actingAs($user)->postJson(route('sales.parts.store'), $payload)
+        $invoiceId = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), $payload)
             ->assertOk()->json('invoice_id');
         $invoice = Invoice::findOrFail($invoiceId);
 
@@ -77,7 +77,7 @@ test('public PDF access respects invoice download setting', function () {
     $user = User::factory()->create();
     $store = Store::create(['name' => 'Setting Store', 'active' => true]);
     $product = Product::create(['code' => 'DOC-002', 'name' => 'Setting Part', 'selling_price' => 20, 'active' => true]);
-    $invoiceId = $this->actingAs($user)->postJson(route('sales.parts.store'), [
+    $invoiceId = $this->actingAs($user)->withOpenCashier()->postJson(route('sales.parts.store'), [
         'customer_mode' => 'walkin', 'store_id' => $store->id, 'invoice_type' => 'Quotation', 'paid_amount' => 0,
         'items' => [['product_id' => $product->id, 'quantity' => 1, 'unit_price' => 20]],
     ])->assertOk()->json('invoice_id');
@@ -96,7 +96,7 @@ test('saved due visibility applies to reopened parts bills and every document fo
         'subtotal' => 100, 'total' => 100, 'paid_amount' => 35, 'due_amount' => 65,
         'status' => 'Partially Paid', 'public_token' => 'due-visibility-token', 'created_by' => $user->id,
     ]);
-    $this->actingAs($user);
+    $this->actingAs($user)->withOpenCashier();
     expect(InvoiceDocument::data($invoice)['showDueAmounts'])->toBeTrue();
     $this->get(route('system-settings.invoice-settings'))->assertOk()
         ->assertSeeText('Show due amounts on generated bills');
@@ -132,7 +132,7 @@ test('saved due visibility applies to reopened parts bills and every document fo
 });
 
 test('invoice due visibility rejects invalid values and preserves the last saved choice', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Setting::create(['group' => 'invoice', 'key' => 'show_due_invoice', 'value' => '0']);
     $this->post(route('system-settings.save'), ['group' => 'invoice', 'show_due_invoice' => 'invalid'])
         ->assertSessionHasErrors('show_due_invoice');
@@ -146,14 +146,14 @@ test('POS cashier can download their own document without invoice-list access', 
     $store = Store::create(['name' => 'Cashier Store', 'active' => true]);
     $product = Product::create(['code' => 'DOC-003', 'name' => 'Cashier Part', 'selling_price' => 50, 'active' => true]);
 
-    $invoiceId = $this->actingAs($cashier)->postJson(route('sales.parts.store'), [
+    $invoiceId = $this->actingAs($cashier)->withOpenCashier()->postJson(route('sales.parts.store'), [
         'customer_mode' => 'walkin', 'store_id' => $store->id, 'invoice_type' => 'Quotation', 'paid_amount' => 0,
         'items' => [['product_id' => $product->id, 'quantity' => 1, 'unit_price' => 50]],
     ])->assertOk()->json('invoice_id');
     $invoice = Invoice::findOrFail($invoiceId);
 
     $this->get(route('sales.invoices.pdf', $invoice))->assertOk();
-    $this->actingAs($otherCashier)->get(route('sales.invoices.pdf', $invoice))->assertForbidden();
+    $this->actingAs($otherCashier)->withOpenCashier()->get(route('sales.invoices.pdf', $invoice))->assertForbidden();
 });
 
 test('invoice settings control quotation and bill wording and show the developer credit', function () {
@@ -163,7 +163,7 @@ test('invoice settings control quotation and bill wording and show the developer
     $product = Product::create(['code' => 'WORD-001', 'name' => 'Wording Part', 'selling_price' => 100, 'active' => true]);
     StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 2]);
 
-    $this->actingAs($user)->post(route('system-settings.save'), [
+    $this->actingAs($user)->withOpenCashier()->post(route('system-settings.save'), [
         'group' => 'invoice',
         'quotation_intro_heading' => 'Quote details',
         'quotation_intro_text' => 'Prices shown are estimates.',
@@ -206,7 +206,7 @@ test('invoice settings control quotation and bill wording and show the developer
 
 test('generating a job invoice saves renamed service and other charges without a separate job update', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    $this->actingAs($user)->withOpenCashier();
     Account::ensureSystemAccounts();
     $customer = Customer::create(['name' => 'Named Charges Customer', 'phone' => '0776000010']);
     $bike = $customer->bikes()->create(['number' => 'NAME-BILL-100', 'model' => 'Honda Dio']);
@@ -228,7 +228,7 @@ test('generating a job invoice saves renamed service and other charges without a
 
 test('invalid renamed charges cannot create an invoice or change the stored label', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
+    $this->actingAs($user)->withOpenCashier();
     $customer = Customer::create(['name' => 'Invalid Label Customer', 'phone' => '0776000011']);
     $bike = $customer->bikes()->create(['number' => 'INVALID-NAME-100', 'model' => 'Honda Dio']);
     $intake = $bike->intakes()->create(['intake_number' => 'IN-INVALID-NAME', 'complaint' => 'Repair', 'created_by' => $user->id]);

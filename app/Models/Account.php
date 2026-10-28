@@ -20,6 +20,7 @@ class Account extends Model
             'main', 'cash' => $prefix.'MAIN',
             'spare_parts' => $prefix.'SPARE',
             'bank' => $prefix.'BANK',
+            'washing' => $prefix.'WASHING',
             default => null,
         };
     }
@@ -31,6 +32,7 @@ class Account extends Model
             'main' => 'Main Account',
             'spare_parts' => 'Spare Parts Account',
             'bank' => 'Bank Account',
+            'washing' => 'Washing Account',
         ] as $type => $name) {
             $code = self::systemCode($type, $shopMode);
             self::withoutGlobalScopes()->firstOrCreate(

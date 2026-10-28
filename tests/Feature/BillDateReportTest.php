@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     $this->customer = Customer::create(['name' => 'Date Customer', 'phone' => '0772234455']);
     $this->bike = $this->customer->bikes()->create(['number' => 'DATE-100', 'model' => 'Dio']);
@@ -73,7 +73,7 @@ test('bill corrections require edit permission and a valid date and reason', fun
     $this->put(route('jobs.bill-details', $this->job), array_replace($this->details, ['bill_date' => today()->addDay()->toDateString()]))->assertSessionHasErrors('bill_date');
     $this->put(route('jobs.bill-details', $this->job), array_replace($this->details, ['reason' => '']))->assertSessionHasErrors('reason');
     $role = Role::create(['name' => 'Read only dates', 'permissions' => ['job_card.view', 'sales.view_invoices']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->put(route('jobs.bill-details', $this->job), $this->details)->assertForbidden();
     $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('Save bill details');
 });

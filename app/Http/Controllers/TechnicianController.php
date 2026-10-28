@@ -20,6 +20,7 @@ use App\Models\TechnicianSalarySheet;
 use App\Services\AccountService;
 use App\Services\AttendanceCalculationService;
 use App\Services\AttendanceImportService;
+use App\Services\JobCommissionService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
 use App\Services\SalaryRepairCorrectionService;
@@ -1015,6 +1016,11 @@ class TechnicianController extends Controller
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'job_card_id' => ['nullable', 'exists:job_cards,id'], 'commission_type' => ['required', 'max:100'], 'base_amount' => ['required', 'numeric', 'min:0'], 'percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'amount' => ['nullable', 'numeric', 'min:0'], 'earned_date' => ['required', 'date'], 'note' => ['nullable', 'max:1000']]);
         $job = ! empty($data['job_card_id']) ? JobCard::with('invoice')->find($data['job_card_id']) : null;
+        if ($job && preg_match('/service|labou?r|bill/i', $data['commission_type'])) {
+            $data['base_amount'] = $job->service_labor_commission_base;
+            $data['commission_type'] = JobCommissionService::TYPE;
+            unset($data['amount']);
+        }
         $amount = isset($data['amount']) ? (float) $data['amount'] : (float) $data['base_amount'] * (float) $data['percentage'] / 100;
         TechnicianCommission::create(array_merge($data, ['invoice_id' => $job?->invoice?->id, 'amount' => round($amount, 2), 'created_by' => auth()->id()]));
 

@@ -32,13 +32,20 @@ class ReconcileRepairReceipts extends Command
             foreach ($invoices as $invoice) {
                 $ids = $invoice->payments()->where('status', 'Completed')->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->pluck('id');
                 $received = (float) $invoice->payments()->whereIn('id', $ids)->sum('amount');
-                $expected = (float) $invoice->total > 0 ? round($received * min(1, (float) $invoice->parts_amount / (float) $invoice->total), 2) : 0;
-                $entries = AccountTransaction::posted()->where('reference_type', (new Payment)->getMorphClass())->whereIn('reference_id', $ids)->where('account_type', 'spare_parts');
-                $actual = round((float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit'), 2);
-                if (abs($expected - $actual) < .005) {
+                $allocation = $service->receiptAllocation($invoice, (int) round($received * 100));
+                $changed = false;
+                foreach ($allocation as $type => $cents) {
+                    $expected = $cents / 100;
+                    $entries = AccountTransaction::posted()->where('reference_type', (new Payment)->getMorphClass())->whereIn('reference_id', $ids)->where('account_type', $type);
+                    $actual = round((float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit'), 2);
+                    if (abs($expected - $actual) >= .005) {
+                        $rows[] = [$invoice->number, $type, number_format($received, 2), number_format($actual, 2), number_format($expected, 2), number_format($expected - $actual, 2)];
+                        $changed = true;
+                    }
+                }
+                if (! $changed) {
                     continue;
                 }
-                $rows[] = [$invoice->number, number_format($received, 2), number_format($actual, 2), number_format($expected, 2), number_format($expected - $actual, 2)];
                 if ($this->option('apply')) {
                     DB::transaction(function () use ($invoice, $service) {
                         $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
@@ -46,8 +53,8 @@ class ReconcileRepairReceipts extends Command
                     });
                 }
             }
-            $this->table(['Invoice', 'Received', 'Posted Parts', 'Expected Parts', 'Correction'], $rows);
-            $this->info(count($rows).' invoice allocation differences'.($this->option('apply') ? ' corrected.' : ' found. Dry run; no records changed.'));
+            $this->table(['Invoice', 'Account', 'Received', 'Posted', 'Expected', 'Correction'], $rows);
+            $this->info(count($rows).' account allocation differences'.($this->option('apply') ? ' corrected.' : ' found. Dry run; no records changed.'));
             foreach (Account::withoutGlobalScopes()->where('shop_type', $shop)->get() as $account) {
                 $this->line($account->code.': '.number_format($account->balance, 2));
             }

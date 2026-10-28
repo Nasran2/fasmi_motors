@@ -5,7 +5,7 @@ use App\Models\JobCard;
 use App\Models\User;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     $this->post(route('intakes.store'), ['bike_number' => 'AMOUNT-100', 'bike_model' => 'Honda Dio', 'phone' => '0771112211', 'complaint' => 'Engine repair'])->assertSessionHasNoErrors();
     $this->post(route('jobs.store'), ['bike_intake_id' => BikeIntake::sole()->id, 'priority' => 'Normal'])->assertSessionHasNoErrors();
     $this->job = JobCard::sole();

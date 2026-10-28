@@ -7,7 +7,7 @@ use App\Models\JobCard;
 use App\Models\User;
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create(['email_verified_at' => now()]));
+    $this->actingAs(User::factory()->create(['email_verified_at' => now()]))->withOpenCashier();
 });
 
 test('intakes without phone numbers save separate customers and can become job cards', function () {

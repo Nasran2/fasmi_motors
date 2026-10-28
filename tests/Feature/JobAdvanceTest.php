@@ -24,7 +24,7 @@ use Illuminate\Validation\ValidationException;
 beforeEach(function () {
     Http::preventStrayRequests();
     Http::fake(['*' => Http::response('OK:ADVANCE', 200)]);
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create())->withOpenCashier();
     Account::ensureSystemAccounts();
     SmsSetting::instance()->update(['enabled' => true, 'auto_sms_enabled' => false, 'textit_id' => 'test', 'textit_password' => 'test']);
     $customer = Customer::create(['name' => 'Advance Customer', 'phone' => '0771234567']);
@@ -75,7 +75,7 @@ test('bank advances are deducted once and bank ledger is not posted twice', func
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect(Account::systemAccount('bank')->balance)->toBe(1000.0)
         ->and((float) $this->job->fresh()->invoice->due_amount)->toBe(4000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(400.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(600.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
 });
 
 test('cheque advance remains held on invoice and clears or returns using normal cheque rules', function () {
@@ -102,7 +102,7 @@ test('cheque cleared before billing transfers its existing receipt without doubl
     expect(JobAdvance::sole()->status)->toBe('Completed')->and(Account::systemAccount('main')->balance)->toBe(1000.0);
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect((float) $this->job->fresh()->invoice->paid_amount)->toBe(1000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(400.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(600.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
 });
 
 test('future cheques cannot clear early and returned unbilled advances are not deducted', function () {
@@ -141,7 +141,7 @@ test('SMS failure leaves the advance saved and reports the delivery problem', fu
 
 test('advance receipt collection requires payment permission', function () {
     $role = Role::create(['name' => 'Advance Viewer', 'permissions' => ['job_card.view']]);
-    $this->actingAs(User::factory()->create(['role_id' => $role->id]));
+    $this->actingAs(User::factory()->create(['role_id' => $role->id]))->withOpenCashier();
     $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('+ Add advance');
     $this->post(route('jobs.advances.store', $this->job), $this->data)->assertForbidden();
     expect(JobAdvance::count())->toBe(0);
