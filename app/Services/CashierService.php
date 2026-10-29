@@ -184,14 +184,17 @@ class CashierService
             && in_array($session->status, ['open', 'closed'], true);
     }
 
-    public function correctOpening(CashierSession $session, float $opening, array $allocations, string $reason, string $balanceVersion): void
+    public function correctOpening(CashierSession $session, float $opening, array $allocations, string $reason, string $balanceVersion, bool $recalculateToday = false): void
     {
         Account::ensureSystemAccounts();
-        DB::transaction(function () use ($session, $opening, $allocations, $reason, $balanceVersion) {
+        DB::transaction(function () use ($session, $opening, $allocations, $reason, $balanceVersion, $recalculateToday) {
             $this->lock();
             $session = CashierSession::lockForUpdate()->findOrFail($session->id);
             if (! $this->canCorrectOpening($session)) {
                 throw ValidationException::withMessages(['cashier' => 'Choose a saved cashier opening dated today or earlier.']);
+            }
+            if ($recalculateToday && (! $session->session_date->isToday() || $session->status !== 'open')) {
+                throw ValidationException::withMessages(['recalculate_today' => 'Recalculating current cash is only available for today’s open cashier.']);
             }
             $summary = $this->summary($session->session_date->toDateString());
             if (! hash_equals($this->fingerprint($summary), $balanceVersion)) {
@@ -203,10 +206,11 @@ class CashierService
             $source = collect($summary['cash_accounts'])->map(fn ($account) => $account['opening'])->all();
             $confirmed = $this->validateOpeningAllocation($opening, $allocations, $source);
             $changes = $this->openingDifferences($confirmed, $source);
-            if (! array_filter($changes)) {
+            $reconciliations = $recalculateToday ? $this->openingReconciliations($session) : [];
+            if (! array_filter($changes) && ! array_filter($reconciliations)) {
                 return;
             }
-            $checkpoint = $this->openingCorrectionCheckpoint($session);
+            $checkpoint = $recalculateToday ? null : $this->openingCorrectionCheckpoint($session);
             $previousClosing = DailyClosing::whereDate('closing_date', $session->session_date)->lockForUpdate()->first();
             $previousClosingValues = $previousClosing?->getAttributes();
             foreach ($changes as $type => $change) {
@@ -223,6 +227,13 @@ class CashierService
                     }
                 }
             }
+            foreach ($reconciliations as $type => $amount) {
+                if ($amount != 0) {
+                    $this->accounts->recordTransaction($type, $amount > 0 ? 'adjustment_decrease' : 'adjustment_increase', abs($amount),
+                        'Recalculate today from confirmed opening balances', $session, 'Cash', $reason,
+                        transactionDate: now(), category: 'cashier_opening_rebase');
+                }
+            }
             if ($previousClosing || ($checkpoint && $checkpoint['kind'] === 'closing')) {
                 $this->refreshCorrectedClosing($session, $changes, $checkpoint['before_last_close'] ?? false, $previousClosing);
             }
@@ -232,8 +243,25 @@ class CashierService
                 'details' => ['reason' => $reason, 'previous_opening' => $source, 'cash_balances' => $confirmed, 'account_corrections' => $changes,
                     'checkpoint' => $checkpoint ? ['kind' => $checkpoint['kind'], 'date' => $checkpoint['at']->toDateTimeString()] : null,
                     'previous_closing' => $previousClosingValues, 'recorded_cash_balances' => $session->cash_balances,
-                    'checkpoint_reconciliation' => $checkpoint ? array_map(fn ($change) => -$change, $changes) : null], 'created_by' => auth()->id()]);
+                    'checkpoint_reconciliation' => $checkpoint ? array_map(fn ($change) => -$change, $changes) : null,
+                    'recalculate_today' => $recalculateToday, 'removed_opening_reconciliations' => $reconciliations], 'created_by' => auth()->id()]);
         });
+    }
+
+    private function openingReconciliations(CashierSession $session): array
+    {
+        $rows = AccountTransaction::where('status', 'active')->where('reference_type', $session->getMorphClass())->where('reference_id', $session->id)
+            ->whereDate('transaction_date', $session->session_date)->where(function ($query) {
+                $query->where('category', 'cashier_opening_rebase')->orWhere(function ($query) {
+                    $query->where('category', 'cashier_cash_reconciliation')->where('description', 'Opening correction reconciled to recorded cash count');
+                });
+            })->get();
+
+        return collect(CashPositionService::ACCOUNTS)->map(function ($label, $type) use ($rows) {
+            $entries = $rows->where('account_id', Account::systemAccount($type)->id);
+
+            return round($entries->sum('credit') - $entries->sum('debit'), 2);
+        })->all();
     }
 
     public function recordHistoricalOpening(string $date, float $opening, array $allocations, string $reason, string $balanceVersion): CashierSession

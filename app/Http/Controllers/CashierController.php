@@ -56,11 +56,12 @@ class CashierController extends Controller
             : $service->openingDefaults();
         $suggestedOpening = round(array_sum($openingBalances), 2);
         $balanceVersion = $service->fingerprint($summary);
+        $canRecalculateToday = $editing && $editingSession?->status === 'open' && $editingSession->session_date->isToday();
         $washingPerson = $todaySession?->washing_person_id;
         $defaultAmount = $washing->defaultAmount();
         $technicians = Technician::where('active', true)->orderBy('name')->get();
 
-        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active'));
+        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active', 'canRecalculateToday', 'summary'));
     }
 
     public function collections(Request $request)
@@ -115,10 +116,11 @@ class CashierController extends Controller
         $values = $request->validate([
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'required|string|max:1000',
+            'recalculate_today' => 'nullable|boolean',
             'opening_balances' => 'required|array:main,spare_parts,washing',
             'balance_version' => 'required|string|size:64',
         ] + $this->openingAllocationRules());
-        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version']);
+        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'));
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
         }

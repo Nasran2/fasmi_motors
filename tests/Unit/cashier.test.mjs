@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cashierClosing, openingAllocation } from '../../resources/js/cashier.js';
+import { cashierClosing, openingAllocation, openingCashTotal } from '../../resources/js/cashier.js';
 
 test('closing requires a physical count and withdrawal changes expected cash only', () => {
     const form = cashierClosing({main: 1000, washing: 100, spare_parts: 500});
@@ -81,4 +81,18 @@ test('opening rejects negative, blank or invalid physical cash even if the total
     assert.equal(openingAllocation('4665', ['-1261353.43', '1266018.43', '0'], '4665', ['-1261353.43', '1266018.43', '0']).matches, false);
     assert.equal(openingAllocation('0', ['', '0', '0'], '0', ['0', '0', '0']).matches, false);
     assert.equal(openingAllocation('0', ['bad', '0', '0'], '0', ['0', '0', '0']).matches, false);
+});
+
+
+test('opening total follows edited account amounts instead of the previous opening total', () => {
+    assert.equal(openingCashTotal(['74838', '0', '0']), '74838.00');
+    assert.equal(openingCashTotal(['74838', '250', '60']), '75148.00');
+    assert.equal(openingCashTotal(['0.1', '0.2', '0']), '0.30');
+    assert.equal(openingCashTotal(['0', '0', '0']), '0.00');
+});
+
+test('opening total stays incomplete while an account is invalid', () => {
+    for (const value of ['', '-1', 'not money', Infinity]) {
+        assert.equal(openingCashTotal([value, '0', '0']), '');
+    }
 });

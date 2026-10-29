@@ -44,6 +44,11 @@ export function openingAllocation(total, amounts, suggestedTotal, suggestedAmoun
     };
 }
 
+export function openingCashTotal(amounts) {
+    if (amounts.some(value => String(value).trim() === '' || !Number.isFinite(Number(value)) || Number(value) < 0)) return '';
+    return (amounts.reduce((sum, value) => sum + Math.round(Number(value) * 100), 0) / 100).toFixed(2);
+}
+
 let openingDialog;
 export async function openCashierDialog(url) {
     if (openingDialog?.open) return;
@@ -64,13 +69,14 @@ export async function openCashierDialog(url) {
         const accounts = [...dialog.querySelectorAll('[data-opening-account]')];
         const allocationTotal = dialog.querySelector('[data-opening-total]');
         const updateAllocation = () => {
+            opening.value = openingCashTotal(accounts.map(input => input.value));
             const state = openingAllocation(opening.value, accounts.map(input => input.value), opening.dataset.suggested, accounts.map(input => input.dataset.suggested));
             reason.required = reason.dataset.alwaysRequired === '1' || state.changed;
             opening.setCustomValidity(state.matches ? '' : 'The account amounts must be nonnegative and add up to the opening cash in hand.');
-            allocationTotal.textContent = `Account total: Rs. ${state.allocated.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}${state.matches ? '' : ' — must match opening cash.'}`;
+            allocationTotal.textContent = `Account total: Rs. ${state.allocated.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}${state.matches ? '' : ' — enter valid account amounts.'}`;
             allocationTotal.classList.toggle('text-red-700', !state.matches);
         };
-        [opening, ...accounts].forEach(input => input.addEventListener('input', updateAllocation));
+        accounts.forEach(input => input.addEventListener('input', updateAllocation));
         updateAllocation();
         dialog.addEventListener('close', () => {dialog.remove(); openingDialog = null;}, {once: true});
         const form = dialog.querySelector('[data-cashier-opening-form]');
@@ -111,7 +117,7 @@ export async function openCashierDialog(url) {
             }
         });
         dialog.showModal();
-        opening.focus();
+        accounts.find(input => input.type !== 'hidden')?.focus();
     } catch (error) {
         dialog.remove(); openingDialog = null;
         if (window.workshopNotify) window.workshopNotify(error.message);
