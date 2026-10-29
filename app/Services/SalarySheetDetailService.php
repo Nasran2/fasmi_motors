@@ -60,6 +60,7 @@ class SalarySheetDetailService
                 $snapshot['deductions']['manual'] = $manual;
             }
             $balance = round($net - (float) $sheet->paid_amount, 2);
+            $snapshot = app(SalaryBalanceService::class)->restate($snapshot, $gross, $deductions);
             $sheet->update([$field => $manual, 'gross_salary' => $gross, 'total_deductions' => $deductions,
                 'deductions' => round($deductions - (float) $sheet->epf_employee, 2), 'net_payable' => $net, 'balance_amount' => $balance,
                 'status' => $sheet->status === 'Partially Paid' && $balance == 0 ? 'Paid' : $sheet->status,

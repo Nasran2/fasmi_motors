@@ -23,9 +23,9 @@ beforeEach(function () {
     $this->invoice = $this->job->fresh()->invoice;
 });
 
-function correctionTestSalary(string $month = '2026-10', float $paid = 0): TechnicianSalarySheet
+function correctionTestSalary(string $month = '2026-10', float $paid = 0, array $oldBalances = []): TechnicianSalarySheet
 {
-    test()->post(route('technicians.salaries.store'), ['technician_id' => test()->staff->id, 'month' => $month])->assertSessionHasNoErrors();
+    test()->post(route('technicians.salaries.store'), ['technician_id' => test()->staff->id, 'month' => $month, 'old_balance_installments' => $oldBalances])->assertSessionHasNoErrors();
     $sheet = TechnicianSalarySheet::latest('id')->firstOrFail();
     test()->post(route('technicians.salaries.finalize', $sheet), ['amount' => $paid, 'account_id' => Account::systemAccount('main')->id, 'payment_method' => 'Cash'])->assertSessionHasNoErrors();
 
@@ -130,9 +130,9 @@ test('an overpayment already recovered by a later paysheet blocks inconsistent h
     $sheet = correctionTestSalary(paid: 49500);
     $payment = $sheet->repairPayments()->sole();
     correctionTestUpdate($payment, 800)->assertSessionHasNoErrors();
-    correctionTestSalary('2026-11');
     $carry = TechnicianDeduction::where('source_type', 'salary_overpayment')->sole();
-    expect($carry->status)->toBe('deducted');
+    correctionTestSalary('2026-11', oldBalances: [$carry->id => 300]);
+    expect($carry->fresh()->status)->toBe('deducted');
     $due = (float) $this->invoice->fresh()->due_amount;
     correctionTestUpdate($payment->fresh(), 600, 800)->assertSessionHasErrors('amount');
     expect((float) $payment->fresh()->amount)->toBe(800.0)->and((float) $sheet->fresh()->net_payable)->toBe(49200.0)

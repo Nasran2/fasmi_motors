@@ -162,10 +162,11 @@
         <div>
           <label class="label">Attendance Status <span class="required-star">*</span></label>
           <select name="status" id="statusSelect" onchange="calculateAttendanceFrontend()" class="w-full">
-            @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave'] as $status)
-            <option value="{{ $status }}">{{ $status }}</option>
+            @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave','Worked on Leave Day','Not Worked'] as $status)
+            <option value="{{ $status }}">{{ $status === 'Not Worked' ? 'Not worked · shop closed / holiday' : $status }}</option>
             @endforeach
           </select>
+          <p class="mt-2 text-xs text-slate-500">Use Not worked to correct accidental punches on a shop-closed or holiday date. It clears hours, OT and deductions. For genuine work, choose Present and enter the actual times.</p>
         </div>
 
         <div>
@@ -264,7 +265,7 @@
         <label class="label">Status</label>
         <select name="status" class="w-full">
           <option value="">All statuses</option>
-          @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave'] as $status)
+          @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave','Worked on Leave Day','Not Worked'] as $status)
           <option value="{{ $status }}" @selected(request('status') == $status)>{{ $status }}</option>
           @endforeach
         </select>
@@ -314,20 +315,27 @@
             @forelse($records as $row)
             @php
               $statusClass = match($row->status) {
-                'Present', 'Early Leave' => 'badge-sent',
+                'Present', 'Early Leave', 'Auto Closed' => 'badge-sent',
                 'Absent', 'No Pay Leave' => 'badge-failed',
                 'Late' => 'bg-orange-50 text-orange-700 border border-orange-200',
                 'Half Day', 'Morning Half Day', 'Evening Half Day' => 'bg-purple-50 text-purple-700 border border-purple-200',
                 'Leave', 'Paid Leave' => 'bg-blue-50 text-blue-700 border border-blue-200',
                 default => 'bg-slate-50 text-slate-700 border border-slate-200'
               };
+              $shopDay = app(\App\Services\HolidayService::class)->dayInfo($row->date->toDateString(), $shopCalendar);
+              $editData = [$row->technician_id, $row->date->toDateString(), $row->status, $row->in_time ? substr($row->in_time, 0, 5) : "", $row->out_time ? substr($row->out_time, 0, 5) : "", $row->ot_amount, $row->deduction_amount, (int) $row->is_manual_edit, $row->note];
+              $notWorkedData = [$row->technician_id, $row->date->toDateString(), "Not Worked", "", "", 0, 0, 0, $row->note];
             @endphp
-            @php($shopDay = app(\App\Services\HolidayService::class)->dayInfo($row->date->toDateString(), $shopCalendar))
             <tr class="{{ $shopDay['kind'] === 'special' ? 'bg-violet-50' : ($shopDay['kind'] === 'weekly' ? 'bg-sky-50' : (in_array($row->status, ['Absent', 'No Pay Leave']) ? 'bg-rose-50' : (in_array($row->status, ['Leave', 'Paid Leave']) ? 'bg-amber-50' : 'bg-white'))) }} transition">
               <td class="px-4 py-3 font-mono">{{ $row->date->format('d M Y') }}@if($shopDay['closed'])<span class="mt-1 block text-xs font-semibold">{{ $shopDay['label'] }}</span>@endif</td>
               <td class="px-4 py-3 font-bold text-slate-900">{{ $row->technician->name }}</td>
               <td class="px-4 py-3 font-mono text-slate-500">{{ $row->in_time ? Carbon\Carbon::parse($row->in_time)->format('h:i A') : '—' }}</td>
-              <td class="px-4 py-3 font-mono text-slate-500">{{ $row->out_time ? Carbon\Carbon::parse($row->out_time)->format('h:i A') : '—' }}</td>
+              <td class="px-4 py-3 font-mono text-slate-500">
+                {{ $row->out_time ? Carbon\Carbon::parse($row->out_time)->format('h:i A') : '—' }}
+                @if($row->is_auto_checkout)
+                  <span class="block text-[10px] text-blue-600 font-semibold">Auto (Shop Close)</span>
+                @endif
+              </td>
               <td class="px-4 py-3">{{ number_format($row->working_hours, 2) }}</td>
               <td class="px-4 py-3">
                 @if($row->late_minutes > 0)
@@ -368,7 +376,10 @@
               <td class="px-4 py-3 max-w-[150px] truncate text-slate-500" title="{{ $row->note }}">{{ $row->note ?: '—' }}</td>
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1.5">
-                  <button type="button" onclick="editAttendance('{{ $row->technician_id }}', '{{ $row->date->toDateString() }}', '{{ $row->status }}', '{{ $row->in_time ? substr($row->in_time, 0, 5) : '' }}', '{{ $row->out_time ? substr($row->out_time, 0, 5) : '' }}', '{{ $row->ot_amount }}', '{{ $row->deduction_amount }}', '{{ $row->is_manual_edit }}', '{{ $row->note }}')" class="btn-secondary !py-0.5 !px-2 text-xs">Edit</button>
+                  <button type="button" data-attendance-edit='@json($editData)' onclick="editAttendance(...JSON.parse(this.dataset.attendanceEdit))" class="btn-secondary !py-0.5 !px-2 text-xs">Edit</button>
+                  @if($shopDay['closed'] && ($row->in_time || $row->out_time || $row->working_minutes > 0 || $row->status === 'Worked on Leave Day'))
+                  <button type="button" data-attendance-edit='@json($notWorkedData)' onclick="editAttendance(...JSON.parse(this.dataset.attendanceEdit))" class="btn-secondary !py-0.5 !px-2 text-xs text-amber-800">Mark not worked</button>
+                  @endif
                   <form method="POST" action="{{ route('technicians.attendance.recalculate', $row) }}" class="inline">
                     @csrf<x-submission-token/>
                     <button type="submit" class="btn-secondary !py-0.5 !px-2 text-xs text-blue-600">Recalculate</button>
@@ -490,7 +501,16 @@
       clearTimeout(attendancePreviewTimer);
       attendancePreviewAbort?.abort();
       const version = ++attendancePreviewVersion;
-      const manual = document.getElementById('isManualEdit').checked;
+      const notWorked = document.getElementById('statusSelect').value === 'Not Worked';
+      const manualInput = document.getElementById('isManualEdit');
+      manualInput.disabled = notWorked;
+      if (notWorked) manualInput.checked = false;
+      for (const id of ['inTimeInput', 'outTimeInput']) {
+        const input = document.getElementById(id);
+        input.disabled = notWorked;
+        if (notWorked) input.value = '';
+      }
+      const manual = manualInput.checked;
       const save = document.getElementById('saveAttendanceBtn');
       const message = document.getElementById('attendancePreviewMessage');
       const fields = {workingHoursInput: 'working_hours', lateMinutesInput: 'late_minutes', earlyLeaveMinutesInput: 'early_leave_minutes', otMinutesInput: 'ot_minutes', otAmountInput: 'ot_amount', deductionAmountInput: 'deduction_amount'};
@@ -531,7 +551,11 @@
           Object.entries(fields).forEach(([id, key]) => {
             document.getElementById(id).value = ['working_hours', 'ot_amount', 'deduction_amount'].includes(key) ? Number(data[key]).toFixed(2) : data[key];
           });
-          message.textContent = 'Calculated from the saved attendance rules. Status: ' + data.status;
+          if (data.is_auto_checkout) {
+            message.textContent = 'Auto-filled workshop closing time (5:00 PM). Status: ' + data.status;
+          } else {
+            message.textContent = 'Calculated from the saved attendance rules. Status: ' + data.status;
+          }
           save.disabled = false;
         } catch (error) {
           if (version !== attendancePreviewVersion || error.name === 'AbortError') return;
@@ -559,10 +583,12 @@
       }
       
       calculateAttendanceFrontend();
+      document.getElementById('editReasonInput').value = '';
       document.getElementById('editReasonInput').setAttribute('required', 'true');
       
       // Scroll to form
       form.scrollIntoView({ behavior: 'smooth' });
+      if (status === 'Not Worked') document.getElementById('editReasonInput').focus({preventScroll: true});
     }
 
     function resetAttendanceForm() {

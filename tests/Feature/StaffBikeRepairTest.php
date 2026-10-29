@@ -183,10 +183,11 @@ test('large scheduled recovery still allows a salary preview and a smaller chose
     $job = staffRepairTestJob($this->owner, 60000);
     $plan = staffRepairTestBill($job, 'Full deduction');
     $this->getJson(route('technicians.salaries.preview', ['technician_id' => $this->owner->id, 'month' => '2026-10']))->assertOk()
-        ->assertJsonPath('pending_deductions.items.0.amount', 0)->assertJsonStructure(['repair_deduction_warning']);
+        ->assertJsonPath('pending_deductions.items.0.amount', 50000)->assertJsonPath('debt_summary.balance_carried_forward', 10000);
     $sheet = staffRepairTestDraft($this->owner, amounts: [$plan->id => 1000]);
-    $this->post(route('technicians.salaries.finalize', $sheet), ['bike_installments' => [$plan->id => 51000]])->assertSessionHasErrors('bike_installments');
-    expect($sheet->fresh()->status)->toBe('Draft')->and(Payment::count())->toBe(0);
+    $this->post(route('technicians.salaries.finalize', $sheet), ['bike_installments' => [$plan->id => 51000]])->assertSessionHasNoErrors();
+    expect($sheet->fresh()->status)->toBe('Finalized')->and($sheet->fresh()->repair_deduction_amount)->toBe(50000.0)
+        ->and((float) $job->fresh()->invoice->due_amount)->toBe(10000.0);
 });
 
 test('reviewing repair amounts does not bypass stale advances and reopening restores unpaid recovery', function () {

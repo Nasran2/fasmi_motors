@@ -73,6 +73,7 @@ class SalaryRepairCorrectionService
             foreach ($snapshot['pending_deductions']['items'] as &$item) {
                 if ($item['kind'] === 'bike_installment' && (int) $item['id'] === (int) $plan->id) {
                     $item['amount'] = $amount;
+                    $item['requested_amount'] = $amount;
                 }
             }
             unset($item);
@@ -82,6 +83,7 @@ class SalaryRepairCorrectionService
             $snapshot['repair_corrections'][] = ['payment_id' => $payment->id, 'plan_id' => $plan->id, 'old_amount' => $old, 'amount' => $amount, 'reason' => trim($reason), 'user_id' => auth()->id(), 'at' => now()->toIso8601String()];
             $net = round((float) $sheet->net_payable - $delta, 2);
             $balance = round($net - (float) $sheet->paid_amount, 2);
+            $snapshot = app(SalaryBalanceService::class)->restate($snapshot, (float) $sheet->gross_salary, round((float) $sheet->total_deductions + $delta, 2));
             $status = (float) $sheet->paid_amount > 0 ? ($balance <= 0 ? 'Paid' : 'Partially Paid') : 'Finalized';
             $sheet->update([
                 'own_bike_deduction' => round((float) $sheet->own_bike_deduction + $delta, 2),
@@ -128,7 +130,7 @@ class SalaryRepairCorrectionService
         $carry = TechnicianDeduction::where('technician_id', $sheet->technician_id)
             ->where('source_type', 'salary_overpayment')->where('source_id', $sheet->id)->lockForUpdate()->first();
         $overpaid = round((float) $sheet->overpaid_amount, 2);
-        if ($carry && $carry->status === 'deducted') {
+        if ($carry && ($carry->status === 'deducted' || (float) $carry->recovered_amount > 0)) {
             if (round((float) $carry->amount, 2) !== $overpaid) {
                 throw ValidationException::withMessages(['amount' => 'This salary overpayment was already recovered in another paysheet. Correct that later paysheet first.']);
             }

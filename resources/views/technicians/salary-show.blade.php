@@ -29,7 +29,7 @@
             'Job / bike repair' => $sheet->total_job_deduction,
             'Employee EPF' => $sheet->epf_employee,
             'Other deductions' => $sheet->total_other_deduction,
-            'Manual deductions' => $sheet->manual_deductions,
+            'Manual deductions' => $sheet->manual_deductions, 'Old balance recovery' => $sheet->old_balance_deduction,
         ], fn ($amt) => (float) $amt > 0);
 
         $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
@@ -62,6 +62,7 @@
     @endif
     @include('technicians.partials.salary-adjustment-lines')
     </section>
+    @include('technicians.partials.salary-debt-summary')
     @if(in_array($sheet->status, ['Draft', 'Finalized', 'Partially Paid'], true))
     <form id="salary-adjustments" method="POST" action="{{ route('technicians.salaries.adjustments', $sheet) }}" class="panel space-y-4 p-5">
         @csrf<x-submission-token />

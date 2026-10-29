@@ -126,7 +126,7 @@ it('uses the selected staff period in attendance salary history and salary slips
     $this->get(route('technicians.history', ['technician' => $this->staff->id, 'month' => '2026-10']))->assertOk()
         ->assertViewHas('historyPeriod', fn ($p) => $p['salary_period_start'] === '2026-10-01' && $p['salary_period_end'] === '2026-10-31')
         ->assertViewHas('technician', fn ($staff) => $staff->attendance->count() === 3);
-    $this->get(route('technicians.salaries.slip', $sheet))->assertOk()->assertSeeText('Calendar Month Salary');
+    $this->get(route('technicians.salaries.slip', $sheet))->assertOk()->assertSeeText('01 Oct 2026')->assertSeeText('31 Oct 2026')->assertDontSeeText('period days');
 });
 
 it('replaces a draft for the same salary month when the employee cycle changes', function () {

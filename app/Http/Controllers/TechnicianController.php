@@ -157,7 +157,7 @@ class TechnicianController extends Controller
         $data = $request->validate([
             'technician_id' => ['required', 'integer', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
             'date' => ['required', 'date_format:Y-m-d'],
-            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late'])],
+            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late', 'Worked on Leave Day', 'Not Worked'])],
             'in_time' => ['nullable', 'date_format:H:i'],
             'out_time' => ['nullable', 'date_format:H:i'],
         ]);
@@ -174,7 +174,7 @@ class TechnicianController extends Controller
 
         $request->validate([
             'date' => ['required', 'date_format:Y-m-d'],
-            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late'])],
+            'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late', 'Worked on Leave Day', 'Not Worked'])],
             'in_time' => ['nullable', 'date_format:H:i'],
             'out_time' => ['nullable', 'date_format:H:i'],
             'ot_amount' => ['nullable', 'numeric', 'min:0'],
@@ -223,12 +223,12 @@ class TechnicianController extends Controller
                 $oldRecord = TechnicianAttendance::where('technician_id', $technician->id)->whereDate('date', $date)->first();
 
                 // Edit reason is required if updating existing
-                if ($oldRecord && empty($request->edit_reason) && ! $bulk) {
+                if ($oldRecord && empty($request->edit_reason) && (! $bulk || $request->input('status') === 'Not Worked')) {
                     throw ValidationException::withMessages(['edit_reason' => 'Edit Reason is required when updating attendance record.']);
                 }
 
                 $status = $request->input('status');
-                $isManual = $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
+                $isManual = $status !== 'Not Worked' && $request->has('is_manual_edit') && $request->input('is_manual_edit') == '1';
 
                 $metrics = $calculator->calculateDailyAttendance(
                     $technician,
@@ -272,8 +272,8 @@ class TechnicianController extends Controller
                         ],
                         'new_values' => [
                             'date' => $date,
-                            'in_time' => $request->input('in_time'),
-                            'out_time' => $request->input('out_time'),
+                            'in_time' => $payload['in_time'] ?? null,
+                            'out_time' => $payload['out_time'] ?? null,
                             'ot_amount' => $metrics['ot_amount'],
                             'deduction_amount' => $metrics['deduction_amount'],
                             'status' => $status,
@@ -384,7 +384,7 @@ class TechnicianController extends Controller
                     $existing = TechnicianAttendance::where('technician_id', $technicianId)->whereDate('date', $date)->first();
                     $metrics = $calculator->calculateDailyAttendance($technician, $date, $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null);
                     TechnicianAttendance::updateOrCreate(['technician_id' => $technicianId, 'date' => $date->toDateString()], array_merge($metrics, [
-                        'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? null, 'note' => $data['note'] ?? 'Bulk attendance entry',
+                        'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? ($metrics['out_time'] ?? null), 'note' => $data['note'] ?? 'Bulk attendance entry',
                         'is_manual_entry' => true, 'is_manual_edit' => (bool) $existing, 'created_by' => $existing?->created_by ?? auth()->id(), 'edited_by' => $existing ? auth()->id() : null, 'updated_by' => auth()->id(),
                     ]));
                     $saved++;
@@ -676,6 +676,18 @@ class TechnicianController extends Controller
         ]]);
     }
 
+    private function salaryBalanceRules(): array
+    {
+        return [
+            'old_balance_amount' => ['nullable', 'numeric', 'decimal:0,2', 'between:0,999999999999.99'],
+            'old_balance_deduction' => ['nullable', 'numeric', 'decimal:0,2', 'between:0,999999999999.99', 'lte:old_balance_amount'],
+            'old_balance_description' => ['nullable', 'string', 'max:150'],
+            'old_balance_note' => ['nullable', 'string', 'max:500'],
+            'old_balance_installments' => ['nullable', 'array'],
+            'old_balance_installments.*' => ['required', 'numeric', 'decimal:0,2', 'between:0,999999999999.99'],
+        ];
+    }
+
     public function salaryPreview(Request $request, SalaryCalculationService $calculator)
     {
         $data = $request->validate([
@@ -684,7 +696,7 @@ class TechnicianController extends Controller
             'other_deductions' => ['nullable', 'numeric', 'min:0'], 'manual_deduction' => ['nullable', 'numeric', 'min:0'],
             'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
             'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
-        ]);
+        ] + $this->salaryBalanceRules());
         try {
             $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
         } catch (ValidationException $exception) {
@@ -720,7 +732,7 @@ class TechnicianController extends Controller
             'paid_amount' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])],
             'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
             'action' => ['nullable', Rule::in(['preview', 'save'])],
-        ]);
+        ] + $this->salaryBalanceRules());
 
         $manualDeductionsInput = $data['manual_deductions'] ?? null;
         $manualDeductionsList = is_array($manualDeductionsInput) ? $manualDeductionsInput : [];

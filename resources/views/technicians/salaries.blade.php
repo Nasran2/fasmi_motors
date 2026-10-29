@@ -88,6 +88,22 @@
 
       </div>
 
+      <section class="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3" id="old-balance-section">
+        <h3 class="font-black text-amber-950">Old balance owed to shop</h3>
+        <p class="text-sm text-amber-900">Enter an opening debt once. Choose how much to deduct this month; 0 skips recovery. The rest remains for the next month. Salary advances and repair bills already listed below must not be entered again.</p>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label><span class="label">New old balance · LKR</span><input name="old_balance_amount" type="number" min="0" max="999999999999.99" step="0.01" value="{{ old('old_balance_amount', 0) }}" class="field" oninput="updateSalaryDeductionPreview()"></label>
+          <label><span class="label">Deduct this month · LKR</span><input name="old_balance_deduction" type="number" min="0" step="0.01" value="{{ old('old_balance_deduction', 0) }}" class="field" oninput="updateSalaryDeductionPreview()"></label>
+          <label><span class="label">Description</span><input name="old_balance_description" maxlength="150" value="{{ old('old_balance_description') }}" placeholder="Old balance owed to shop" class="field"></label>
+          <label><span class="label">Note on payslip</span><input name="old_balance_note" maxlength="500" value="{{ old('old_balance_note') }}" class="field"></label>
+        </div>
+        <div id="old-balance-installments" class="grid gap-3 sm:grid-cols-2"></div>
+      </section>
+      <section id="debt-recovery-preview" class="hidden rounded-2xl border-2 border-red-300 bg-red-50 p-4 space-y-3" aria-live="polite">
+        <h3 class="font-black text-red-900">Old balances + repairs</h3>
+        <div class="grid gap-3 sm:grid-cols-3"><div><p class="text-sm font-bold">Total owed before this paysheet</p><strong id="debt-opening" class="text-2xl font-black"></strong></div><div><p class="text-sm font-bold">Deducted from this salary</p><strong id="debt-deducted" class="text-2xl font-black text-emerald-800"></strong></div><div><p class="text-sm font-bold text-red-800">Balance carried to next month</p><strong id="debt-remaining" class="text-3xl font-black text-red-800"></strong></div></div>
+        <p id="debt-shortfall" class="text-sm font-bold text-red-800"></p>
+      </section>
       <section id="bike-deduction-preview" class="hidden space-y-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
         <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-black text-amber-950">Staff bike salary deductions</h3><span class="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-amber-900">Planned — not yet deducted</span></div>
         <p class="text-sm text-amber-900">These amounts reduce this paysheet's net salary when finalized. Enter 0 to skip a repair this month.</p>
@@ -109,17 +125,11 @@
           <span id="preview-cycle-badge" class="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-wider text-blue-700 shadow-sm">Calendar Month Salary</span>
         </div>
         <div class="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-6">
-          <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Period days</span><strong id="preview-period-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Working days</span><strong id="preview-working-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Leave days</span><strong id="preview-leave-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Present days</span><strong id="preview-present-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Absent days</span><strong id="preview-absent-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">OT hours</span><strong id="preview-ot-hours" class="text-slate-900">0</strong></div>
-        </div>
-        <div class="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-          <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Previous month days included</span><strong id="preview-prev-days" class="text-slate-900">0</strong></div>
-          <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Current month days included</span><strong id="preview-current-days" class="text-slate-900">0</strong></div>
-          <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Carried forward / excluded</span><strong id="preview-excluded-days" class="text-red-600">—</strong></div>
         </div>
         <div class="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" aria-live="polite" aria-atomic="true">
           <div class="rounded-xl bg-emerald-50 p-4"><span class="block font-bold text-emerald-700">Gross salary</span><strong id="preview-gross" class="mt-1 block text-xl font-black tabular-nums text-emerald-800">Rs. 0.00</strong></div>
@@ -286,44 +296,55 @@
 
     function updateSalaryDeductionPreview() {
         if (!salaryPreviewData) return;
-        let bikeTotal = 0;
-        let remainingTotal = 0;
-        let invalid = false;
-        document.querySelectorAll('#bike-installment-inputs input').forEach(input => {
-            const amount = salaryCents(input.value);
-            const remaining = salaryCents(input.max);
-            const message = validateSalaryAmount(input);
-            invalid ||= Boolean(message);
-            bikeTotal += amount;
-            remainingTotal += Math.max(0, remaining - amount);
-            input.closest('[data-repair-preview]').querySelector('[data-repair-balance]').textContent = salaryMoney(Math.max(0, remaining - amount) / 100);
+        const oldAmountInput = document.querySelector('[name="old_balance_amount"]');
+        const newChoice = document.querySelector('[name="old_balance_deduction"]');
+        newChoice.max = oldAmountInput.value || '0';
+        const oldInputs = [...document.querySelectorAll('#old-balance-installments input'), newChoice];
+        const repairs = [...document.querySelectorAll('#bike-installment-inputs input')];
+        const oldSummary = salaryPreviewData.debt_summary || {};
+        const originalRepair = (salaryPreviewData.pending_deductions?.items || []).filter(item => item.kind === 'bike_installment').reduce((sum,item) => sum + salaryCents(item.amount),0);
+        const fixed = salaryCents(salaryPreviewData.total_deductions) - originalRepair - salaryCents(oldSummary.applied_old_balance)
+            + manualSalaryDeductionTotal() - salaryCents(salaryPreviewData.manual_deductions);
+        const gross = salaryCents(salaryPreviewData.gross_salary) + salaryCents(document.querySelector('[name="manual_additions"]').value) - salaryCents(salaryPreviewData.manual_additions);
+        let capacity = Math.max(0, gross - fixed);
+        let oldTotal = salaryCents(oldAmountInput.value), repairTotal = 0, appliedOld = 0, appliedRepair = 0, requested = 0;
+        let invalid = Boolean(validateSalaryAmount(oldAmountInput));
+        oldInputs.forEach(input => {
+            invalid = Boolean(validateSalaryAmount(input)) || invalid;
+            if (input !== newChoice) oldTotal += salaryCents(input.max);
+            const amount = Math.max(0, salaryCents(input.value));
+            requested += amount;
+            const applied = Math.min(capacity, amount); capacity -= applied; appliedOld += applied;
         });
-        const originalBikeTotal = (salaryPreviewData.pending_deductions?.items || [])
-            .filter(item => item.kind === 'bike_installment')
-            .reduce((sum, item) => sum + salaryCents(item.amount), 0);
-        const delta = bikeTotal - originalBikeTotal + manualSalaryDeductionTotal() - salaryCents(salaryPreviewData.manual_deductions);
-        const totalDeductions = salaryCents(salaryPreviewData.total_deductions) + delta;
-        const additionDelta = salaryCents(document.querySelector('[name="manual_additions"]').value) - salaryCents(salaryPreviewData.manual_additions);
-        const gross = salaryCents(salaryPreviewData.gross_salary) + additionDelta;
-        const exceedsSalary = totalDeductions > gross;
-        const net = Math.max(0, salaryCents(salaryPreviewData.net_payable) + additionDelta - delta);
+        repairs.forEach(input => {
+            invalid = Boolean(validateSalaryAmount(input)) || invalid;
+            const amount = Math.max(0, salaryCents(input.value)), remaining = salaryCents(input.max);
+            requested += amount; repairTotal += remaining;
+            const applied = Math.min(capacity, amount); capacity -= applied; appliedRepair += applied;
+            input.closest('[data-repair-preview]').querySelector('[data-repair-balance]').textContent = salaryMoney((remaining - applied) / 100);
+        });
+        const total = fixed + appliedOld + appliedRepair;
+        const exceedsSalary = fixed > gross;
+        const net = Math.max(0, gross - total), balance = net - salaryCents(salaryPreviewData.paid_amount);
         document.getElementById('preview-gross').textContent = salaryMoney(gross / 100);
-        const balance = net - salaryCents(salaryPreviewData.paid_amount);
-        document.getElementById('bike-deduction-preview-total').textContent = salaryMoney(bikeTotal / 100);
-        document.getElementById('bike-deduction-preview-balance').textContent = salaryMoney(remainingTotal / 100);
-        document.getElementById('preview-deductions').textContent = salaryMoney(totalDeductions / 100);
+        document.getElementById('preview-deductions').textContent = salaryMoney(total / 100);
         document.getElementById('preview-net').textContent = salaryMoney(net / 100);
         document.getElementById('preview-balance-label').textContent = balance < 0 ? 'Overpaid' : 'Salary balance to pay';
         document.getElementById('preview-balance').textContent = salaryMoney(Math.abs(balance) / 100);
-        document.getElementById('repair-deduction-warning').textContent = invalid
-            ? 'A repair deduction exceeds its balance or is invalid. Correct the amount before saving.'
-            : exceedsSalary ? 'Deductions exceed gross salary. Reduce the selected deductions before saving.'
-            : salaryPreviewData.repair_deduction_warning || '';
+        document.getElementById('bike-deduction-preview-total').textContent = salaryMoney(appliedRepair / 100);
+        document.getElementById('bike-deduction-preview-balance').textContent = salaryMoney((repairTotal - appliedRepair) / 100);
+        document.getElementById('debt-recovery-preview').classList.toggle('hidden', oldTotal + repairTotal <= 0);
+        document.getElementById('debt-opening').textContent = salaryMoney((oldTotal + repairTotal) / 100);
+        document.getElementById('debt-deducted').textContent = salaryMoney((appliedOld + appliedRepair) / 100);
+        document.getElementById('debt-remaining').textContent = salaryMoney((oldTotal + repairTotal - appliedOld - appliedRepair) / 100);
+        document.getElementById('debt-shortfall').textContent = requested > gross - fixed
+            ? `Salary after requested deductions: ${salaryMoney((gross - fixed - requested) / 100)}. Recovery is limited to this salary; the remaining debt carries forward.`
+            : 'Other deductions are applied first, then old balances and repairs. Remaining debt is offered next month; choose the amount to deduct then.';
+        document.getElementById('repair-deduction-warning').textContent = invalid ? 'An amount is invalid or exceeds its outstanding balance.' : '';
         const blocked = salaryPreviewData.existing_sheet_status && !(salaryPreviewData.existing_sheet_status === 'Draft' && salaryPreviewData.existing_sheet_can_replace);
         document.getElementById('save-draft-btn').disabled = salaryPreviewLoading || salaryPreviewFailed || invalid || exceedsSalary || Boolean(blocked);
-        showSalarySaveAlert('salary-save-alert', invalid
-            ? 'Cannot save: a repair deduction is invalid or exceeds the repair balance. Correct the highlighted amount.'
-            : exceedsSalary ? 'Cannot save: total deductions exceed the salary available. Reduce the deduction amounts.' : '');
+        showSalarySaveAlert('salary-save-alert', invalid ? 'Cannot save: correct the highlighted deduction amounts.'
+            : exceedsSalary ? 'Cannot save: ordinary deductions exceed salary. Enter recoverable old debts in Old balance owed to shop instead of Manual Deductions.' : '');
     }
 
     function loadSalaryPreview() {
@@ -332,6 +353,11 @@
         const month = document.querySelector('input[name="month"]').value;
         const context = `${technician_id}:${month}`;
         if (context !== salaryPreviewContext) {
+            if (salaryPreviewContext) {
+                for (const name of ['old_balance_amount','old_balance_deduction']) document.querySelector(`[name="${name}"]`).value = '0';
+                for (const name of ['old_balance_description','old_balance_note']) document.querySelector(`[name="${name}"]`).value = '';
+            }
+            document.getElementById('old-balance-installments').replaceChildren();
             salaryPreviewData = null;
             salaryPreviewContext = context;
             document.getElementById('bike-installment-inputs').replaceChildren();
@@ -351,6 +377,8 @@
             if (input.dataset.technician === technician_id && input.dataset.month === month) params.set(input.name, input.value);
         });
         
+        for (const name of ['old_balance_amount','old_balance_deduction','old_balance_description','old_balance_note']) params.set(name, document.querySelector(`[name="${name}"]`).value || (name.endsWith('amount') || name.endsWith('deduction') ? '0' : ''));
+        document.querySelectorAll('#old-balance-installments input').forEach(input => params.set(input.name, input.value));
         params.set('manual_addition', document.querySelector('[name="manual_additions"]').value || '0');
         params.set('manual_deduction', (manualSalaryDeductionTotal() / 100).toFixed(2));
         
@@ -365,6 +393,18 @@
             salaryPreviewLoading = false;
             salaryPreviewData = data;
             renderSalaryPreview(data);
+            const oldHolder = document.getElementById('old-balance-installments');
+            const oldChoices = new Map([...oldHolder.querySelectorAll('input')].map(input => [input.name, input.value]));
+            oldHolder.replaceChildren();
+            (data.old_balances || []).filter(item => item.id !== 'new').forEach(item => {
+                const label = document.createElement('label'); label.className = 'rounded-xl border border-amber-200 bg-white p-3';
+                const title = document.createElement('span'); title.className = 'block font-bold'; title.textContent = `${item.description} · ${item.reference || ''}`;
+                const info = document.createElement('span'); info.className = 'block text-sm text-amber-900'; info.textContent = `Remaining ${salaryMoney(item.remaining_balance)} · Deduct this month (0 to skip)`;
+                const input = document.createElement('input');
+                const name = `old_balance_installments[${item.id}]`;
+                Object.assign(input, {name, type:'number', min:'0', max:String(item.remaining_balance), step:'0.01', value:oldChoices.get(name) ?? item.requested_amount ?? 0, required:true, className:'field mt-2'});
+                input.addEventListener('input', updateSalaryDeductionPreview); label.append(title, info, input); oldHolder.append(label);
+            });
             const holder = document.getElementById('bike-installment-inputs');
             const bikeItems = (data.pending_deductions?.items || []).filter(item => item.kind === 'bike_installment');
             document.getElementById('bike-deduction-preview').classList.toggle('hidden', !bikeItems.length);
@@ -398,7 +438,7 @@
                 label.className = 'block text-sm font-extrabold text-red-700';
                 label.textContent = 'Deduct from this salary (LKR)';
                 const input = document.createElement('input');
-                Object.assign(input, { type: 'number', min: '0', max: item.remaining_balance, step: '0.01', name: `bike_installments[${item.id}]`, value: item.amount, className: 'field mt-2 text-lg font-black text-red-700', required: true });
+                Object.assign(input, { type: 'number', min: '0', max: item.remaining_balance, step: '0.01', name: `bike_installments[${item.id}]`, value: item.requested_amount ?? item.amount, className: 'field mt-2 text-lg font-black text-red-700', required: true });
                 input.dataset.technician = technician_id;
                 input.dataset.month = month;
                 input.addEventListener('input', updateSalaryDeductionPreview);
@@ -455,18 +495,14 @@
         const attendance = data.attendance_summary || data.attendance || {};
 
         document.getElementById('preview-pay-basis').textContent = data.pay_basis || '';
-        document.getElementById('preview-cycle-label').textContent = data.salary_cycle_label || 'Calendar Month Salary';
-        document.getElementById('preview-cycle-badge').textContent = data.salary_cycle_label || 'Calendar Month Salary';
+        document.getElementById('preview-cycle-label').textContent = 'Salary summary';
+        document.getElementById('preview-cycle-badge').textContent = data.salary_month_label || 'Salary';
         document.getElementById('preview-cycle-period').textContent = `Salary Month: ${data.salary_month_label || ''} · Salary Period: ${fmtDate(data.salary_period_start)} to ${fmtDate(data.salary_period_end)}`;
-        document.getElementById('preview-period-days').textContent = data.salary_period_days || 0;
         document.getElementById('preview-working-days').textContent = attendance.total_working_days || data.total_working_days || 0;
         document.getElementById('preview-leave-days').textContent = attendance.leave_days || data.leave_days || 0;
         document.getElementById('preview-present-days').textContent = attendance.present_days || data.total_present_days || 0;
         document.getElementById('preview-absent-days').textContent = attendance.absent_days || data.total_absent_days || 0;
         document.getElementById('preview-ot-hours').textContent = attendance.total_ot_hours || data.total_ot_hours || 0;
-        document.getElementById('preview-prev-days').textContent = data.carried_from_previous_month_days || 0;
-        document.getElementById('preview-current-days').textContent = data.current_month_days_included || 0;
-        document.getElementById('preview-excluded-days').textContent = excluded;
         document.getElementById('preview-gross').textContent = money(data.gross_salary);
         document.getElementById('preview-deductions').textContent = money(data.total_deductions);
         document.getElementById('preview-net').textContent = money(data.net_payable);
@@ -581,7 +617,7 @@
         if (Number(amountInput.value) === Number(form.dataset.suggestedBalance)) amountInput.value = balance.toFixed(2);
         amountInput.max = balance.toFixed(2);
         form.dataset.suggestedBalance = balance;
-        document.getElementById('payment-repair-total').textContent = `Repair deductions Rs. ${total.toFixed(2)} · Salary balance Rs. ${balance.toFixed(2)}`;
+        document.getElementById('payment-repair-total').textContent = `Repair deduction applied Rs. ${Math.min(total, data.net_before_repairs).toFixed(2)} · Salary balance Rs. ${balance.toFixed(2)}${total > data.net_before_repairs ? ' · Unrecovered repair balance carries forward' : ''}`;
         updatePaymentRequiredFields();
     }
 
@@ -597,7 +633,7 @@
             invalidRepair = Boolean(validateSalaryAmount(input)) || invalidRepair;
             repairTotal += salaryCents(input.value);
         });
-        const exceedsSalary = repairPaymentData?.editable && repairTotal > salaryCents(repairPaymentData.net_before_repairs);
+        const exceedsSalary = false; // Excess requested repair recovery stays on its repair plan.
         const paymentError = validateSalaryAmount(amountInput);
         const message = invalidRepair ? 'Cannot save: a repair deduction is invalid or exceeds the repair balance. Correct the highlighted amount.'
             : exceedsSalary ? 'Cannot save: repair deductions exceed the salary available. Reduce the deduction amounts.'

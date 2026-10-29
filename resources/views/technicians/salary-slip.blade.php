@@ -43,6 +43,23 @@
             @else
             @page { size: A4 portrait; margin: 1cm; }
             .print-border-0 { border: none !important; box-shadow: none !important; padding: 0 !important; }
+            body { font-size: 10.5px !important; line-height: 1.2 !important; }
+            .salary-payslip { font-size: 10.5px; }
+            .salary-payslip .mt-16 { margin-top: 14px !important; }
+            .salary-payslip .mt-6, .salary-payslip .mt-5 { margin-top: 8px !important; }
+            .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 6px !important; }
+            .salary-payslip .p-6, .salary-payslip .p-4, .salary-payslip .p-3 { padding: 6px !important; }
+            .salary-payslip .gap-8, .salary-payslip .gap-6, .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 7px !important; }
+            .salary-payslip .text-4xl { font-size: 22px !important; }
+            .salary-payslip .text-3xl, .salary-payslip .text-2xl { font-size: 16px !important; }
+            .salary-payslip .text-xl, .salary-payslip .text-lg { font-size: 13px !important; }
+            .salary-payslip .text-sm, .salary-payslip .text-xs { font-size: 10.5px !important; }
+            .salary-payslip .py-2 { padding-block: 3px !important; }
+            .salary-payslip header { padding-bottom: 7px !important; }
+            .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 4px !important; }
+            .salary-payslip .salary-debt-summary { break-inside: avoid; border: 2px solid #b91c1c !important; }
+            .salary-payslip .salary-debt-summary strong { color: #991b1b !important; }
+
             @endif
         }
     </style>
@@ -55,7 +72,7 @@
       <button onclick="window.print()" class="inline-flex items-center justify-center rounded-xl bg-[#0b2447] px-4 py-2 text-sm font-bold text-white shadow-lg hover:bg-[#123665] transition">🖨️ Print / Save PDF</button>
   </div>
 
-  <article class="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm print-border-0">
+  <article class="salary-payslip rounded-3xl border border-slate-200 bg-white p-8 shadow-sm print-border-0">
     <header class="flex justify-between border-b-2 border-slate-900 pb-5">
         <div>
             <p class="text-2xl font-black italic"><span class="text-red-600">FASMIR</span> MOTORS</p>
@@ -80,24 +97,7 @@
         </div>
     </div>
 
-    <section class="mt-5 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <small class="text-blue-700 font-bold uppercase text-[10px] tracking-wider">Salary Cycle</small>
-                <p class="font-black text-slate-900">{{ $cycleLabel }}</p>
-                <p class="text-xs text-slate-600">Salary Month: {{ $salaryMonthLabel }} · Period: {{ $sheet->period_start->format('d M Y') }} to {{ $sheet->period_end->format('d M Y') }}</p>
-            </div>
-            <div class="text-right text-xs text-slate-600">
-                <p><strong>{{ $sheet->salary_period_days }}</strong> period days</p>
-                <p><strong>{{ $sheet->carried_from_previous_month_days }}</strong> previous month days included</p>
-                <p><strong>{{ $sheet->carried_to_next_month_days }}</strong> carried forward</p>
-            </div>
-        </div>
-        <p class="mt-2 text-xs text-slate-700">{{ data_get($sheet->calculation_snapshot, 'earnings.pay_basis') }}</p>
-        @if(! empty($sheet->excluded_dates))
-            <p class="mt-2 text-xs text-red-700"><strong>Excluded / carried forward:</strong> {{ collect($sheet->excluded_dates)->map(fn ($date) => \Carbon\Carbon::parse($date)->format('d M Y'))->join(', ') }}</p>
-        @endif
-    </section>
+    <p class="mt-3 text-xs text-slate-600">Salary period: {{ $sheet->period_start->format('d M Y') }} – {{ $sheet->period_end->format('d M Y') }}</p>
 
     @if((float) data_get($sheet->calculation_snapshot, 'contributions.basic_salary') > 0)
         <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
@@ -107,7 +107,7 @@
     <section class="mt-6">
         <h2 class="border-b pb-2 font-black text-blue-700 uppercase tracking-wider text-xs">Attendance & Activity</h2>
         <div class="mt-3 grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
-          @foreach(['Period days'=>$sheet->salary_period_days,'Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent'=>$sheet->total_absent_days,'Leave days'=>$sheet->leave_days,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
+          @foreach(['Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent'=>$sheet->total_absent_days,'Leave days'=>$sheet->leave_days,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
           <div class="rounded-xl bg-blue-50 p-3 flex flex-col items-center justify-center text-center">
               <small class="text-slate-500 text-[10px] uppercase font-bold">{{ $label }}</small>
               <p class="font-black text-blue-900 mt-1">{{ $value }}</p>
@@ -181,19 +181,7 @@
     @if((float) $sheet->commission !== 0.0)<p class="mt-3 text-sm text-amber-800">Commission included in this earlier salary: Rs. {{ number_format($sheet->commission, 2) }}. This historical amount remains in its saved totals.</p>@endif
     @include('technicians.partials.salary-adjustment-lines')
 
-    @php
-        $repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment');
-    @endphp
-    @if($repairDeductions->isNotEmpty())
-    <section id="staff-bike-repair-deductions" class="mt-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4 text-sm">
-        <h3 class="font-black text-emerald-900">Staff bike repair deductions</h3>
-        <p class="mt-1 font-bold text-emerald-800">{{ $sheet->status === 'Draft' ? 'Planned in' : 'Deducted from' }} {{ $sheet->number }}: Rs. {{ number_format($sheet->repair_deduction_amount,2) }}</p>
-        <table class="mt-3 w-full"><thead><tr><th class="text-left">Repair job / bike</th><th class="text-right">Balance before</th><th class="text-right">This paysheet</th><th class="text-right">Balance after</th></tr></thead><tbody>
-        @foreach($repairDeductions as $repair)<tr><td class="py-2">{{ $repair['job_number'] ?? $repair['reference_no'] }} · {{ $repair['bike_number'] ?? 'Staff bike' }}<?php $repairPayment = $sheet->repairPayments->firstWhere('technician_bike_deduction_id',$repair['id']); ?>@if($repairPayment && $sheet->status !== 'Draft' && auth()->user()->canAccess('technician.salaries'))<a class="mt-1 block font-bold text-blue-700 underline print:hidden" href="{{ route('technicians.salaries.repairs.edit',$repairPayment) }}">Correct deduction with reason</a>@endif</td><td class="text-right">{{ number_format($repair['remaining_balance'] ?? 0, 2) }}</td><td class="text-right font-extrabold text-emerald-900">{{ number_format($repair['amount'],2) }}</td><td class="text-right">{{ number_format(max(0, ($repair['remaining_balance'] ?? 0) - $repair['amount']),2) }}</td></tr>@endforeach
-        </tbody></table>
-        @foreach(data_get($sheet->calculation_snapshot,'repair_corrections',[]) as $correction)<p class="mt-3 rounded-xl bg-white p-3 text-xs">Correction: Rs. {{ number_format($correction['old_amount'],2) }} → Rs. {{ number_format($correction['amount'],2) }} · {{ \Carbon\Carbon::parse($correction['at'])->format('d M Y, h:i A') }}<br>Reason: {{ $correction['reason'] }}</p>@endforeach
-    </section>
-    @endif
+    @include('technicians.partials.salary-debt-summary')
     @if($sheet->advancesUsed->isNotEmpty() || $sheet->sourceDeductions->isNotEmpty())
     <section class="mt-6 grid gap-6 md:grid-cols-2 text-sm bg-slate-50 p-4 rounded-2xl">
         <div>

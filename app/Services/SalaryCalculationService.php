@@ -157,6 +157,7 @@ class SalaryCalculationService
         $start = Carbon::parse($month)->startOfMonth();
         $end = $periodEnd ? Carbon::parse($periodEnd)->endOfDay() : $start->copy()->endOfMonth();
         $manual = TechnicianDeduction::where('technician_id', $technicianId)->where('status', 'pending')
+            ->where(fn ($query) => $query->whereNull('source_type')->orWhereNotIn('source_type', SalaryBalanceService::SOURCES))
             ->whereDate('deduction_date', '<=', $end)->orderBy('deduction_date')->get();
         $bike = TechnicianBikeDeduction::with(['invoice', 'jobCard', 'bike'])->where('technician_id', $technicianId)->where('status', 'Active')
             ->whereDate('next_deduction_month', '<=', $start)->orderBy('next_deduction_month')->orderBy('id')->get();
@@ -188,13 +189,13 @@ class SalaryCalculationService
                 $invoiceBalances[$row->invoice_id] -= $remaining;
             }
             $amount = $row->deduction_type === 'Full deduction' ? $remaining : min($remaining, (float) $row->installment_amount);
-            if ($amount > 0) {
+            if ($remaining > 0) {
                 $items[] = [
                     'id' => $row->id, 'kind' => 'bike_installment', 'source' => 'own_bike_repair',
                     'reference_no' => $row->number, 'name' => 'Own bike repair instalment',
                     'date' => Carbon::parse($row->next_deduction_month)->toDateString(), 'reason' => $row->note,
                     'amount' => $amount, 'status' => 'pending',
-                    'job_number' => $row->jobCard?->number, 'bike_number' => $row->bike?->number,
+                    'job_number' => $row->jobCard?->number, 'bike_number' => $row->bike?->number ?? $row->jobCard?->bike?->number,
                     'invoice_number' => $invoiceNumber, 'repair_total' => $repairTotal,
                     'remaining_balance' => round($remaining, 2), 'invoice_balance' => $invoiceBalance,
                     'next_deduction_month' => Carbon::parse($row->next_deduction_month)->toDateString(),
@@ -290,10 +291,19 @@ class SalaryCalculationService
             $deductionParts['late'] = $deductionParts['early_leave'] = $deductionParts['half_day'] = 0;
             $deductionParts['attendance_adjustment'] = $attendance['hourly_manual_deduction'];
         }
-        $totalDeductions = $this->calculateTotalDeductions($deductionParts);
-        if ($totalDeductions > $gross) {
+        $manualItems = collect($pendingDeductions['items'])->where('kind', 'technician_deduction');
+        $deductionParts['job_bike'] = (float) $manualItems->sum('amount');
+        $fixedDeductions = $this->calculateTotalDeductions($deductionParts);
+        if ($fixedDeductions > $gross) {
             throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the selected deductions before saving.']);
         }
+        $debt = app(SalaryBalanceService::class)->allocate($technician->id, $salaryMonth, $custom,
+            collect($pendingDeductions['items'])->where('kind', 'bike_installment')->values()->all(), round($gross - $fixedDeductions, 2));
+        $pendingDeductions['items'] = $manualItems->concat($debt['repairs'])->values()->all();
+        $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
+        $deductionParts['job_bike'] = $pendingDeductions['total_amount'];
+        $deductionParts['old_balance'] = $debt['summary']['applied_old_balance'];
+        $totalDeductions = $this->calculateTotalDeductions($deductionParts);
         $net = $this->calculateNetPayable($gross, $totalDeductions);
         $balance = $this->calculateBalance($net, $paidAmount);
         $technicianData = $this->getTechnicianSalaryData($technician->id);
@@ -306,6 +316,7 @@ class SalaryCalculationService
 
         return [
             'pay_basis' => $payBasis,
+            'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'],
             'period_start' => $start, 'period_end' => $end,
             'salary_cycle_mode' => $cycle['salary_cycle_mode'],
             'salary_cycle_label' => $cycle['salary_cycle_label'],
@@ -350,7 +361,7 @@ class SalaryCalculationService
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'], 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 
@@ -388,23 +399,25 @@ class SalaryCalculationService
         }
         $selected = $this->selectBikeAmounts($current['items'], $amounts);
         $oldItems = collect(data_get($snapshot, 'pending_deductions.items', []));
-        $oldBikeTotal = (float) $oldItems->where('kind', 'bike_installment')->sum('amount');
-        $bikeItems = collect($selected)->where('kind', 'bike_installment');
-        $delta = round((float) $bikeItems->sum('amount') - $oldBikeTotal, 2);
-        $total = round((float) $sheet->total_deductions + $delta, 2);
-        if ($total > (float) $sheet->gross_salary) {
-            throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the repair amounts before finalizing.']);
-        }
-        // Keep all other draft inputs intact so finalization still detects attendance or advance changes.
-        $items = $oldItems->reject(fn ($item) => $item['kind'] === 'bike_installment')->concat($bikeItems)->values();
+        $oldRepair = (float) $oldItems->where('kind', 'bike_installment')->sum('amount');
+        $oldBalance = (float) collect($snapshot['old_balances'] ?? [])->sum('amount');
+        $fixed = round((float) $sheet->total_deductions - $oldRepair - $oldBalance, 2);
+        $debt = app(SalaryBalanceService::class)->allocate($sheet->technician_id, $month, $snapshot['inputs'] ?? [],
+            collect($selected)->where('kind', 'bike_installment')->values()->all(), round((float) $sheet->gross_salary - $fixed, 2));
+        $items = $oldItems->reject(fn ($item) => $item['kind'] === 'bike_installment')->concat($debt['repairs'])->values();
+        $snapshot['old_balances'] = $debt['items'];
+        $snapshot['debt_summary'] = $debt['summary'];
         $snapshot['pending_deductions'] = ['items' => $items->all(), 'count' => $items->count(), 'total_amount' => round((float) $items->sum('amount'), 2)];
-        $snapshot['inputs']['bike_installments'] = $bikeItems->pluck('amount', 'id')->all();
+        $snapshot['inputs']['bike_installments'] = collect($debt['repairs'])->pluck('requested_amount', 'id')->all();
         $snapshot['deductions']['job_bike'] = $snapshot['pending_deductions']['total_amount'];
+        $snapshot['deductions']['old_balance'] = $debt['summary']['applied_old_balance'];
+        $delta = round($debt['summary']['applied_repair'] - $oldRepair, 2);
+        $total = round($fixed + $debt['summary']['deducted_this_month'], 2);
         $net = round((float) $sheet->gross_salary - $total, 2);
         $sheet->update([
             'own_bike_deduction' => round((float) $sheet->own_bike_deduction + $delta, 2),
             'total_job_deduction' => round((float) $sheet->total_job_deduction + $delta, 2),
-            'deductions' => round((float) $sheet->deductions + $delta, 2), 'total_deductions' => $total,
+            'deductions' => round($total - (float) $sheet->epf_employee, 2), 'total_deductions' => $total,
             'net_payable' => $net, 'balance_amount' => $net, 'calculation_snapshot' => $snapshot,
         ]);
 
@@ -448,9 +461,17 @@ class SalaryCalculationService
             if (isset($snapshot['pending_deductions']) && $snapshotManual != $currentManual) {
                 throw ValidationException::withMessages(['month' => 'Staff deductions changed. Regenerate the salary draft.']);
             }
+            if (isset($snapshot['debt_summary'])) {
+                $repairBalances = fn ($items) => collect($items)->where('kind', 'bike_installment')
+                    ->mapWithKeys(fn ($item) => [(string) $item['id'] => round((float) $item['remaining_balance'], 2)])->sortKeys()->all();
+                if ($repairBalances(data_get($snapshot, 'pending_deductions.items', [])) != $repairBalances($currentDeductions['items'])) {
+                    throw ValidationException::withMessages(['month' => 'Repair balances changed after this draft was prepared. Refresh the draft before finalizing.']);
+                }
+            }
             if ((float) $sheet->commission !== 0.0) {
                 throw ValidationException::withMessages(['month' => 'Commission is paid separately now. Refresh this draft to remove commission before finalizing salary.']);
             }
+            app(SalaryBalanceService::class)->finalize($sheet, $userId);
             $advanceIds = collect(data_get($snapshot, 'advance_summary.items', []))->pluck('id')->filter();
             $advances = TechnicianAdvance::whereIn('id', $advanceIds)->lockForUpdate()->get();
             if ($advances->contains(fn ($advance) => $advance->status !== 'Pending Deduction')) {
@@ -510,6 +531,7 @@ class SalaryCalculationService
             Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Finalized' && (float) $sheet->paid_amount === 0.0, 422, 'A salary with payments cannot be reopened.');
+            app(SalaryBalanceService::class)->reopen($sheet);
             TechnicianAdvance::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending Deduction', 'salary_sheet_id' => null]);
             TechnicianDeduction::where('salary_payment_id', $sheet->id)->update(['status' => 'pending', 'salary_payment_id' => null, 'updated_by' => $userId]);
             TechnicianCommission::where('salary_sheet_id', $sheet->id)->update(['status' => 'Pending', 'salary_sheet_id' => null]);
