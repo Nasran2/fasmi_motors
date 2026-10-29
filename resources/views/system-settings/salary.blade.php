@@ -134,7 +134,7 @@
               <div class="grid grid-cols-4 gap-2 mt-2">
                 @php
                   $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                  $savedDays = $salarySetting->work_days ?? $days;
+                  $savedDays = $salarySetting->work_days ?? array_values(array_diff($days, app(\App\Services\HolidayService::class)->getWeeklyLeaveDays()));
                 @endphp
                 @foreach($days as $day)
                 <label class="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">

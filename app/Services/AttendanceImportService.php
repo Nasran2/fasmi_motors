@@ -41,6 +41,8 @@ class AttendanceImportService
         $preview = [];
         $errors = [];
         $settings = SalarySetting::first();
+        $calendarService = app(HolidayService::class);
+        $calendar = $calendarService->calendar();
         $closingTime = $settings && $settings->closing_time ? Carbon::parse($settings->closing_time)->format('H:i:s') : '17:00:00';
 
         foreach (array_slice($rows, 1) as $offset => $row) {
@@ -95,7 +97,7 @@ class AttendanceImportService
                 $autoFilledCheckout = true;
             }
 
-            $preview[] = [
+            $preview[] = $calendarService->importRow([
                 'row' => $rowNumber,
                 'person_id' => $personId,
                 'name' => Str::limit($name, 150, ''),
@@ -114,7 +116,7 @@ class AttendanceImportService
                 'technician_name' => $technician?->name,
                 'will_create_technician' => ! $technician,
                 'duplicate' => $existing,
-            ];
+            ], $calendar);
         }
 
         $month = collect($preview)->pluck('date')->filter()->min();
@@ -143,7 +145,15 @@ class AttendanceImportService
             $duplicates = 0;
             $errors = $batch->errors ?? [];
 
+            $calendarService = app(HolidayService::class);
+            $calendar = $calendarService->calendar();
             foreach ($batch->preview_data ?? [] as $row) {
+                $row = $calendarService->importRow($row, $calendar);
+                if ($row['future_day'] && ! $row['check_in'] && ! $row['check_out'] && ! $row['mark_leave'] && ! $row['shop_day']['closed']) {
+                    $skipped++;
+
+                    continue;
+                }
                 try {
                     DB::transaction(function () use ($row, $batch, $calculator, $userId, &$success, &$duplicates) {
                         $technician = $this->resolveTechnician($row, $userId);
@@ -160,10 +170,16 @@ class AttendanceImportService
                             $duplicates++;
                         }
                         $createdBy = $existing ? $existing->created_by : $userId;
+                        $status = $row['mark_leave'] ? 'Paid Leave' : $row['source_status'];
+                        if ($row['shop_day']['closed']) {
+                            $status = null;
+                        } elseif (array_key_exists('mark_leave', $row) && ! $row['check_in'] && ! $row['check_out']) {
+                            $status = $row['mark_leave'] ? 'Paid Leave' : 'Absent';
+                        }
                         $metrics = $calculator->calculateDailyAttendance(
                             $technician,
                             $row['date'],
-                            $row['source_status'],
+                            $status,
                             $row['check_in'],
                             $row['check_out'],
                             ['break_minutes' => $row['break_minutes'], 'auto_filled_checkout' => $row['auto_filled_checkout'] ?? false]
@@ -177,7 +193,7 @@ class AttendanceImportService
                                 'timetable' => $row['timetable'] ?: null,
                                 'in_time' => $row['check_in'],
                                 'out_time' => $row['check_out'],
-                                'leave_type' => $row['leave_type'] ?: $metrics['leave_type'],
+                                'leave_type' => $row['mark_leave'] ? null : ($metrics['leave_type'] ?: $row['leave_type']),
                                 'is_manual_entry' => false,
                                 'is_manual_edit' => false,
                                 'import_batch_id' => $batch->id,
@@ -204,7 +220,7 @@ class AttendanceImportService
                 'duplicate_rows' => $duplicates,
                 'error_rows' => count($errors),
                 'errors' => $errors,
-                'status' => $skipped > 0 ? 'Completed with errors' : 'Completed',
+                'status' => count($errors) > 0 ? 'Completed with errors' : 'Completed',
                 'preview_data' => null,
             ]);
 

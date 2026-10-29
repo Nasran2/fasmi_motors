@@ -23,18 +23,38 @@
 
     <x-flash />
 
+    <script type="application/json" id="attendance-shop-calendar">@json($shopCalendar)</script>
+    <section class="panel space-y-4 border border-slate-200 bg-white p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-lg font-black">Shop closed days</h2>@if(auth()->user()->canAccess('settings.salary'))<a class="text-sm font-semibold text-blue-700 underline" href="{{ route('system-settings.salary-settings') }}">Weekly work-day settings</a>@endif</div>
+      <x-attendance-colour-key />
+      <p class="text-sm text-slate-600">Weekly closed days: {{ implode(', ', $shopCalendar['weekly_closed']) ?: 'None' }}. Missing attendance on a working day is checked as paid leave with no absence deduction. Uncheck it to import an absence with the normal deduction. Shop closed days are excluded. Future days are not checked automatically; empty future working days are skipped unless you explicitly approve leave.</p>
+      @if(auth()->user()->canAccess('settings.salary'))
+      <form method="POST" action="{{ route('technicians.attendance.closed-days.store') }}" data-closure-form class="grid items-end gap-3 md:grid-cols-4">
+        @csrf<x-submission-token/>@if($previewBatch)<input type="hidden" name="batch" value="{{ $previewBatch->id }}">@endif
+        <label><span class="label">Closure month</span><input type="month" name="month" value="{{ $from->format('Y-m') }}" required class="field"></label>
+        <label><span class="label">Special closed date</span><input type="date" name="closure_date" required min="{{ $from->copy()->startOfMonth()->toDateString() }}" max="{{ $from->copy()->endOfMonth()->toDateString() }}" class="field"></label>
+        <label><span class="label">Reason / name</span><input name="closure_name" maxlength="255" required class="field" placeholder="e.g. Shop maintenance"></label>
+        <button class="btn-secondary">Add special closed day</button>
+      </form>
+      @endif
+      <div class="flex flex-wrap gap-2 text-xs">@forelse($specialClosures as $closure)<span class="rounded-lg bg-violet-50 px-3 py-2 font-semibold text-violet-800">{{ $closure->holiday_date->format('d M') }} · {{ $closure->holiday_name }}</span>@empty<span class="text-slate-500">No special closed days for the selected period.</span>@endforelse</div>
+      @if(auth()->user()->canAccess('settings.salary'))<a class="text-xs font-semibold text-violet-700 underline" href="{{ route('system-settings.leave-holiday-settings') }}">Manage special closed days and holidays</a>@endif
+    </section>
+
     @if($previewBatch)
-    <div class="panel bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
+    <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" id="attendance-import-form" class="panel bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
+      @csrf<x-submission-token/><input type="hidden" name="calendar_version" value="{{ $calendarVersion }}">
       <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
         <div>
           <h2 class="text-lg font-black text-yellow-800">Review & Confirm Import</h2>
           <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing.</p>
         </div>
-        <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" class="flex-shrink-0">
-          @csrf<x-submission-token/>
+        <div class="flex-shrink-0">
           <button class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm & Import {{ $previewBatch->total_rows }} Rows</button>
+        </div>
       </div>
 
+      <div class="mb-4"><x-attendance-colour-key /></div>
       <div class="overflow-x-auto border border-yellow-200 rounded-lg bg-white max-h-[600px] relative">
         <table class="w-full text-left text-xs whitespace-nowrap">
           <thead class="bg-yellow-100 text-yellow-800 border-b border-yellow-200 sticky top-0 z-10 shadow-sm">
@@ -42,15 +62,15 @@
               <th class="px-4 py-2 font-bold">Row</th>
               <th class="px-4 py-2 font-bold">Employee in File</th>
               <th class="px-4 py-2 font-bold">Map to Technician</th>
-              <th class="px-4 py-2 font-bold">Date</th>
+              <th class="px-4 py-2 font-bold">Paid leave</th><th class="px-4 py-2 font-bold">Date / shop day</th>
               <th class="px-4 py-2 font-bold">Check In</th>
               <th class="px-4 py-2 font-bold">Check Out</th>
               <th class="px-4 py-2 font-bold">Duplicate?</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-yellow-100">
-            @foreach($previewBatch->preview_data as $i => $row)
-            <tr class="hover:bg-yellow-50/50 {{ $row['duplicate'] ? 'opacity-50' : '' }}">
+            @foreach($previewRows as $i => $row)
+            <tr data-import-row class="{{ $row['row_colour'] }} {{ $row['duplicate'] ? 'opacity-50' : '' }}">
               <td class="px-4 py-2 font-mono text-slate-500">{{ $row['row'] }}
                 <input type="hidden" name="rows[{{ $row['row'] }}][row]" value="{{ $row['row'] }}">
               </td>
@@ -70,21 +90,25 @@
                 <span class="block mt-1 text-[9px] text-red-600 font-bold uppercase tracking-wider">Will Auto-Create</span>
                 @endif
               </td>
-              <td class="px-4 py-2">
-                <input type="date" name="rows[{{ $row['row'] }}][date]" value="{{ $row['date'] }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[120px]" required>
+              <td class="px-4 py-2 text-center whitespace-normal min-w-[150px]">
+                <input type="hidden" name="rows[{{ $row['row'] }}][mark_leave]" value="0">
+                <input type="checkbox" data-import-leave name="rows[{{ $row['row'] }}][mark_leave]" value="1" @checked($row['mark_leave']) @disabled($row['shop_day']['closed'] || $row['check_in'] || $row['check_out']) aria-label="Paid leave for {{ $row['name'] }} on {{ $row['date'] }}" class="size-4 rounded text-amber-600"><span data-leave-note class="mt-1 block text-[10px] leading-snug text-slate-600">{{ $row['leave_note'] }}</span>
               </td>
               <td class="px-4 py-2">
-                <input type="time" name="rows[{{ $row['row'] }}][check_in]" value="{{ $row['check_in'] ? substr($row['check_in'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px]">
+                <input data-import-date type="date" name="rows[{{ $row['row'] }}][date]" value="{{ $row['date'] }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[120px]" required><span data-shop-day-label class="mt-1 block text-xs font-semibold">{{ $row['shop_day']['label'] }}{{ $row['future_day'] ? ' · Future date' : '' }}</span>
               </td>
               <td class="px-4 py-2">
-                <input type="time" name="rows[{{ $row['row'] }}][check_out]" value="{{ $row['check_out'] ? substr($row['check_out'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px] {{ ($row['auto_filled_checkout'] ?? false) ? 'border-blue-300 bg-blue-50 text-blue-700' : '' }}">
+                <input data-import-in type="time" name="rows[{{ $row['row'] }}][check_in]" value="{{ $row['check_in'] ? substr($row['check_in'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px]">
+              </td>
+              <td class="px-4 py-2">
+                <input data-import-out type="time" name="rows[{{ $row['row'] }}][check_out]" value="{{ $row['check_out'] ? substr($row['check_out'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px] {{ ($row['auto_filled_checkout'] ?? false) ? 'border-blue-300 bg-blue-50 text-blue-700' : '' }}">
                 @if($row['auto_filled_checkout'] ?? false)
                   <span class="block mt-1 text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-tight">Auto (Shop Close)</span>
                 @endif
               </td>
               <td class="px-4 py-2">
                 @if($row['duplicate'])
-                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">Will Skip</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">Will Update</span>
                 @else
                 <span class="text-slate-300">—</span>
                 @endif
@@ -94,8 +118,7 @@
           </tbody>
         </table>
       </div>
-        </form>
-    </div>
+    </form>
     @endif
 
     {{-- Stats Summary --}}
@@ -218,6 +241,7 @@
 
     {{-- Filter Search --}}
     <form class="panel bg-white border border-slate-200 rounded-xl p-5 shadow-sm grid gap-3 md:grid-cols-4">
+      @if($previewBatch)<input type="hidden" name="batch" value="{{ $previewBatch->id }}">@endif
       <div>
         <label class="label">Month Filter</label>
         <div class="relative">
@@ -282,8 +306,9 @@
                 default => 'bg-slate-50 text-slate-700 border border-slate-200'
               };
             @endphp
-            <tr class="hover:bg-slate-50/50 transition">
-              <td class="px-4 py-3 font-mono">{{ $row->date->format('d M Y') }}</td>
+            @php($shopDay = app(\App\Services\HolidayService::class)->dayInfo($row->date->toDateString(), $shopCalendar))
+            <tr class="{{ $shopDay['kind'] === 'special' ? 'bg-violet-50' : ($shopDay['kind'] === 'weekly' ? 'bg-sky-50' : (in_array($row->status, ['Absent', 'No Pay Leave']) ? 'bg-rose-50' : (in_array($row->status, ['Leave', 'Paid Leave']) ? 'bg-amber-50' : 'bg-white'))) }} transition">
+              <td class="px-4 py-3 font-mono">{{ $row->date->format('d M Y') }}@if($shopDay['closed'])<span class="mt-1 block text-xs font-semibold">{{ $shopDay['label'] }}</span>@endif</td>
               <td class="px-4 py-3 font-bold text-slate-900">{{ $row->technician->name }}</td>
               <td class="px-4 py-3 font-mono text-slate-500">{{ $row->in_time ? Carbon\Carbon::parse($row->in_time)->format('h:i A') : '—' }}</td>
               <td class="px-4 py-3 font-mono text-slate-500">{{ $row->out_time ? Carbon\Carbon::parse($row->out_time)->format('h:i A') : '—' }}</td>

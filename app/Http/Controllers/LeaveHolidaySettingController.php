@@ -4,15 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\HolidayDate;
 use App\Models\LeaveHolidaySetting;
+use App\Models\SalarySetting;
+use App\Services\HolidayService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LeaveHolidaySettingController extends Controller
 {
     public function index()
     {
         $setting = LeaveHolidaySetting::firstOrCreate(['key' => 'weekly_leave_days']);
-        $weeklyLeaves = $setting->value ? json_decode($setting->value, true) : ['Friday'];
+        $weeklyLeaves = app(HolidayService::class)->getWeeklyLeaveDays();
 
         $holidays = HolidayDate::orderBy('holiday_date')->get();
 
@@ -26,9 +29,10 @@ class LeaveHolidaySettingController extends Controller
             'days.*' => 'string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
         ]);
 
-        $setting = LeaveHolidaySetting::firstOrCreate(['key' => 'weekly_leave_days']);
-        $setting->value = json_encode($request->input('days', []));
-        $setting->save();
+        DB::transaction(function () use ($request) {
+            LeaveHolidaySetting::updateOrCreate(['key' => 'weekly_leave_days'], ['value' => json_encode($request->input('days', []))]);
+            SalarySetting::firstOrCreate([])->update(['work_days' => array_values(array_diff(HolidayService::DAYS, $request->input('days', [])))]);
+        });
 
         return back()->with('success', 'Weekly leave days updated successfully.');
     }

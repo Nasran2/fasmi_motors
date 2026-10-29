@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\LeaveHolidaySetting;
 use App\Models\OtSlabRule;
 use App\Models\SalaryCycleSetting;
 use App\Models\SalarySetting;
@@ -11,6 +12,7 @@ use App\Models\SmsLog;
 use App\Models\SmsSetting;
 use App\Models\Store;
 use App\Services\DatabaseBackupService;
+use App\Services\HolidayService;
 use App\Services\Sms\TextitSmsService;
 use App\Services\Sms\WorkshopSmsService;
 use Illuminate\Http\Request;
@@ -89,6 +91,7 @@ class SettingController extends Controller
                 'working_hours_per_day' => 'required|numeric|min:1|max:24',
                 'lunch_break_minutes' => 'nullable|integer|min:0',
                 'work_days' => 'nullable|array',
+                'work_days.*' => 'string|distinct|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
 
                 'enable_late_deduction' => 'nullable|boolean',
                 'late_grace_minutes' => 'required|integer|min:0',
@@ -140,14 +143,17 @@ class SettingController extends Controller
             $cycleData = [
                 'salary_cycle_mode' => $data['salary_cycle_mode'],
                 'custom_cutoff_enabled' => $data['custom_cutoff_enabled'],
-                'cycle_start_rule' => $data['cycle_start_rule'] ?: 'previous_month_balance_day',
-                'cycle_end_day' => $data['cycle_end_day'] ?: 30,
+                'cycle_start_rule' => ($data['cycle_start_rule'] ?? null) ?: 'previous_month_balance_day',
+                'cycle_end_day' => ($data['cycle_end_day'] ?? null) ?: 30,
                 'carry_missing_days' => $data['carry_missing_days'],
                 'updated_by' => auth()->id(),
             ];
             unset($data['salary_cycle_mode'], $data['custom_cutoff_enabled'], $data['cycle_start_rule'], $data['cycle_end_day'], $data['carry_missing_days']);
 
-            $salarySetting->update($data);
+            DB::transaction(function () use ($salarySetting, $data) {
+                $salarySetting->update($data);
+                LeaveHolidaySetting::updateOrCreate(['key' => 'weekly_leave_days'], ['value' => json_encode(array_values(array_diff(HolidayService::DAYS, $data['work_days'])))]);
+            });
             SalaryCycleSetting::current()->update($cycleData);
             $newVal = $salarySetting->fresh()->toArray();
 

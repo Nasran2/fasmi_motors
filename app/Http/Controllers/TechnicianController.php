@@ -7,6 +7,7 @@ use App\Models\AccountTransaction;
 use App\Models\AttendanceImportBatch;
 use App\Models\AuditLog;
 use App\Models\Bike;
+use App\Models\HolidayDate;
 use App\Models\JobCard;
 use App\Models\OtSlabRule;
 use App\Models\SalarySetting;
@@ -20,6 +21,7 @@ use App\Models\TechnicianSalarySheet;
 use App\Services\AccountService;
 use App\Services\AttendanceCalculationService;
 use App\Services\AttendanceImportService;
+use App\Services\HolidayService;
 use App\Services\JobCommissionService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
@@ -127,11 +129,16 @@ class TechnicianController extends Controller
 
         $presentStatuses = ['Present', 'Late', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Early Leave', 'Auto Closed', 'Worked on Leave Day'];
         $batch = $request->filled('batch') ? AttendanceImportBatch::where('imported_by', auth()->id())->find($request->batch) : null;
+        $calendarService = app(HolidayService::class);
+        $shopCalendar = $calendarService->calendar();
+        $previewRows = collect($batch?->preview_data ?? [])->map(fn ($row) => $calendarService->importRow($row, $shopCalendar))->all();
+        $calendarVersion = $calendarService->calendarVersion();
+        $specialClosures = HolidayDate::whereBetween('holiday_date', [$from->copy()->startOfMonth(), $to->copy()->endOfMonth()])->where('is_active', true)->where('is_leave_enabled', true)->orderBy('holiday_date')->get();
         $recentBatches = AttendanceImportBatch::with('importer')->latest()->limit(8)->get();
 
         return view('technicians.attendance', [
             'records' => $records, 'technicians' => $this->technicians(), 'date' => $date, 'from' => $from, 'to' => $to,
-            'previewBatch' => $batch, 'recentBatches' => $recentBatches,
+            'previewBatch' => $batch, 'previewRows' => $previewRows, 'shopCalendar' => $shopCalendar, 'calendarVersion' => $calendarVersion, 'specialClosures' => $specialClosures, 'recentBatches' => $recentBatches,
             'salarySettings' => SalarySetting::firstOrCreate([])->refresh(), 'otSlabs' => OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get(),
             'stats' => [
                 'present' => (clone $query)->whereIn('status', $presentStatuses)->count(),
@@ -364,9 +371,42 @@ class TechnicianController extends Controller
         return back()->with('success', "{$saved} daily attendance records saved across the selected period.");
     }
 
+    public function attendanceClosureStore(Request $request)
+    {
+        abort_unless($request->user()->canAccess('settings.salary'), 403);
+        $data = $request->validate([
+            'closure_date' => ['required', 'date_format:Y-m-d'],
+            'closure_name' => ['required', 'string', 'max:255'],
+            'month' => ['required', 'date_format:Y-m'],
+            'batch' => ['nullable', 'integer'],
+        ]);
+        if (substr($data['closure_date'], 0, 7) !== $data['month']) {
+            throw ValidationException::withMessages(['closure_date' => 'Choose a closed date within the displayed month.']);
+        }
+        DB::transaction(function () use ($data, $request) {
+            $holiday = HolidayDate::firstOrNew(['holiday_date' => $data['closure_date']]);
+            if ($holiday->exists && $holiday->is_active && $holiday->is_leave_enabled) {
+                throw ValidationException::withMessages(['closure_date' => 'This date is already marked as shop closed.']);
+            }
+            if ($holiday->exists) {
+                // Keep existing public-holiday identity when activating its closure.
+                $holiday->fill(['is_active' => true, 'is_leave_enabled' => true, 'updated_by' => $request->user()->id]);
+            } else {
+                $holiday->fill(['holiday_name' => $data['closure_name'], 'holiday_type' => 'Company',
+                    'is_active' => true, 'is_leave_enabled' => true, 'source' => 'Attendance', 'created_by' => $request->user()->id]);
+            }
+            $holiday->save();
+        });
+
+        return redirect()->route('technicians.attendance.index', array_filter(['month' => $data['month'], 'batch' => $data['batch'] ?? null]))
+            ->with('success', 'Special shop closed day saved. Review the updated attendance preview before importing.');
+    }
+
     public function attendanceImportConfirm(Request $request, AttendanceImportBatch $batch, AttendanceImportService $importer, AttendanceCalculationService $calculator)
     {
         $request->validate([
+            'calendar_version' => ['nullable', 'string', 'size:64'],
+            'rows.*.mark_leave' => ['nullable', 'boolean'],
             'rows' => ['nullable', 'array'], 'rows.*.row' => ['required', 'integer', 'distinct'],
             'rows.*.date' => ['required', 'date_format:Y-m-d'],
             'rows.*.check_in' => ['nullable', 'date_format:H:i,H:i:s'], 'rows.*.check_out' => ['nullable', 'date_format:H:i,H:i:s'],
@@ -377,6 +417,10 @@ class TechnicianController extends Controller
             $batch = AttendanceImportBatch::lockForUpdate()->findOrFail($batch->id);
             abort_unless($batch->imported_by === auth()->id() && $batch->status === 'Preview', 403);
 
+            if ($request->filled('calendar_version') && ! hash_equals(app(HolidayService::class)->calendarVersion(), $request->input('calendar_version'))) {
+                throw ValidationException::withMessages(['calendar_version' => 'The shop calendar changed or this preview is from an earlier day. Reload it and review the leave boxes before importing.']);
+            }
+
             if ($request->has('rows') && is_array($request->input('rows'))) {
                 $submittedRows = collect($request->input('rows'))->keyBy('row');
                 $updatedPreviewData = [];
@@ -384,6 +428,10 @@ class TechnicianController extends Controller
                     $rowId = $item['row'];
                     if ($submittedRows->has($rowId)) {
                         $rowInput = $submittedRows->get($rowId);
+                        if (array_key_exists('mark_leave', $rowInput)) {
+                            $item['mark_leave'] = (bool) $rowInput['mark_leave'];
+                            $item['leave_choice_explicit'] = true;
+                        }
                         $item['date'] = $rowInput['date'] ?? $item['date'];
                         $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
                         $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
