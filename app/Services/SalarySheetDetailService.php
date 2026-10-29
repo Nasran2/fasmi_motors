@@ -23,7 +23,7 @@ class SalarySheetDetailService
     {
         return TechnicianAttendance::where('technician_id', $technicianId)->whereBetween('date', [$start, $end])->orderBy('date')->get()
             ->map(fn ($row) => ['date' => $row->date->toDateString(), 'in_time' => $row->in_time, 'out_time' => $row->out_time,
-                'status' => $row->status, 'working_hours' => (float) $row->working_hours, 'ot_minutes' => (int) $row->ot_minutes,
+                'actual_ot_minutes' => $row->actual_ot_minutes, 'status' => $row->status, 'working_hours' => (float) $row->working_hours, 'ot_minutes' => (int) $row->ot_minutes,
                 'ot_amount' => (float) $row->ot_amount, 'deduction_amount' => (float) $row->deduction_amount,
                 'is_auto_checkout' => (bool) $row->is_auto_checkout, 'is_manual_edit' => (bool) $row->is_manual_edit, 'note' => $row->note])->all();
     }

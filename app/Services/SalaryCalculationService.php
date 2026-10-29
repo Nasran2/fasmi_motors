@@ -122,6 +122,7 @@ class SalaryCalculationService
             'total_ot_amount' => round((float) $records->sum('ot_amount'), 2),
             'total_worked_minutes' => (int) $records->sum('working_minutes'),
             'total_ot_minutes' => (int) $records->sum('ot_minutes'),
+            'total_actual_ot_minutes' => $recordSummary['actual_ot_minutes'],
             'hourly_manual_deduction' => round((float) $records->where('is_manual_edit', true)->sum('deduction_amount'), 2),
             'hourly_ot_amount' => round((float) $records->sum(fn ($record) => $record->is_manual_edit
                 ? (float) $record->ot_amount
@@ -242,7 +243,7 @@ class SalaryCalculationService
         $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $dailySalary = $this->dailySalary($technician);
-        $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_ot_minutes']) / 60;
+        $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_actual_ot_minutes']) / 60;
         $paidLeaveHours = $attendance['approved_leave_days'] * (float) (SalarySetting::value('working_hours_per_day') ?? 8);
         if ($technician->salary_type === 'Hourly' && (float) $technician->hourly_salary <= 0) {
             throw ValidationException::withMessages(['hourly_salary' => 'Set this staff member’s hourly pay rate before generating salary.']);

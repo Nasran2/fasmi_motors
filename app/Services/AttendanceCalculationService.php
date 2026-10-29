@@ -42,6 +42,7 @@ class AttendanceCalculationService
             'early_leave_minutes' => 0,
             'break_minutes' => max(0, (int) ($overrides['break_minutes'] ?? $settings->lunch_break_minutes ?? 0)),
             'absent_minutes' => 0,
+            'actual_ot_minutes' => 0,
             'ot_minutes' => 0,
             'ot_hours' => 0,
             'ot_amount' => 0,
@@ -138,7 +139,8 @@ class AttendanceCalculationService
 
         $result['is_ot_eligible'] = ! $result['is_auto_checkout'] && $this->calculateOTEligibility($in, $out, $open, $close, (int) $settings->ot_grace_minutes_after_closing);
         if ($settings->enable_ot && $result['is_ot_eligible']) {
-            $result['ot_minutes'] = $this->calculateOTMinutes($out, $close);
+            $result['actual_ot_minutes'] = $this->calculateOTMinutes($out, $close);
+            $result['ot_minutes'] = $this->payableOTMinutes($result['actual_ot_minutes']);
             $result['ot_hours'] = round($result['ot_minutes'] / 60, 2);
             $result['ot_amount'] = $this->calculateOTAmount($technician, $result['ot_minutes'], $settings);
         }
@@ -176,6 +178,12 @@ class AttendanceCalculationService
         return max(0, (int) floor(($checkOut->getTimestamp() - $closing->getTimestamp()) / 60));
     }
 
+    public function payableOTMinutes(int $actualMinutes): int
+    {
+        // Nearest half hour, with 15/45 minute ties rounded up.
+        return (int) (round(max(0, $actualMinutes) / 30, 0, PHP_ROUND_HALF_UP) * 30);
+    }
+
     public function calculateAttendanceMonthSummary(Technician $technician, CarbonInterface|string $month): array
     {
         $start = Carbon::parse($month)->startOfMonth();
@@ -206,6 +214,7 @@ class AttendanceCalculationService
 
             'worked_minutes' => (int) $records->sum('working_minutes'),
             'ot_minutes' => (int) $records->sum('ot_minutes'),
+            'actual_ot_minutes' => (int) $records->sum(fn ($row) => $row->actual_ot_minutes ?? $row->ot_minutes),
             'ot_amount' => (float) $records->sum('ot_amount'),
             'late_deduction' => (float) $records->sum('late_deduction_amount'),
             'early_leave_deduction' => (float) $records->sum('early_leave_deduction_amount'),
@@ -218,6 +227,9 @@ class AttendanceCalculationService
 
     private function calculateOTAmount(Technician $technician, int $minutes, SalarySetting $settings): float
     {
+        if ($minutes <= 0) {
+            return 0;
+        }
         if ((float) $technician->ot_rate > 0) {
             return round($minutes / 60 * (float) $technician->ot_rate, 2);
         }

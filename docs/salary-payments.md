@@ -11,3 +11,21 @@ Use **Add an earning or deduction** in View to enter multiple items, one at a ti
 For earlier attendance saved under the previous strict-before-opening OT rule, choose **Refresh Attendance & OT** on a draft and provide a reason. It recalculates attendance and draft salary together, retains manual amount overrides and adjustment descriptions, refreshes the attendance snapshot and contribution totals, and never creates a payment. Finalized attendance remains locked; an unpaid finalized sheet can first be reopened through the existing action. Refreshing cannot change a salary period or update dates overlapping another finalized sheet. Finalization rejects attendance-time changes after a draft snapshot.
 
 Verification was local using the isolated testing database: 167 payroll/attendance/repair/advance regression cases passed (2,893 assertions), plus three salary-preview JavaScript cases. No live server or live financial data was changed.
+
+## Recalculate attendance in bulk
+
+Staff Attendance now has **Recalculate All Attendance** below the filters. Choose the applied period, or **All recorded dates** to process historical records too. Both scopes respect the applied staff and status filters; choose All technicians and All statuses to recalculate all recorded attendance. A reason is required and saved with each updated record. Processing uses ID-based chunks, so it includes all table pages even when derived statuses change.
+
+Finalized, partially paid and paid salary periods are skipped under the same staff lock used by payroll. Manual OT/deduction amount overrides are retained while other metrics refresh. Invalid punch times are skipped and reported. The result reports recalculated records, locked skips, preserved manual amounts and invalid rows. It does not create attendance, record payments or overwrite stored salary drafts; use the existing draft salary refresh action before finalization.
+
+Bulk recalculation verification: 55 selected attendance/payroll cases passed (383 assertions), including 205 filtered records across pagination/chunk boundaries, staff/date/status filtering, all locked salary states, manual overrides, invalid times, reason validation and permissions. The production build and compiled attendance template passed locally.
+
+## Nearest half-hour overtime
+
+Eligible OT is now rounded to the nearest 30 minutes, with half-way ties rounding up. For a 17:00 closing and Rs. 150 hourly OT rate, 17:16 and 17:44 each pay 30 minutes (Rs. 75); 17:45 pays 60 minutes (Rs. 150). The eligibility check uses the actual check-in/out and configured closing grace period before rounding. A check-in after opening and an automatically filled checkout remain ineligible for automatic OT.
+
+Actual checkout times and working minutes are unchanged. Migration `2026_10_29_000007_add_actual_ot_minutes_to_attendance` adds nullable `actual_ot_minutes`. The existing `ot_minutes` / `ot_hours` hold payable duration after recalculation. Hourly regular earnings subtract actual OT duration; rounded overtime therefore does not take away regular earnings or pay the same actual overtime again as regular time. Older rows retain their existing basis until recalculated, and manual amount overrides remain intact.
+
+Deploy the migration before using the updated calculator. Use **Recalculate All** for existing unlocked attendance, then **Refresh Attendance & OT** for existing salary drafts. Finalized and paid salary records remain locked. Fallback slab amount rounding remains a separate setting from the new nearest-half-hour duration rule. The migration was applied only to the guarded local development database; live data was untouched.
+
+Nearest-half-hour verification: 192 selected payroll/attendance/repair regression cases passed (3,059 assertions), including 17:16 / 17:44 / 17:45 boundaries, later-hour ties, actual punch preservation, hourly regular-pay protection, grace/late/auto-checkout exclusions and legacy bulk/draft refresh. Production build, compiled modified templates, PHP formatting and whitespace checks passed locally.

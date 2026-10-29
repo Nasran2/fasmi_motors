@@ -233,14 +233,14 @@
                 <input type="checkbox" name="enable_ot" value="1" @checked($salarySetting->enable_ot) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                 <span class="text-xs font-bold text-slate-700">Enable Overtime (OT) calculations after closing time</span>
               </label>
-              <p class="mt-2 text-xs text-slate-500">OT is eligible only for check-in at or before workshop opening time (8:00 AM when opening is 8:00). Check-in at 8:01 AM is ineligible. Closing-time grace still applies.</p>
+              <p class="mt-2 text-xs text-slate-500">OT is eligible only for check-in at or before workshop opening time (8:00 AM when opening is 8:00). Check-in at 8:01 AM is ineligible. Closing-time grace still applies. Eligible OT is paid to the nearest 30 minutes: 5:16 → 5:30, 5:44 → 5:30, 5:45 → 6:00 when closing is 5:00 PM. Actual punch times are retained.</p>
             </div>
             <div>
               <label class="label">OT Grace Period after Closing (Minutes)</label>
               <input type="number" name="ot_grace_minutes_after_closing" value="{{ $salarySetting->ot_grace_minutes_after_closing }}" class="w-full">
             </div>
             <div>
-              <label class="label">OT Rounding Method</label>
+              <label class="label">Fallback slab amount rounding</label>
               <select name="ot_round_method" class="w-full">
                 <option value="Ceiling slab" @selected($salarySetting->ot_round_method === 'Ceiling slab')>Ceiling slab (round up)</option>
                 <option value="Floor slab" @selected($salarySetting->ot_round_method === 'Floor slab')>Floor slab (round down)</option>

@@ -32,7 +32,7 @@ it('makes 8 AM inclusive without allowing late arrivals or automatic checkout ov
     expect($result['is_ot_eligible'])->toBe($eligible)->and($result['ot_amount'])->toEqual($amount);
 })->with([
     ['07:59', '18:00', true, 600], ['08:00', '18:00', true, 600], ['08:01', '18:00', false, 0],
-    ['08:00', '17:15', false, 0], ['08:00', '17:16', true, 160], ['08:00', null, false, 0],
+    ['08:00', '17:15', false, 0], ['08:00', '17:16', true, 300], ['08:00', null, false, 0],
 ]);
 
 it('shows attendance and descriptions and prints an unpaid draft with balance', function () {

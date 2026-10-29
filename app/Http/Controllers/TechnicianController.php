@@ -21,6 +21,7 @@ use App\Models\TechnicianSalarySheet;
 use App\Services\AccountService;
 use App\Services\AttendanceCalculationService;
 use App\Services\AttendanceImportService;
+use App\Services\AttendanceRecalculationService;
 use App\Services\HolidayService;
 use App\Services\JobCommissionService;
 use App\Services\SalaryCalculationService;
@@ -291,6 +292,30 @@ class TechnicianController extends Controller
         }, 3);
 
         return back()->with('success', "Attendance saved for {$savedCount} technician(s) and metrics calculated.");
+    }
+
+    public function attendanceRecalculateAll(Request $request, AttendanceRecalculationService $recalculator)
+    {
+        $data = $request->validate([
+            'scope' => ['required', Rule::in(['filtered', 'all_dates'])],
+            'from' => ['required_if:scope,filtered', 'nullable', 'date_format:Y-m-d'],
+            'to' => ['required_if:scope,filtered', 'nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'technician' => ['nullable', 'integer', 'exists:technicians,id'],
+            'status' => ['nullable', 'string', 'max:80'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+        $query = TechnicianAttendance::query()->whereHas('technician')
+            ->when($data['technician'] ?? null, fn ($q, $id) => $q->where('technician_id', $id))
+            ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status));
+        if ($data['scope'] === 'filtered') {
+            $query->whereBetween('date', [$data['from'], $data['to']]);
+        }
+        $counts = $recalculator->run($query, $data['reason']);
+        $updated = $counts['recalculated'] + $counts['manual'];
+        $message = "{$updated} attendance record(s) recalculated across all pages. {$counts['locked']} skipped (finalized salary); {$counts['manual']} retained manual amounts; {$counts['invalid']} skipped (invalid times).";
+        $message .= ' Existing draft paysheets can be updated using Salary Payments → View → Refresh Attendance & OT.';
+
+        return back()->with('success', $message)->with('attendance_recalculation', $counts);
     }
 
     public function attendanceRecalculate(Request $request, TechnicianAttendance $record, AttendanceCalculationService $calculator)

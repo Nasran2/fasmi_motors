@@ -194,7 +194,7 @@
         </div>
 
         <div>
-          <label class="label">OT Minutes</label>
+          <label class="label">Payable OT Minutes</label>
           <input type="text" id="otMinutesInput" readonly class="w-full bg-slate-50 cursor-not-allowed">
         </div>
 
@@ -273,6 +273,22 @@
         <button class="btn-secondary w-full">Apply Filters</button>
       </div>
     </form>
+
+    <section class="panel space-y-3 border border-blue-200 bg-blue-50 p-5">
+      <h2 class="font-black text-blue-900">Recalculate All Attendance</h2>
+      <p class="text-sm text-slate-600">Apply current attendance and OT rules to all matching records across every page. Apply the filters above first to choose staff and status. Finalized salary attendance is skipped; manual amount overrides are retained.</p>
+      <form method="POST" action="{{ route('technicians.attendance.recalculate-all') }}" class="grid gap-3 md:grid-cols-3">
+        @csrf<x-submission-token />
+        <input type="hidden" name="from" value="{{ $from->toDateString() }}">
+        <input type="hidden" name="to" value="{{ $to->toDateString() }}">
+        <input type="hidden" name="technician" value="{{ request('technician') }}">
+        <input type="hidden" name="status" value="{{ request('status') }}">
+        <label class="block"><span class="label">Dates to recalculate</span><select name="scope" class="field" required><option value="filtered">{{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · applied filters</option><option value="all_dates">All recorded dates · selected staff/status</option></select></label>
+        <label class="block"><span class="label">Reason for recalculation</span><input name="reason" value="{{ old('reason') }}" class="field" minlength="5" maxlength="1000" placeholder="e.g. Apply the updated 8:00 AM OT rule" required></label>
+        <div class="flex items-end"><button class="btn-primary w-full">Recalculate All</button></div>
+      </form>
+      <p class="text-xs text-slate-500">This updates attendance only. Refresh existing draft paysheets from their salary View page before finalizing.</p>
+    </section>
 
     {{-- Table List --}}
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white">

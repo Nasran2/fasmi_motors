@@ -182,6 +182,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::get('technicians/attendance', [TechnicianController::class, 'attendanceIndex'])->name('technicians.attendance.index');
     Route::get('technicians/attendance/preview', [TechnicianController::class, 'attendancePreview'])->name('technicians.attendance.preview');
     Route::post('technicians/attendance', [TechnicianController::class, 'attendanceStore'])->name('technicians.attendance.store');
+    Route::post('technicians/attendance/recalculate-all', [TechnicianController::class, 'attendanceRecalculateAll'])->name('technicians.attendance.recalculate-all');
     Route::post('technicians/attendance/{record}/recalculate', [TechnicianController::class, 'attendanceRecalculate'])->name('technicians.attendance.recalculate');
     Route::post('technicians/attendance/range', [TechnicianController::class, 'attendanceRangeStore'])->name('technicians.attendance.range.store');
     Route::post('technicians/attendance/closed-days', [TechnicianController::class, 'attendanceClosureStore'])->name('technicians.attendance.closed-days.store');
