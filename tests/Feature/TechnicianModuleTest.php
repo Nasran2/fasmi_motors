@@ -311,3 +311,48 @@ it('shows technician history using the custom salary cycle period', function () 
         ->assertSee('31 May')
         ->assertSee('01 Jun');
 });
+
+it('gracefully handles salary preview when deductions exceed gross without 302 html redirect', function () {
+    $technician = Technician::create([
+        'name' => 'High Deduction Staff',
+        'phone' => '0779998888',
+        'basic_salary' => 10000,
+        'salary_type' => 'Daily',
+        'daily_salary' => 1000,
+        'active' => true,
+    ]);
+    $account = Account::where('code', 'MAIN')->firstOrFail();
+    TechnicianAdvance::create([
+        'number' => 'ADV-HIGH-DED',
+        'technician_id' => $technician->id,
+        'account_id' => $account->id,
+        'payment_date' => '2026-10-01',
+        'amount' => 25000,
+        'payment_method' => 'Cash',
+        'deduct_month' => '2026-10-01',
+        'status' => 'Pending Deduction',
+        'created_by' => auth()->id(),
+    ]);
+
+    // Regular GET (no Json header) should still return a JSON response, not a 302 redirect to HTML
+    $response = $this->get(route('technicians.salaries.preview', [
+        'technician_id' => $technician->id,
+        'month' => '2026-10',
+    ]));
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'application/json')
+        ->assertJsonPath('net_payable', 0)
+        ->assertJsonPath('total_advance_deduction', 25000);
+});
+
+it('returns structured json errors when salary preview validation fails without json headers', function () {
+    $response = $this->get(route('technicians.salaries.preview', [
+        'technician_id' => 999999,
+        'month' => 'invalid-month',
+    ]));
+
+    $response->assertStatus(422)
+        ->assertHeader('content-type', 'application/json')
+        ->assertJsonStructure(['message', 'errors']);
+});

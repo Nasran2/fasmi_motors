@@ -382,10 +382,22 @@
         params.set('manual_addition', document.querySelector('[name="manual_additions"]').value || '0');
         params.set('manual_deduction', (manualSalaryDeductionTotal() / 100).toFixed(2));
         
-        fetch(`{{ route('technicians.salaries.preview') }}?${params.toString()}`)
+        fetch(`{{ route('technicians.salaries.preview') }}?${params.toString()}`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
         .then(async res => {
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Server returned an unexpected response. Please refresh and try again.');
+            }
             const data = await res.json();
-            if (!res.ok) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Salary preview could not be loaded.');
+            if (!res.ok) {
+                const message = Object.values(data.errors || {}).flat().join(' ') || data.message || 'Salary preview could not be loaded.';
+                throw new Error(message);
+            }
             return data;
         })
         .then(data => {
@@ -550,9 +562,21 @@
         document.getElementById('payment-repair-summary').textContent = 'Loading repair balances…';
         document.getElementById('repair-selection-reviewed').disabled = true;
         btn.disabled = true;
-        fetch(repairUrl).then(async response => {
+        fetch(repairUrl, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(async response => {
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('Server returned an unexpected response. Please refresh and try again.');
+            }
             const data = await response.json();
-            if (!response.ok) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Repair balances could not be loaded.');
+            if (!response.ok) {
+                const message = Object.values(data.errors || {}).flat().join(' ') || data.message || 'Repair balances could not be loaded.';
+                throw new Error(message);
+            }
             return data;
         }).then(data => {
             if (requestId !== repairPaymentRequest) return;

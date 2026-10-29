@@ -50,10 +50,12 @@ class SalaryBalanceService
     public function allocate(int $staffId, $month, array $inputs, array $repairs, float $available): array
     {
         $items = $this->items($staffId, $month);
-        $choices = $inputs['old_balance_installments'] ?? [];
-        if (array_diff(array_map('strval', array_keys($choices)), array_map('strval', array_column($items, 'id')))) {
-            throw ValidationException::withMessages(['old_balance_installments' => 'An old balance changed or does not belong to this staff member and month. Refresh the preview.']);
-        }
+        $itemIds = array_map('strval', array_column($items, 'id'));
+        $choices = array_filter(
+            $inputs['old_balance_installments'] ?? [],
+            fn ($key) => in_array((string) $key, $itemIds, true),
+            ARRAY_FILTER_USE_KEY
+        );
         $new = round((float) ($inputs['old_balance_amount'] ?? 0), 2);
         if ($new > 0) {
             $items[] = ['id' => 'new', 'description' => ($inputs['old_balance_description'] ?? null) ?: 'Old balance owed to shop',

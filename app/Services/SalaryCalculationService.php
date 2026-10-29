@@ -230,10 +230,10 @@ class SalaryCalculationService
 
     public function generateSalaryPreview(int $technicianId, CarbonInterface|string $month, array $custom = []): array
     {
-        return $this->generateMonthlySalary(Technician::findOrFail($technicianId), $month, $custom);
+        return $this->generateMonthlySalary(Technician::findOrFail($technicianId), $month, $custom, isPreview: true);
     }
 
-    public function generateMonthlySalary(Technician $technician, CarbonInterface|string $month, array $custom = []): array
+    public function generateMonthlySalary(Technician $technician, CarbonInterface|string $month, array $custom = [], bool $isPreview = false): array
     {
         $salaryMonth = Carbon::parse($month)->startOfMonth();
         $cycle = $this->salaryCycle->previewSalaryPeriod($salaryMonth, $technician);
@@ -294,11 +294,12 @@ class SalaryCalculationService
         $manualItems = collect($pendingDeductions['items'])->where('kind', 'technician_deduction');
         $deductionParts['job_bike'] = (float) $manualItems->sum('amount');
         $fixedDeductions = $this->calculateTotalDeductions($deductionParts);
-        if ($fixedDeductions > $gross) {
+        if (! $isPreview && $fixedDeductions > $gross) {
             throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the selected deductions before saving.']);
         }
+        $availableForDebt = round(max(0, $gross - $fixedDeductions), 2);
         $debt = app(SalaryBalanceService::class)->allocate($technician->id, $salaryMonth, $custom,
-            collect($pendingDeductions['items'])->where('kind', 'bike_installment')->values()->all(), round($gross - $fixedDeductions, 2));
+            collect($pendingDeductions['items'])->where('kind', 'bike_installment')->values()->all(), $availableForDebt);
         $pendingDeductions['items'] = $manualItems->concat($debt['repairs'])->values()->all();
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $deductionParts['job_bike'] = $pendingDeductions['total_amount'];

@@ -690,31 +690,44 @@ class TechnicianController extends Controller
 
     public function salaryPreview(Request $request, SalaryCalculationService $calculator)
     {
-        $data = $request->validate([
-            'technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'],
-            'other_allowances' => ['nullable', 'numeric', 'min:0'], 'manual_addition' => ['nullable', 'numeric', 'min:0'],
-            'other_deductions' => ['nullable', 'numeric', 'min:0'], 'manual_deduction' => ['nullable', 'numeric', 'min:0'],
-            'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
-            'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
-        ] + $this->salaryBalanceRules());
         try {
-            $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
-        } catch (ValidationException $exception) {
-            if ($request->has('bike_installments') || ! isset($exception->errors()['bike_installments'])) {
-                throw $exception;
+            $data = $request->validate([
+                'technician_id' => ['required', 'exists:technicians,id'], 'month' => ['required', 'date_format:Y-m'],
+                'other_allowances' => ['nullable', 'numeric', 'min:0'], 'manual_addition' => ['nullable', 'numeric', 'min:0'],
+                'other_deductions' => ['nullable', 'numeric', 'min:0'], 'manual_deduction' => ['nullable', 'numeric', 'min:0'],
+                'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
+                'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
+            ] + $this->salaryBalanceRules());
+            try {
+                $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+            } catch (ValidationException $exception) {
+                if ($request->has('bike_installments') || ! isset($exception->errors()['bike_installments'])) {
+                    throw $exception;
+                }
+                $pending = $calculator->getTechnicianPendingDeductions((int) $data['technician_id'], $data['month'].'-01');
+                $data['bike_installments'] = collect($pending['items'])->where('kind', 'bike_installment')->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
+                $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
+                $response['repair_deduction_warning'] = 'Scheduled repairs exceed available salary. Enter a smaller amount for each repair before saving.';
             }
-            $pending = $calculator->getTechnicianPendingDeductions((int) $data['technician_id'], $data['month'].'-01');
-            $data['bike_installments'] = collect($pending['items'])->where('kind', 'bike_installment')->mapWithKeys(fn ($item) => [$item['id'] => 0])->all();
-            $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
-            $response['repair_deduction_warning'] = 'Scheduled repairs exceed available salary. Enter a smaller amount for each repair before saving.';
-        }
-        $salaryCycle = app(SalaryCycleService::class);
-        $conflicts = $salaryCycle->conflictingSheets((int) $data['technician_id'], $response['salary_cycle']);
-        $existing = $conflicts->first(fn ($sheet) => $sheet->status !== 'Draft') ?? $conflicts->first();
-        $response['existing_sheet_status'] = $existing?->status;
-        $response['existing_sheet_can_replace'] = $conflicts->isNotEmpty() && $conflicts->every(fn ($sheet) => $sheet->status === 'Draft' && $salaryCycle->sheetSalaryMonth($sheet) === $data['month']);
+            $salaryCycle = app(SalaryCycleService::class);
+            $conflicts = $salaryCycle->conflictingSheets((int) $data['technician_id'], $response['salary_cycle']);
+            $existing = $conflicts->first(fn ($sheet) => $sheet->status !== 'Draft') ?? $conflicts->first();
+            $response['existing_sheet_status'] = $existing?->status;
+            $response['existing_sheet_can_replace'] = $conflicts->isNotEmpty() && $conflicts->every(fn ($sheet) => $sheet->status === 'Draft' && $salaryCycle->sheetSalaryMonth($sheet) === $data['month']);
 
-        return response()->json($response);
+            return response()->json($response);
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'message' => collect($exception->errors())->flatten()->first() ?: $exception->getMessage(),
+                'errors' => $exception->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => $e->getMessage() ?: 'An error occurred while calculating the salary preview.',
+            ], 500);
+        }
     }
 
     public function salaryStore(Request $request, SalaryCalculationService $calculator)

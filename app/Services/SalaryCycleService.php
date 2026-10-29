@@ -20,7 +20,12 @@ class SalaryCycleService
             return $this->getNormalCalendarPeriod($month) + ['salary_period_source' => 'staff'];
         }
         if ($mode === 'custom_start') {
-            return $this->getCustomStartPeriod($month, (int) $technician->salary_start_day) + ['salary_period_source' => 'staff'];
+            $startDay = (int) ($technician->salary_start_day ?: 1);
+            if ($startDay < 1 || $startDay > 31) {
+                $startDay = 1;
+            }
+
+            return $this->getCustomStartPeriod($month, $startDay) + ['salary_period_source' => 'staff'];
         }
         $setting = SalaryCycleSetting::current();
 
