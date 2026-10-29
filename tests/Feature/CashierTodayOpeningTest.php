@@ -41,7 +41,7 @@ test('today accepts a replacement main opening and counts actual cash receipts o
     $paymentsBefore = $invoice->payments()->get()->toArray();
     $collectionsBefore = $this->service->summary(today()->toDateString())['collections']->toJson();
     $this->get(route('cashier.opening-popup', ['edit' => 1]))->assertOk()->assertViewHas('canRecalculateToday', true)
-        ->assertSee('name="opening_balance" readonly', false)->assertSee('name="recalculate_today"', false)
+        ->assertDontSee('name="opening_balance" readonly', false)->assertSee('name="recalculate_today"', false)
         ->assertSeeText('Cash received on this date:')->assertSeeText('Recalculate today from these opening balances');
     $this->postJson(route('cashier.opening-balances', $session), ($this->payload)(['main' => 74838, 'spare_parts' => 0, 'washing' => 0]))->assertOk();
     $summary = $this->service->summary(today()->toDateString());

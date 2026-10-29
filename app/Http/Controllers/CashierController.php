@@ -9,6 +9,7 @@ use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
+use App\Services\DrawerCashierService;
 use App\Services\WashingCommissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -51,10 +52,8 @@ class CashierController extends Controller
         }
         $todaySession = CashierSession::whereDate('session_date', today())->first();
         $summary = $service->summary($openingDate);
-        $openingBalances = $editing
-            ? collect($summary['cash_accounts'])->map(fn ($account) => $account['opening'])->all()
-            : $service->openingDefaults();
-        $suggestedOpening = round(array_sum($openingBalances), 2);
+        $openingBalances = app(DrawerCashierService::class)->accountDefaults($summary, ! $editing && (bool) $todaySession);
+        $suggestedOpening = $editing ? (float) ($editingSession?->drawer_opening_balance ?? $editingSession?->opening_balance ?? $summary['cash_opening']) : ($todaySession ? $summary['cash_in_hand'] : (app(DrawerCashierService::class)->carriedOpening($openingDate, true) ?? 0));
         $balanceVersion = $service->fingerprint($summary);
         $canRecalculateToday = $editing && $editingSession?->status === 'open' && $editingSession->session_date->isToday();
         $washingPerson = $todaySession?->washing_person_id;
@@ -90,8 +89,8 @@ class CashierController extends Controller
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'nullable|string|max:1000',
             'save_washing_default' => 'nullable|boolean',
-        ] + $this->openingAllocationRules() + WashingCommissionService::rules());
-        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_amount'])), $request->boolean('save_washing_default'), $values['opening_balances'] ?? null, $values['balance_version'] ?? null);
+        ] + $this->openingAllocationRules($request->boolean('separate_cash_balance')) + WashingCommissionService::rules());
+        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_amount'])), $request->boolean('save_washing_default'), $values['opening_balances'] ?? null, $values['balance_version'] ?? null, $request->boolean('separate_cash_balance'));
 
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index')]);
@@ -100,14 +99,17 @@ class CashierController extends Controller
         return redirect()->route('cashier.index')->with('success', 'Cashier opened. Job cards, quick jobs and parts sales are now available.');
     }
 
-    private function openingAllocationRules(): array
+    private function openingAllocationRules(bool $separateCash = false): array
     {
+        $range = $separateCash ? 'between:-999999999999.99,999999999999.99' : 'between:0,999999999999.99';
+
         return [
             'opening_balances' => 'sometimes|array:main,spare_parts,washing',
-            'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|between:0,999999999999.99',
-            'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|between:0,999999999999.99',
-            'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|between:0,999999999999.99',
+            'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
+            'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
+            'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|'.$range,
             'balance_version' => 'sometimes|required|string|size:64',
+            'separate_cash_balance' => 'nullable|boolean',
         ];
     }
 
@@ -119,8 +121,8 @@ class CashierController extends Controller
             'recalculate_today' => 'nullable|boolean',
             'opening_balances' => 'required|array:main,spare_parts,washing',
             'balance_version' => 'required|string|size:64',
-        ] + $this->openingAllocationRules());
-        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'));
+        ] + $this->openingAllocationRules($request->boolean('separate_cash_balance') || $cashier->drawer_opening_balance !== null));
+        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'), $request->boolean('separate_cash_balance'));
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
         }
@@ -136,8 +138,8 @@ class CashierController extends Controller
             'opening_reason' => 'required|string|max:1000',
             'opening_balances' => 'required|array:main,spare_parts,washing',
             'balance_version' => 'required|string|size:64',
-        ] + $this->openingAllocationRules());
-        $service->recordHistoricalOpening($values['date'], (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version']);
+        ] + $this->openingAllocationRules($request->boolean('separate_cash_balance')));
+        $service->recordHistoricalOpening($values['date'], (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('separate_cash_balance'));
         $redirect = route('cashier.index', ['date' => $values['date']]);
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => $redirect]);

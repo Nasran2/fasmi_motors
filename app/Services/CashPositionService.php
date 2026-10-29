@@ -13,10 +13,10 @@ class CashPositionService
 {
     public const ACCOUNTS = ['main' => 'Main Account', 'washing' => 'Washing Account', 'spare_parts' => 'Spare Parts Account'];
 
-    public function accounts(string $date, ?CashierSession $session = null, $collections = null): array
+    public function accounts(string $date, ?CashierSession $session = null, $collections = null, bool $movementsOnly = false, ?string $through = null): array
     {
         $start = Carbon::parse($date)->startOfDay();
-        $collections ??= app(CollectionReportService::class)->rows($date, $date);
+        $collections ??= app(CollectionReportService::class)->rows($date, $through ?? $date);
         $collectedPaymentIds = $collections->where('channel', 'cash')->pluck('payment_ids')->flatten()->all();
         $bankId = Account::systemAccount('bank')->id;
         $result = [];
@@ -30,13 +30,22 @@ class CashPositionService
                             ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
                     });
             });
+            if ($movementsOnly) {
+                $base->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', [
+                    'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase',
+                    'cashier_account_opening', 'cashier_account_reconciliation',
+                ]));
+            }
             $prior = (clone $base)->where('transaction_date', '<', $start);
             $opening = (float) $account->opening_balance + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit');
-            $rows = (clone $base)->whereBetween('transaction_date', [$start, $start->copy()->endOfDay()])->get();
+            $rows = (clone $base)->whereBetween('transaction_date', [$start, Carbon::parse($through ?? $date)->endOfDay()])->get();
             $openingCorrections = $rows->where('category', 'cashier_opening');
             $opening += $openingCorrections->sum('credit') - $openingCorrections->sum('debit');
             if (isset($session?->cash_opening_balances[$type])) {
                 $opening = (float) $session->cash_opening_balances[$type];
+            }
+            if ($movementsOnly) {
+                $opening = 0.0;
             }
             $rows = $rows->where('category', '!=', 'cashier_opening');
             $income = $expenses = $outgoing = $otherIn = $internalIn = $internalOut = 0.0;

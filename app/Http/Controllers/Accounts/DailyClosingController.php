@@ -51,7 +51,22 @@ class DailyClosingController extends BaseAccountController
         $closing = DailyClosing::whereDate('closing_date', $date)->first();
         $summary = app(CashierService::class)->summary($date);
         $cashier = CashierSession::whereDate('session_date', $date)->first();
-        if (! $closing || $cashier?->cash_balances) {
+        if ($cashier?->drawer_opening_balance !== null) {
+            $rows = collect(CashierService::ACCOUNTS)->map(function ($label, $type) use ($summary, $closing) {
+                $account = $summary['accounts'][$type];
+                $expected = $closing ? (float) $closing->{$type.'_closing_balance'} : $account['closing'];
+                $actual = $closing ? $closing->{$type.'_actual_balance'} : null;
+
+                return [$label, $closing ? (float) $closing->{$type.'_opening_balance'} : $account['opening'],
+                    $closing ? (float) $closing->{$type.'_income'} : $account['income'],
+                    $closing ? (float) $closing->{$type.'_expense'} : $account['outgoing'], $expected, $actual, $actual === null ? null : $actual - $expected];
+            })->values()->all();
+            $expected = $closing ? (float) $closing->cash_closing_balance : $summary['cash_in_hand'];
+            $actual = $closing?->cash_actual_balance;
+            array_unshift($rows, ['Cash in cashier (separate)', $closing ? (float) $closing->cash_opening_balance : $summary['cash_opening'],
+                $closing ? (float) $closing->cash_income : $summary['cash_received'] + $summary['cash_other_in'],
+                $closing ? (float) $closing->cash_expense : $summary['cash_paid'], $expected, $actual, $actual === null ? null : $actual - $expected]);
+        } elseif (! $closing || $cashier?->cash_balances) {
             $snapshot = $cashier?->status === 'closed' ? $cashier->closing_summary : null;
             $cash = $snapshot['cash_accounts'] ?? $summary['cash_accounts'];
             $withdrawal = (float) ($snapshot['closing_withdrawal'] ?? 0);

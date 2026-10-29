@@ -41,9 +41,9 @@ class CashierService
             $rows = $transactions->where('account_id', Account::systemAccount($type)->id);
             $opening = $this->accounts->ledgerOpeningBalance($type, $start);
             // Opening corrections belong to opening, rather than today's sales.
-            $openingRows = $rows->where('category', 'cashier_opening');
+            $openingRows = $rows->whereIn('category', ['cashier_opening', 'cashier_account_opening']);
             $opening += $openingRows->sum('credit') - $openingRows->sum('debit');
-            $rows = $rows->where('category', '!=', 'cashier_opening');
+            $rows = $rows->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']);
             $income = (float) $rows->sum('credit');
             $outgoing = (float) $rows->sum('debit');
             $accounts[$type] = [
@@ -58,30 +58,39 @@ class CashierService
         $collections = app(CollectionReportService::class)->rows($date, $date);
         $cashAccounts = app(CashPositionService::class)->accounts($date, $session, $collections);
 
+        $independent = $session?->drawer_opening_balance !== null;
+        $cashMovements = $independent ? app(CashPositionService::class)->accounts($date, null, $collections, true) : $cashAccounts;
+        $cashOpening = $independent ? (float) $session->drawer_opening_balance : round(collect($cashAccounts)->sum('opening'), 2);
+        $cashClosing = $independent ? round($cashOpening + collect($cashMovements)->sum('closing') + (float) $session->drawer_adjustment, 2) : round(collect($cashAccounts)->sum('closing'), 2);
+
         return [
+            'separate_cash_balance' => $independent, 'drawer_adjustment' => (float) ($session?->drawer_adjustment ?? 0),
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
-            'cash_opening' => round(collect($cashAccounts)->sum('opening'), 2),
-            'cash_in_hand' => round(collect($cashAccounts)->sum('closing'), 2),
-            'cash_paid' => round(collect($cashAccounts)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']), 2),
-            'cash_other_in' => round(collect($cashAccounts)->sum(fn ($account) => $account['other_in'] - $account['internal_in']), 2),
+            'cash_opening' => $cashOpening,
+            'cash_in_hand' => $cashClosing,
+            'cash_paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']), 2),
+            'cash_other_in' => round(collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']), 2),
             'cash_received' => round($collections->where('channel', 'cash')->sum('amount'), 2),
             'bank_received' => round($collections->where('channel', 'bank')->sum('amount'), 2),
             'total_received' => round($collections->sum('amount'), 2),
-            'total_paid' => round(collect($cashAccounts)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) + ($accounts['bank']['outgoing'] ?? 0), 2),
+            'total_paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) + ($accounts['bank']['outgoing'] ?? 0), 2),
             'transaction_count' => $collections->count(),
         ];
     }
 
-    public function open(float $opening, ?string $reason, array $washing = [], bool $saveDefault = false, ?array $allocations = null, ?string $balanceVersion = null): CashierSession
+    public function open(float $opening, ?string $reason, array $washing = [], bool $saveDefault = false, ?array $allocations = null, ?string $balanceVersion = null, bool $separateCash = false): CashierSession
     {
         Account::ensureSystemAccounts();
 
-        return DB::transaction(function () use ($opening, $reason, $washing, $saveDefault, $allocations, $balanceVersion) {
+        return DB::transaction(function () use ($opening, $reason, $washing, $saveDefault, $allocations, $balanceVersion, $separateCash) {
             $this->lock();
             if (CashierSession::active()) {
                 throw ValidationException::withMessages(['cashier' => 'A cashier is already open. Close it before opening again.']);
             }
             $existing = CashierSession::whereDate('session_date', today())->lockForUpdate()->first();
+            if ($separateCash || $existing?->drawer_opening_balance !== null) {
+                return app(DrawerCashierService::class)->open($existing, $opening, $reason, $washing, $saveDefault, $allocations, $balanceVersion);
+            }
             $positions = app(CashPositionService::class)->accounts(today()->toDateString(), $existing);
             if ($balanceVersion !== null && ! hash_equals($this->fingerprint($this->summary(today()->toDateString())), $balanceVersion)) {
                 throw ValidationException::withMessages(['balance_version' => 'Balances changed. Close and reopen this popup to review the latest amounts.']);
@@ -152,7 +161,13 @@ class CashierService
 
     public function suggestedOpening(): float
     {
-        return round(array_sum($this->openingDefaults()), 2);
+        $todaySession = CashierSession::whereDate('session_date', today())->first();
+        if ($todaySession?->drawer_opening_balance !== null) {
+            return $this->summary(today()->toDateString())['cash_in_hand'];
+        }
+        $carried = app(DrawerCashierService::class)->carriedOpening(today()->toDateString());
+
+        return $carried ?? round(array_sum($this->openingDefaults()), 2);
     }
 
     private function validateOpeningAllocation(float $total, ?array $allocations, array $source): array
@@ -184,12 +199,17 @@ class CashierService
             && in_array($session->status, ['open', 'closed'], true);
     }
 
-    public function correctOpening(CashierSession $session, float $opening, array $allocations, string $reason, string $balanceVersion, bool $recalculateToday = false): void
+    public function correctOpening(CashierSession $session, float $opening, array $allocations, string $reason, string $balanceVersion, bool $recalculateToday = false, bool $separateCash = false): void
     {
         Account::ensureSystemAccounts();
-        DB::transaction(function () use ($session, $opening, $allocations, $reason, $balanceVersion, $recalculateToday) {
+        DB::transaction(function () use ($session, $opening, $allocations, $reason, $balanceVersion, $recalculateToday, $separateCash) {
             $this->lock();
             $session = CashierSession::lockForUpdate()->findOrFail($session->id);
+            if ($separateCash || $session->drawer_opening_balance !== null) {
+                app(DrawerCashierService::class)->correct($session, $opening, $allocations, $reason, $balanceVersion, $recalculateToday);
+
+                return;
+            }
             if (! $this->canCorrectOpening($session)) {
                 throw ValidationException::withMessages(['cashier' => 'Choose a saved cashier opening dated today or earlier.']);
             }
@@ -264,11 +284,11 @@ class CashierService
         })->all();
     }
 
-    public function recordHistoricalOpening(string $date, float $opening, array $allocations, string $reason, string $balanceVersion): CashierSession
+    public function recordHistoricalOpening(string $date, float $opening, array $allocations, string $reason, string $balanceVersion, bool $separateCash = false): CashierSession
     {
         Account::ensureSystemAccounts();
 
-        return DB::transaction(function () use ($date, $opening, $allocations, $reason, $balanceVersion) {
+        return DB::transaction(function () use ($date, $opening, $allocations, $reason, $balanceVersion, $separateCash) {
             $this->lock();
             if (! Carbon::parse($date)->startOfDay()->lt(today())) {
                 throw ValidationException::withMessages(['date' => 'Use Open Cashier to enter today’s first opening.']);
@@ -285,7 +305,7 @@ class CashierService
             $session = CashierSession::create(['session_date' => $date, 'status' => 'closed',
                 'opening_balance' => round(array_sum($source), 2), 'cash_opening_balances' => $source,
                 'opened_at' => Carbon::parse($date)->startOfDay(), 'opened_by' => auth()->id()]);
-            $this->correctOpening($session, $opening, $allocations, $reason, $balanceVersion);
+            $this->correctOpening($session, $opening, $allocations, $reason, $balanceVersion, false, $separateCash);
             if (! $session->events()->where('action', 'opening_corrected')->exists()) {
                 $session->events()->create(['action' => 'opening_recorded', 'cash_amount' => $opening,
                     'details' => ['reason' => $reason, 'cash_balances' => $allocations], 'created_by' => auth()->id()]);
@@ -391,15 +411,16 @@ class CashierService
             if (! hash_equals($this->fingerprint($summary), $values['balance_version'])) {
                 throw ValidationException::withMessages(['balance_version' => 'Transactions changed while this form was open. Review the refreshed balances and close again.']);
             }
+            $independent = $session->drawer_opening_balance !== null;
             $withdrawal = round((float) $values['owner_withdrawal'], 2);
-            $expected = collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all();
+            $expected = collect(CashPositionService::ACCOUNTS)->map(fn ($label, $type) => $summary[$independent ? 'accounts' : 'cash_accounts'][$type]['closing'])->all();
             $expected['spare_parts'] = round($expected['spare_parts'] - $withdrawal, 2);
-            if ($withdrawal > 0 && ($expected['spare_parts'] < 0 || array_sum($expected) < 0)) {
+            if ($withdrawal > 0 && ($expected['spare_parts'] < 0 || ($independent ? $summary['cash_in_hand'] - $withdrawal : array_sum($expected)) < 0)) {
                 throw ValidationException::withMessages(['owner_withdrawal' => 'The withdrawal exceeds the Spare Parts cash in hand.']);
             }
-            $washingTransfer = round($expected['washing'], 2);
+            $washingTransfer = round($independent ? $summary['cash_accounts']['washing']['closing'] : $expected['washing'], 2);
             $expected['main'] = round($expected['main'] + $washingTransfer, 2);
-            $expected['washing'] = 0.0;
+            $expected['washing'] = round($expected['washing'] - $washingTransfer, 2);
             $bankExpected = $summary['accounts']['bank']['closing'];
             $bankActual = round((float) ($values['balances']['bank'] ?? $bankExpected), 2);
             $bankDifference = round($bankActual - $bankExpected, 2);
@@ -408,10 +429,10 @@ class CashierService
             if (isset($values['balances'])) {
                 $verified['main'] = round((float) $values['balances']['main'], 2);
                 $verified['spare_parts'] = round((float) $values['balances']['spare_parts'], 2);
-                if ((int) round(array_sum($verified) * 100) !== (int) round($counted * 100)) {
+                if (! $independent && (int) round(array_sum($verified) * 100) !== (int) round($counted * 100)) {
                     throw ValidationException::withMessages(['closing_balance' => 'Main Account and Spare Parts closing balances must add up to the counted cashier balance.']);
                 }
-            } else {
+            } elseif (! $independent) {
                 // Older single-count forms put their variance into Main Account.
                 $verified['main'] = round($expected['main'] + $counted - array_sum($expected), 2);
             }
@@ -419,8 +440,10 @@ class CashierService
             foreach (CashPositionService::ACCOUNTS as $type => $label) {
                 $differences[$type] = round($verified[$type] - $expected[$type], 2);
             }
+            $drawerExpected = $independent ? round($summary['cash_in_hand'] - $withdrawal, 2) : round(array_sum($expected), 2);
+            $drawerDifference = $independent ? round($counted - $drawerExpected, 2) : array_sum($differences);
             $values['balances'] = $verified;
-            if (($bankDifference != 0 || collect($differences)->contains(fn ($difference) => $difference != 0)) && blank($values['difference_reason'] ?? null)) {
+            if (($drawerDifference != 0 || $bankDifference != 0 || collect($differences)->contains(fn ($difference) => $difference != 0)) && blank($values['difference_reason'] ?? null)) {
                 throw ValidationException::withMessages(['difference_reason' => 'Explain changed account balances or a difference in the counted cash.']);
             }
             $effectiveAt = $session->session_date->isToday() ? now() : $session->session_date->endOfDay();
@@ -449,15 +472,15 @@ class CashierService
             }
             foreach ($differences as $type => $difference) {
                 if ($difference != 0) {
-                    $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), 'Cashier cash count reconciliation', $session, 'Cash', $values['difference_reason'], transactionDate: $effectiveAt, category: 'cashier_cash_reconciliation');
+                    $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), 'Cashier cash count reconciliation', $session, $independent ? 'Adjustment' : 'Cash', $values['difference_reason'], transactionDate: $effectiveAt, category: $independent ? 'cashier_account_reconciliation' : 'cashier_cash_reconciliation');
                 }
             }
             if ($bankDifference != 0) {
                 $this->accounts->recordTransaction('bank', $bankDifference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($bankDifference), 'Cashier bank balance reconciliation', $session, 'Bank Transfer', $values['difference_reason'], transactionDate: $effectiveAt, category: 'cashier_bank_reconciliation');
             }
             $operational = [];
-            $closingData = ['closed_by' => auth()->id(), 'status' => 'closed', 'notes' => 'Cash-only cashier session #'.$session->id,
-                'difference_reason' => $values['difference_reason'] ?? null, 'difference' => array_sum($differences) + $bankDifference];
+            $closingData = ['closed_by' => auth()->id(), 'status' => 'closed', 'notes' => $independent ? 'Cashier cash is separate from account balances. Prior cash count adjustment: '.number_format($summary['drawer_adjustment'], 2) : 'Cash-only cashier session #'.$session->id,
+                'difference_reason' => $values['difference_reason'] ?? null, 'difference' => array_sum($differences) + $bankDifference + ($independent ? $drawerDifference : 0)];
             foreach (self::ACCOUNTS as $type => $label) {
                 $account = $summary['accounts'][$type];
                 $sweepChange = match ($type) {
@@ -473,21 +496,23 @@ class CashierService
                 $closingData[$type.'_actual_balance'] = $operational[$type];
                 $closingData[$type.'_difference'] = $accountDifference;
             }
-            $closingData += ['cash_opening_balance' => $summary['cash_opening'], 'cash_income' => $summary['cash_received'] + $summary['cash_other_in'],
-                'cash_expense' => $summary['cash_paid'] + $withdrawal, 'cash_closing_balance' => round(array_sum($expected), 2),
-                'cash_actual_balance' => round(array_sum($values['balances']), 2), 'cash_difference' => array_sum($differences)];
+            $closingData += ['cash_opening_balance' => $summary['cash_opening'], 'cash_income' => $summary['cash_received'] + $summary['cash_other_in'] + ($independent ? max(0, $summary['drawer_adjustment']) : 0),
+                'cash_expense' => $summary['cash_paid'] + $withdrawal + ($independent ? max(0, -$summary['drawer_adjustment']) : 0), 'cash_closing_balance' => $drawerExpected,
+                'cash_actual_balance' => $counted, 'cash_difference' => $drawerDifference];
             DailyClosing::updateOrCreate(['closing_date' => $date], $closingData);
             $summary['closing_withdrawal'] = $withdrawal;
             $summary['closing_washing_transfer'] = $washingTransfer;
             $summary['closing_bank_balance'] = $bankActual;
             unset($summary['transactions'], $summary['collections']);
-            $session->events()->create(['action' => 'closed', 'cash_amount' => round(array_sum($values['balances']), 2),
+            $session->events()->create(['action' => 'closed', 'cash_amount' => $counted,
                 'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
-                'details' => ['owner_withdrawal' => $withdrawal, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
+                'details' => ['separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
             $session->update([
                 'status' => 'closed', 'closed_by' => auth()->id(), 'closed_at' => now(),
                 'owner_withdrawal' => (float) $session->owner_withdrawal + $withdrawal,
-                'closing_summary' => $summary, 'actual_balances' => $operational, 'cash_balances' => $values['balances'],
+                'closing_summary' => $summary, 'actual_balances' => $operational, 'cash_balances' => $independent ? null : $values['balances'],
+                'drawer_closing_balance' => $independent ? $counted : null,
+                'drawer_adjustment' => $independent ? round((float) $session->drawer_adjustment + $drawerDifference, 2) : (float) $session->drawer_adjustment,
                 'notes' => $values['difference_reason'] ?? null,
             ]);
         });
@@ -495,6 +520,6 @@ class CashierService
 
     public function fingerprint(array $summary): string
     {
-        return hash('sha256', json_encode([$summary['accounts'], $summary['cash_accounts'], $summary['transactions']->map(fn ($row) => [$row->id, $row->status, $row->credit, $row->debit])->all()]));
+        return hash('sha256', json_encode([$summary['cash_opening'], $summary['cash_in_hand'], $summary['drawer_adjustment'], $summary['accounts'], $summary['cash_accounts'], $summary['transactions']->map(fn ($row) => [$row->id, $row->status, $row->credit, $row->debit])->all()]));
     }
 }

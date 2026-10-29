@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cashierClosing, openingAllocation, openingCashTotal } from '../../resources/js/cashier.js';
+import { cashierClosing, openingBalancesState } from '../../resources/js/cashier.js';
 
 test('closing requires a physical count and withdrawal changes expected cash only', () => {
     const form = cashierClosing({main: 1000, washing: 100, spare_parts: 500});
@@ -70,29 +70,35 @@ test('bank auto-fills and changes independently of cash, withdrawal and matching
 });
 
 
-test('opening allocation uses cents and requires the confirmed split to match', () => {
-    assert.equal(openingAllocation('0.30', ['0.10', '0.20', '0'], '0.30', ['0.10', '0.20', '0']).matches, true);
-    assert.equal(openingAllocation('4665', ['3000', '1665', '0'], '4665', ['3000', '1665', '0']).changed, false);
-    assert.equal(openingAllocation('4665', ['3100', '1565', '0'], '4665', ['3000', '1665', '0']).changed, true);
-    assert.equal(openingAllocation('4665', ['3000', '1660', '0'], '4665', ['3000', '1665', '0']).matches, false);
+test('drawer cash is independent of main and spare parts opening balances', () => {
+    const form = openingBalancesState('5000', ['74838', '12000', '0'], '5000', ['74838', '12000', '0']);
+    assert.equal(form.valid, true);
+    assert.equal(form.changed, false);
+    assert.equal(openingBalancesState('4000', ['74838', '12000', '0'], '5000', ['74838', '12000', '0']).changed, true);
+    assert.equal(openingBalancesState('5000', ['80000', '12000', '0'], '5000', ['74838', '12000', '0']).changed, true);
 });
 
-test('opening rejects negative, blank or invalid physical cash even if the total matches', () => {
-    assert.equal(openingAllocation('4665', ['-1261353.43', '1266018.43', '0'], '4665', ['-1261353.43', '1266018.43', '0']).matches, false);
-    assert.equal(openingAllocation('0', ['', '0', '0'], '0', ['0', '0', '0']).matches, false);
-    assert.equal(openingAllocation('0', ['bad', '0', '0'], '0', ['0', '0', '0']).matches, false);
-});
-
-
-test('opening total follows edited account amounts instead of the previous opening total', () => {
-    assert.equal(openingCashTotal(['74838', '0', '0']), '74838.00');
-    assert.equal(openingCashTotal(['74838', '250', '60']), '75148.00');
-    assert.equal(openingCashTotal(['0.1', '0.2', '0']), '0.30');
-    assert.equal(openingCashTotal(['0', '0', '0']), '0.00');
-});
-
-test('opening total stays incomplete while an account is invalid', () => {
+test('drawer cash and separate account balances must each be valid amounts', () => {
+    assert.equal(openingBalancesState('0', ['0', '0', '0'], '0', ['0', '0', '0']).valid, true);
+    assert.equal(openingBalancesState('5000', ['-100', '0', '0'], '0', ['0', '0', '0']).valid, true);
     for (const value of ['', '-1', 'not money', Infinity]) {
-        assert.equal(openingCashTotal([value, '0', '0']), '');
+        assert.equal(openingBalancesState(value, ['1000', '0', '0'], '0', ['0', '0', '0']).valid, false);
+        if (value !== '-1') assert.equal(openingBalancesState('100', [value, '0', '0'], '0', ['0', '0', '0']).valid, false);
     }
+});
+
+test('closing drawer cash does not need to match account balances', () => {
+    const form = cashierClosing({main: 74838, spare_parts: 12000, washing: 200, bank: 300}, '5000', 0, {}, 5000);
+    assert.equal(form.expectedCashTotal, 5000);
+    assert.equal(form.balances.main, '75038');
+    assert.equal(form.cashMatchesAccounts, true);
+    assert.equal(form.hasDifference, false);
+    form.balances.main = '76000';
+    assert.equal(form.expectedCashTotal, 5000);
+    assert.equal(form.hasDifference, true);
+    form.updateWithdrawal(100);
+    assert.equal(form.expectedCashTotal, 4900);
+    assert.equal(form.balances.spare_parts, '11900.00');
+    form.closingBalance = '4900';
+    assert.equal(form.cashDifference, 0);
 });

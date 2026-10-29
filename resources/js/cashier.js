@@ -1,6 +1,8 @@
-export function cashierClosing(expected, initialBalance = '', initialWithdrawal = 0, initialBalances = {}) {
+export function cashierClosing(expected, initialBalance = '', initialWithdrawal = 0, initialBalances = {}, drawerExpected = null) {
     return {
         expected,
+        drawerExpected,
+        independent: drawerExpected !== null,
         withdrawal: initialWithdrawal,
         closingBalance: initialBalance,
         balances: {
@@ -20,8 +22,8 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
             this.withdrawal = value;
         },
         get allocatedCashTotal() { return (this.cents(this.balances.main) + this.cents(this.balances.spare_parts)) / 100; },
-        get cashMatchesAccounts() { return this.hasCount && this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal); },
-        get expectedCashTotal() { return (['main', 'washing', 'spare_parts'].reduce((sum, type) => sum + this.cents(this.expected[type]), 0) - this.cents(this.withdrawal)) / 100; },
+        get cashMatchesAccounts() { return this.hasCount && (this.independent || this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal)); },
+        get expectedCashTotal() { return this.independent ? (this.cents(this.drawerExpected) - this.cents(this.withdrawal)) / 100 : (['main', 'washing', 'spare_parts'].reduce((sum, type) => sum + this.cents(this.expected[type]), 0) - this.cents(this.withdrawal)) / 100; },
         get countedCashTotal() { return this.cents(this.closingBalance) / 100; },
         get cashDifference() { return (this.cents(this.closingBalance) - this.cents(this.expectedCashTotal)) / 100; },
         get hasCount() { return String(this.closingBalance).trim() !== ''; },
@@ -32,21 +34,13 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
 
 if (typeof window !== 'undefined') window.cashierClosing = cashierClosing;
 
-export function openingAllocation(total, amounts, suggestedTotal, suggestedAmounts) {
+export function openingBalancesState(cash, amounts, suggestedCash, suggestedAmounts) {
+    const valid = value => String(value).trim() !== '' && Number.isFinite(Number(value));
     const cents = value => Math.round(Number(value) * 100);
-    const valid = String(total).trim() !== '' && Number.isFinite(Number(total)) && Number(total) >= 0
-        && amounts.every(value => String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0);
-    const allocated = amounts.reduce((sum, value) => sum + cents(value), 0);
     return {
-        allocated: allocated / 100,
-        matches: valid && cents(total) === allocated,
-        changed: cents(total) !== cents(suggestedTotal) || amounts.some((value, index) => cents(value) !== cents(suggestedAmounts[index])),
+        valid: valid(cash) && Number(cash) >= 0 && amounts.every(valid),
+        changed: cents(cash) !== cents(suggestedCash) || amounts.some((value, index) => cents(value) !== cents(suggestedAmounts[index])),
     };
-}
-
-export function openingCashTotal(amounts) {
-    if (amounts.some(value => String(value).trim() === '' || !Number.isFinite(Number(value)) || Number(value) < 0)) return '';
-    return (amounts.reduce((sum, value) => sum + Math.round(Number(value) * 100), 0) / 100).toFixed(2);
 }
 
 let openingDialog;
@@ -69,14 +63,12 @@ export async function openCashierDialog(url) {
         const accounts = [...dialog.querySelectorAll('[data-opening-account]')];
         const allocationTotal = dialog.querySelector('[data-opening-total]');
         const updateAllocation = () => {
-            opening.value = openingCashTotal(accounts.map(input => input.value));
-            const state = openingAllocation(opening.value, accounts.map(input => input.value), opening.dataset.suggested, accounts.map(input => input.dataset.suggested));
+            const state = openingBalancesState(opening.value, accounts.map(input => input.value), opening.dataset.suggested, accounts.map(input => input.dataset.suggested));
             reason.required = reason.dataset.alwaysRequired === '1' || state.changed;
-            opening.setCustomValidity(state.matches ? '' : 'The account amounts must be nonnegative and add up to the opening cash in hand.');
-            allocationTotal.textContent = `Account total: Rs. ${state.allocated.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}${state.matches ? '' : ' — enter valid account amounts.'}`;
-            allocationTotal.classList.toggle('text-red-700', !state.matches);
+            opening.setCustomValidity(state.valid ? '' : 'Enter valid cashier cash and account balances.');
+            if (allocationTotal) allocationTotal.textContent = 'Cash in the cashier is separate from Main and Spare Parts balances.';
         };
-        accounts.forEach(input => input.addEventListener('input', updateAllocation));
+        [opening, ...accounts].forEach(input => input.addEventListener('input', updateAllocation));
         updateAllocation();
         dialog.addEventListener('close', () => {dialog.remove(); openingDialog = null;}, {once: true});
         const form = dialog.querySelector('[data-cashier-opening-form]');
@@ -117,7 +109,7 @@ export async function openCashierDialog(url) {
             }
         });
         dialog.showModal();
-        accounts.find(input => input.type !== 'hidden')?.focus();
+        opening.focus();
     } catch (error) {
         dialog.remove(); openingDialog = null;
         if (window.workshopNotify) window.workshopNotify(error.message);
