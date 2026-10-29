@@ -11,30 +11,48 @@
             <div class="panel p-4"><p class="text-xs font-bold text-slate-500">{{ $label }}</p><p class="mt-2 text-xl font-black">Rs. {{ number_format($amount, 2) }}</p></div>
         @endforeach
     </div>
+    @php
+        $earningsList = array_filter([
+            'Base earnings' => $sheet->base_earnings,
+            'Overtime' => $sheet->ot_amount,
+            'Allowances' => $sheet->allowances,
+            'Manual additions' => $sheet->manual_additions,
+            'Worked-on-leave pay' => $sheet->worked_on_leave_pay,
+        ], fn ($amt) => (float) $amt > 0);
+
+        $deductionsList = array_filter([
+            'Late' => $sheet->late_deduction,
+            'Early leave' => $sheet->early_leave_deduction,
+            'Half days' => $sheet->half_day_deduction,
+            'No pay' => $sheet->no_pay_deduction,
+            'Advances' => $sheet->total_advance_deduction,
+            'Job / bike repair' => $sheet->total_job_deduction,
+            'Employee EPF' => $sheet->epf_employee,
+            'Other deductions' => $sheet->total_other_deduction,
+            'Manual deductions' => $sheet->manual_deductions,
+        ], fn ($amt) => (float) $amt > 0);
+
+        $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
+    @endphp
     <section class="panel p-5">
         <div class="grid gap-6 sm:grid-cols-2">
             <div><h2 class="font-black text-emerald-700">Earnings</h2><dl class="mt-3 space-y-2 text-sm">
-                @php($hasEarnings = false)
-                @foreach(['Base earnings' => $sheet->base_earnings, 'Overtime' => $sheet->ot_amount, 'Allowances' => $sheet->allowances, 'Manual additions' => $sheet->manual_additions, 'Worked-on-leave pay' => $sheet->worked_on_leave_pay] as $label => $amount)
-                    @if((float) $amount > 0)
-                        @php($hasEarnings = true)
-                        <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
-                    @endif
-                @endforeach
-                @if(!$hasEarnings)
+                @forelse($earningsList as $label => $amount)
+                    <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                @empty
                     <div class="text-xs text-slate-400 italic">No earnings recorded</div>
-                @endif
+                @endforelse
             </dl></div>
             <div><h2 class="font-black text-red-700">Deductions</h2><dl class="mt-3 space-y-2 text-sm">
-                @php($hasDeductions = false)
-                @foreach(['Late' => $sheet->late_deduction, 'Early leave' => $sheet->early_leave_deduction, 'Half days' => $sheet->half_day_deduction, 'No pay' => $sheet->no_pay_deduction, 'Advances' => $sheet->total_advance_deduction, 'Job / bike repair' => $sheet->total_job_deduction, 'Employee EPF' => $sheet->epf_employee, 'Other deductions' => $sheet->total_other_deduction, 'Manual deductions' => $sheet->manual_deductions, 'Attendance override adjustment' => data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0)] as $label => $amount)
-                    @if((float) $amount > 0)
-                        @php($hasDeductions = true)
-                        <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                @forelse($deductionsList as $label => $amount)
+                    <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                @empty
+                    @if($attendanceAdjustment == 0.0)
+                        <div class="text-xs text-slate-400 italic">No deductions</div>
                     @endif
-                @endforeach
-                @if(!$hasDeductions)
-                    <div class="text-xs text-slate-400 italic">No deductions</div>
+                @endforelse
+                @if($attendanceAdjustment != 0.0)
+                    <div class="flex justify-between gap-3"><dt>Attendance override adjustment</dt><dd class="font-bold">{{ number_format($attendanceAdjustment, 2) }}</dd></div>
                 @endif
             </dl></div>
         </div>

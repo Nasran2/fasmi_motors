@@ -118,46 +118,61 @@
     @endif
 
 
+    @php
+      $earningsList = array_filter([
+          'Base earnings' => $sheet->base_earnings,
+          'OT amount' => $sheet->ot_amount,
+          'Other allowances' => $sheet->allowances,
+          'Manual additions' => $sheet->manual_additions,
+          'Worked-on-leave pay' => $sheet->worked_on_leave_pay,
+      ], fn ($amt) => (float) $amt > 0);
+
+      $deductionsList = array_filter([
+          'Late deduction' => $sheet->late_deduction,
+          'Early leave deduction' => $sheet->early_leave_deduction,
+          'No-pay deduction' => $sheet->no_pay_deduction,
+          'Half-day deduction' => $sheet->half_day_deduction,
+          'Salary advances' => $sheet->total_advance_deduction,
+          'Job / bike repair' => $sheet->total_job_deduction,
+          'Employee EPF' => $sheet->epf_employee,
+          'Other deduction' => $sheet->total_other_deduction,
+          'Manual deduction' => $sheet->manual_deductions,
+      ], fn ($amt) => (float) $amt > 0);
+
+      $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
+    @endphp
+
     <div class="mt-6 grid gap-8 md:grid-cols-2">
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>
           <dl class="mt-3 space-y-2 text-sm">
-            @php($hasEarnings = false)
-            @foreach(['Base earnings'=>$sheet->base_earnings,'OT amount'=>$sheet->ot_amount,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
-                @if((float)$amount > 0)
-                    @php($hasEarnings = true)
-                    <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
-                @endif
-            @endforeach
-            @if(!$hasEarnings)
+            @forelse($earningsList as $label => $amount)
+                <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount, 2) }}</dd></div>
+            @empty
                 <div class="text-xs text-slate-400 italic">No earnings recorded</div>
-            @endif
+            @endforelse
             <div class="flex justify-between border-t border-emerald-200 pt-2 font-black text-emerald-700 mt-3">
                 <dt>Gross salary</dt>
-                <dd>Rs. {{ number_format($sheet->gross_salary,2) }}</dd>
+                <dd>Rs. {{ number_format($sheet->gross_salary, 2) }}</dd>
             </div>
           </dl>
       </section>
       <section>
           <h2 class="border-b pb-2 font-black text-red-700 uppercase tracking-wider text-xs">Deductions</h2>
           <dl class="mt-3 space-y-2 text-sm">
-            @php($hasDeductions = false)
-            @foreach(['Late deduction'=>$sheet->late_deduction,'Early leave deduction'=>$sheet->early_leave_deduction,'No-pay deduction'=>$sheet->no_pay_deduction,'Half-day deduction'=>$sheet->half_day_deduction,'Salary advances'=>$sheet->total_advance_deduction,'Job / bike repair'=>$sheet->total_job_deduction,'Employee EPF'=>$sheet->epf_employee,'Other deduction'=>$sheet->total_other_deduction,'Manual deduction'=>$sheet->manual_deductions] as $label=>$amount)
-                @if((float)$amount > 0)
-                    @php($hasDeductions = true)
-                    <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
+            @forelse($deductionsList as $label => $amount)
+                <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount, 2) }}</dd></div>
+            @empty
+                @if($attendanceAdjustment == 0.0)
+                    <div class="text-xs text-slate-400 italic">No deductions</div>
                 @endif
-            @endforeach
-            @if(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0) != 0)
-                @php($hasDeductions = true)
-                <div class="flex justify-between"><dt class="text-slate-600">Attendance override adjustment</dt><dd class="font-medium">Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment'), 2) }}</dd></div>
-            @endif
-            @if(!$hasDeductions)
-                <div class="text-xs text-slate-400 italic">No deductions</div>
+            @endforelse
+            @if($attendanceAdjustment != 0.0)
+                <div class="flex justify-between"><dt class="text-slate-600">Attendance override adjustment</dt><dd class="font-medium">Rs. {{ number_format($attendanceAdjustment, 2) }}</dd></div>
             @endif
             <div class="flex justify-between border-t border-red-200 pt-2 font-black text-red-700 mt-3">
                 <dt>Total deductions</dt>
-                <dd>Rs. {{ number_format($sheet->total_deductions,2) }}</dd>
+                <dd>Rs. {{ number_format($sheet->total_deductions, 2) }}</dd>
             </div>
           </dl>
       </section>
@@ -166,13 +181,15 @@
     @if((float) $sheet->commission !== 0.0)<p class="mt-3 text-sm text-amber-800">Commission included in this earlier salary: Rs. {{ number_format($sheet->commission, 2) }}. This historical amount remains in its saved totals.</p>@endif
     @include('technicians.partials.salary-adjustment-lines')
 
-    @php($repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment'))
+    @php
+        $repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment');
+    @endphp
     @if($repairDeductions->isNotEmpty())
     <section id="staff-bike-repair-deductions" class="mt-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4 text-sm">
         <h3 class="font-black text-emerald-900">Staff bike repair deductions</h3>
         <p class="mt-1 font-bold text-emerald-800">{{ $sheet->status === 'Draft' ? 'Planned in' : 'Deducted from' }} {{ $sheet->number }}: Rs. {{ number_format($sheet->repair_deduction_amount,2) }}</p>
         <table class="mt-3 w-full"><thead><tr><th class="text-left">Repair job / bike</th><th class="text-right">Balance before</th><th class="text-right">This paysheet</th><th class="text-right">Balance after</th></tr></thead><tbody>
-        @foreach($repairDeductions as $repair)<tr><td class="py-2">{{ $repair['job_number'] ?? $repair['reference_no'] }} · {{ $repair['bike_number'] ?? 'Staff bike' }}@php($repairPayment = $sheet->repairPayments->firstWhere('technician_bike_deduction_id',$repair['id']))@if($repairPayment && $sheet->status !== 'Draft' && auth()->user()->canAccess('technician.salaries'))<a class="mt-1 block font-bold text-blue-700 underline print:hidden" href="{{ route('technicians.salaries.repairs.edit',$repairPayment) }}">Correct deduction with reason</a>@endif</td><td class="text-right">{{ number_format($repair['remaining_balance'] ?? 0, 2) }}</td><td class="text-right font-extrabold text-emerald-900">{{ number_format($repair['amount'],2) }}</td><td class="text-right">{{ number_format(max(0, ($repair['remaining_balance'] ?? 0) - $repair['amount']),2) }}</td></tr>@endforeach
+        @foreach($repairDeductions as $repair)<tr><td class="py-2">{{ $repair['job_number'] ?? $repair['reference_no'] }} · {{ $repair['bike_number'] ?? 'Staff bike' }}<?php $repairPayment = $sheet->repairPayments->firstWhere('technician_bike_deduction_id',$repair['id']); ?>@if($repairPayment && $sheet->status !== 'Draft' && auth()->user()->canAccess('technician.salaries'))<a class="mt-1 block font-bold text-blue-700 underline print:hidden" href="{{ route('technicians.salaries.repairs.edit',$repairPayment) }}">Correct deduction with reason</a>@endif</td><td class="text-right">{{ number_format($repair['remaining_balance'] ?? 0, 2) }}</td><td class="text-right font-extrabold text-emerald-900">{{ number_format($repair['amount'],2) }}</td><td class="text-right">{{ number_format(max(0, ($repair['remaining_balance'] ?? 0) - $repair['amount']),2) }}</td></tr>@endforeach
         </tbody></table>
         @foreach(data_get($sheet->calculation_snapshot,'repair_corrections',[]) as $correction)<p class="mt-3 rounded-xl bg-white p-3 text-xs">Correction: Rs. {{ number_format($correction['old_amount'],2) }} → Rs. {{ number_format($correction['amount'],2) }} · {{ \Carbon\Carbon::parse($correction['at'])->format('d M Y, h:i A') }}<br>Reason: {{ $correction['reason'] }}</p>@endforeach
     </section>
