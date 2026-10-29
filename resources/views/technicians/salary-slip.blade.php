@@ -99,7 +99,7 @@
         @endif
     </section>
 
-    @if(data_get($sheet->calculation_snapshot, 'contributions.basic_salary') !== null)
+    @if((float) data_get($sheet->calculation_snapshot, 'contributions.basic_salary') > 0)
         <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
     @endif
 
@@ -122,9 +122,16 @@
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>
           <dl class="mt-3 space-y-2 text-sm">
+            @php($hasEarnings = false)
             @foreach(['Base earnings'=>$sheet->base_earnings,'OT amount'=>$sheet->ot_amount,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
-                <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
+                @if((float)$amount > 0)
+                    @php($hasEarnings = true)
+                    <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
+                @endif
             @endforeach
+            @if(!$hasEarnings)
+                <div class="text-xs text-slate-400 italic">No earnings recorded</div>
+            @endif
             <div class="flex justify-between border-t border-emerald-200 pt-2 font-black text-emerald-700 mt-3">
                 <dt>Gross salary</dt>
                 <dd>Rs. {{ number_format($sheet->gross_salary,2) }}</dd>
@@ -134,11 +141,19 @@
       <section>
           <h2 class="border-b pb-2 font-black text-red-700 uppercase tracking-wider text-xs">Deductions</h2>
           <dl class="mt-3 space-y-2 text-sm">
+            @php($hasDeductions = false)
             @foreach(['Late deduction'=>$sheet->late_deduction,'Early leave deduction'=>$sheet->early_leave_deduction,'No-pay deduction'=>$sheet->no_pay_deduction,'Half-day deduction'=>$sheet->half_day_deduction,'Salary advances'=>$sheet->total_advance_deduction,'Job / bike repair'=>$sheet->total_job_deduction,'Employee EPF'=>$sheet->epf_employee,'Other deduction'=>$sheet->total_other_deduction,'Manual deduction'=>$sheet->manual_deductions] as $label=>$amount)
-                <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
+                @if((float)$amount > 0)
+                    @php($hasDeductions = true)
+                    <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
+                @endif
             @endforeach
             @if(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0) != 0)
+                @php($hasDeductions = true)
                 <div class="flex justify-between"><dt class="text-slate-600">Attendance override adjustment</dt><dd class="font-medium">Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment'), 2) }}</dd></div>
+            @endif
+            @if(!$hasDeductions)
+                <div class="text-xs text-slate-400 italic">No deductions</div>
             @endif
             <div class="flex justify-between border-t border-red-200 pt-2 font-black text-red-700 mt-3">
                 <dt>Total deductions</dt>
@@ -183,24 +198,61 @@
     </section>
     @endif
 
-    <div class="mt-6 grid gap-3 sm:grid-cols-4">
-        <div class="rounded-2xl bg-blue-50/50 p-4 border border-blue-100">
-            <small class="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Company EPF</small>
-            <p class="text-lg font-black text-slate-800 mt-1">Rs. {{ number_format($sheet->epf_company,2) }}</p>
+    @php
+        $bottomCards = [];
+        if ((float) $sheet->epf_company > 0) {
+            $bottomCards[] = [
+                'label' => 'Company EPF',
+                'amount' => $sheet->epf_company,
+                'bg' => 'bg-blue-50/50',
+                'border' => 'border-blue-100',
+                'title_color' => 'text-slate-500',
+                'value_color' => 'text-slate-800',
+            ];
+        }
+        if ((float) $sheet->etf_company > 0) {
+            $bottomCards[] = [
+                'label' => 'Company ETF',
+                'amount' => $sheet->etf_company,
+                'bg' => 'bg-blue-50/50',
+                'border' => 'border-blue-100',
+                'title_color' => 'text-slate-500',
+                'value_color' => 'text-slate-800',
+            ];
+        }
+        if ((float) $sheet->paid_amount > 0) {
+            $bottomCards[] = [
+                'label' => 'Paid amount',
+                'amount' => $sheet->paid_amount,
+                'bg' => 'bg-emerald-50',
+                'border' => 'border-emerald-100',
+                'title_color' => 'text-emerald-700',
+                'value_color' => 'text-emerald-800',
+            ];
+        }
+        if ((float) abs($sheet->balance_amount) > 0) {
+            $bottomCards[] = [
+                'label' => $sheet->balance_amount < 0 ? 'Overpaid' : 'Balance to pay',
+                'amount' => abs($sheet->balance_amount),
+                'bg' => 'bg-red-50',
+                'border' => 'border-red-100',
+                'title_color' => 'text-red-700',
+                'value_color' => 'text-red-800',
+            ];
+        }
+        $bCount = count($bottomCards);
+    @endphp
+
+    @if($bCount > 0)
+    <div class="mt-6 grid gap-3 @if($bCount === 4) sm:grid-cols-4 @elseif($bCount === 3) sm:grid-cols-3 @elseif($bCount === 2) sm:grid-cols-2 @else sm:grid-cols-1 @endif">
+        @foreach($bottomCards as $card)
+        <div class="rounded-2xl {{ $card['bg'] }} p-4 border {{ $card['border'] }}">
+            <small class="{{ $card['title_color'] }} font-bold text-[10px] uppercase tracking-wider">{{ $card['label'] }}</small>
+            <p class="text-xl font-black {{ $card['value_color'] }} mt-1">Rs. {{ number_format($card['amount'], 2) }}</p>
         </div>
-        <div class="rounded-2xl bg-blue-50/50 p-4 border border-blue-100">
-            <small class="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Company ETF</small>
-            <p class="text-lg font-black text-slate-800 mt-1">Rs. {{ number_format($sheet->etf_company,2) }}</p>
-        </div>
-        <div class="rounded-2xl bg-emerald-50 p-4 border border-emerald-100">
-            <small class="text-emerald-700 font-bold text-[10px] uppercase tracking-wider">Paid amount</small>
-            <p class="text-xl font-black text-emerald-800 mt-1">Rs. {{ number_format($sheet->paid_amount,2) }}</p>
-        </div>
-        <div class="rounded-2xl bg-red-50 p-4 border border-red-100">
-            <small class="text-red-700 font-bold text-[10px] uppercase tracking-wider">{{ $sheet->balance_amount < 0 ? 'Overpaid' : 'Balance to pay' }}</small>
-            <p class="text-xl font-black text-red-800 mt-1">Rs. {{ number_format(abs($sheet->balance_amount),2) }}</p>
-        </div>
+        @endforeach
     </div>
+    @endif
 
     <div class="mt-6 flex flex-col sm:flex-row items-center justify-between rounded-2xl bg-[#0b2447] p-6 text-white shadow-lg">
         <span class="text-sm font-bold uppercase tracking-widest text-slate-300">Net Salary Payable</span>

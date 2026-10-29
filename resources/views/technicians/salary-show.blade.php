@@ -14,18 +14,32 @@
     <section class="panel p-5">
         <div class="grid gap-6 sm:grid-cols-2">
             <div><h2 class="font-black text-emerald-700">Earnings</h2><dl class="mt-3 space-y-2 text-sm">
+                @php($hasEarnings = false)
                 @foreach(['Base earnings' => $sheet->base_earnings, 'Overtime' => $sheet->ot_amount, 'Allowances' => $sheet->allowances, 'Manual additions' => $sheet->manual_additions, 'Worked-on-leave pay' => $sheet->worked_on_leave_pay] as $label => $amount)
-                <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                    @if((float) $amount > 0)
+                        @php($hasEarnings = true)
+                        <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                    @endif
                 @endforeach
+                @if(!$hasEarnings)
+                    <div class="text-xs text-slate-400 italic">No earnings recorded</div>
+                @endif
             </dl></div>
             <div><h2 class="font-black text-red-700">Deductions</h2><dl class="mt-3 space-y-2 text-sm">
+                @php($hasDeductions = false)
                 @foreach(['Late' => $sheet->late_deduction, 'Early leave' => $sheet->early_leave_deduction, 'Half days' => $sheet->half_day_deduction, 'No pay' => $sheet->no_pay_deduction, 'Advances' => $sheet->total_advance_deduction, 'Job / bike repair' => $sheet->total_job_deduction, 'Employee EPF' => $sheet->epf_employee, 'Other deductions' => $sheet->total_other_deduction, 'Manual deductions' => $sheet->manual_deductions, 'Attendance override adjustment' => data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0)] as $label => $amount)
-                <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                    @if((float) $amount > 0)
+                        @php($hasDeductions = true)
+                        <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
+                    @endif
                 @endforeach
+                @if(!$hasDeductions)
+                    <div class="text-xs text-slate-400 italic">No deductions</div>
+                @endif
             </dl></div>
         </div>
         @if((float) $sheet->commission !== 0.0)<p class="mt-3 text-sm text-amber-800">Commission included in this earlier salary: Rs. {{ number_format($sheet->commission, 2) }}. This historical amount remains in its saved totals.</p>@endif
-    @if(data_get($sheet->calculation_snapshot, 'contributions.basic_salary') !== null)
+    @if((float) data_get($sheet->calculation_snapshot, 'contributions.basic_salary') > 0)
         <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
     @endif
     @include('technicians.partials.salary-adjustment-lines')
