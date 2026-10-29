@@ -91,7 +91,7 @@ test('correcting a legacy opening preserves received cash bank and the original 
     }
     $this->get(route('cashier.index'))->assertOk()->assertSeeText('Edit Opening Balances');
     $this->get(route('cashier.opening-popup', ['edit' => 1]))->assertOk()->assertSeeText('Edit Opening Balances')
-        ->assertViewHas('suggestedOpening', 4665.0)->assertViewHas('openingBalances', ['main' => -1261353.43, 'spare_parts' => 1266018.43, 'washing' => 0.0]);
+        ->assertViewHas('suggestedOpening', 4665.0)->assertViewHas('openingBalances', ['main' => -1261353.43, 'spare_parts' => 1266018.43, 'washing' => 0.0, 'bank' => 10000.0]);
     $this->postJson(route('cashier.opening-balances', $session), ($this->payload)())->assertOk();
     $summary = $this->service->summary(today()->toDateString());
     expect($summary['cash_opening'])->toBe(4665.0)->and($summary['cash_received'])->toBe(14900.0)
@@ -129,7 +129,7 @@ test('reopening corrections preserve start of day cash and do not repeat receipt
     $session = $this->service->open(4665, null);
     $this->accounts->recordTransaction('main', 'income', 200, 'Cash receipt', paymentMethod: 'Cash');
     $this->post(route('cashier.close', $session), ['closing_balance' => 4865, 'owner_withdrawal' => 0, 'balance_version' => ($this->version)()])->assertSessionHasNoErrors();
-    $this->get(route('cashier.opening-popup'))->assertOk()->assertViewHas('openingBalances', ['main' => 3200.0, 'spare_parts' => 1665.0, 'washing' => 0.0]);
+    $this->get(route('cashier.opening-popup'))->assertOk()->assertViewHas('openingBalances', ['main' => 3200.0, 'spare_parts' => 1665.0, 'washing' => 0.0, 'bank' => 10000.0]);
     $this->travel(1)->hours();
     $this->postJson(route('cashier.open'), ['opening_balance' => 4855, 'opening_balances' => ['main' => 3190, 'spare_parts' => 1665, 'washing' => 0],
         'opening_reason' => 'Counted short ten', 'balance_version' => ($this->version)()])->assertOk();

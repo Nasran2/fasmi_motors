@@ -41,19 +41,29 @@
           <select name="technician_id" class="w-full" required onchange="loadSalaryPreview()">
             <option value="">Select technician</option>
             @foreach($technicians as $t)
-            <option value="{{ $t->id }}" @selected(request('technician') == $t->id)>{{ $t->name }}</option>
+            <option value="{{ $t->id }}" @selected(old('technician_id', request('technician')) == $t->id)>{{ $t->name }}</option>
             @endforeach
           </select>
         </div>
 
         <div>
           <label class="label">Salary Month <span class="required-star">*</span></label>
-          <input type="month" name="month" value="{{ now()->format('Y-m') }}" required class="w-full" onchange="loadSalaryPreview()">
+          <input type="month" name="month" value="{{ old('month', now()->format('Y-m')) }}" required class="w-full" onchange="loadSalaryPreview()">
+        </div>
+
+        <div class="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <h3 class="font-bold text-emerald-800">Additional earning (optional)</h3>
+          <div class="mt-3 grid gap-3 sm:grid-cols-3">
+            <label><span class="label">Description</span><input name="addition_name" maxlength="150" value="{{ old('addition_name') }}" placeholder="e.g. Performance bonus" class="field"></label>
+            <label><span class="label">Amount · LKR</span><input name="manual_additions" value="{{ old('manual_additions', 0) }}" type="number" min="0" max="999999999999.99" step="0.01" oninput="updateSalaryDeductionPreview()" class="field"></label>
+            <label><span class="label">Note printed on payslip</span><input name="addition_reason" maxlength="500" value="{{ old('addition_reason') }}" class="field"></label>
+          </div>
+          <p class="mt-2 text-xs text-emerald-800">After saving, choose View to add more described earnings or deductions.</p>
         </div>
 
         <div class="col-span-full md:col-span-2" x-data="{
-            deductions: [],
-            addDeduction() { this.deductions.push({ name: '', amount: '' }); },
+            deductions: @js(old('manual_deductions', [])),
+            addDeduction() { this.deductions.push({ name: '', amount: '', reason: '' }); },
             removeDeduction(index) { this.deductions.splice(index, 1); this.$nextTick(() => updateSalaryDeductionPreview()); }
         }">
           <div class="flex items-center justify-between">
@@ -63,9 +73,10 @@
           
           <div class="mt-2 space-y-2">
               <template x-for="(deduction, index) in deductions" :key="index">
-                  <div class="flex gap-2 items-center">
-                      <input type="text" x-model="deduction.name" :name="'manual_deductions['+index+'][name]'" placeholder="Deduction details (e.g. Loan, uniform)" class="w-3/5" required>
-                      <input type="number" step="0.01" min="0" x-model="deduction.amount" @input="updateSalaryDeductionPreview()" :name="'manual_deductions['+index+'][amount]'" placeholder="Rs. Amount" class="w-2/5" required>
+                  <div class="flex flex-wrap gap-2 items-center">
+                      <input type="text" maxlength="150" x-model="deduction.name" :name="'manual_deductions['+index+'][name]'" placeholder="Deduction details (e.g. Loan, uniform)" class="w-3/5" required>
+                      <input type="number" step="0.01" min="0" x-model="deduction.amount" @input="updateSalaryDeductionPreview()" :name="'manual_deductions['+index+'][amount]'" placeholder="Rs. Amount" max="999999999999.99" class="w-2/5" required>
+                      <input type="text" x-model="deduction.reason" :name="'manual_deductions['+index+'][reason]'" maxlength="500" placeholder="Note printed on payslip (optional)" class="w-full">
                       <button type="button" @click="removeDeduction(index)" class="text-red-500 font-bold px-2 hover:bg-red-50 rounded-lg py-1 transition">✕</button>
                   </div>
               </template>
@@ -187,7 +198,7 @@
                 <div class="inline-flex gap-1 items-center">
                   <a href="{{ route('technicians.salaries.slip', $sheet) }}" class="btn-secondary !px-2.5 !py-1 text-xs">Slip</a>
                   @if($sheet->status === 'Draft')
-                  <button type="button" onclick="populateForm({{ json_encode($sheet) }})" class="btn-secondary !px-2.5 !py-1 text-xs">Edit</button>
+                  <a href="{{ route('technicians.salaries.show', $sheet) }}#salary-adjustments" class="btn-secondary !px-2.5 !py-1 text-xs">Add / Deduct</a>
                   <form method="POST" action="{{ route('technicians.salaries.destroy', $sheet) }}" data-confirm="Delete this draft paysheet?">
                     @csrf<x-submission-token/> @method('DELETE')
                     <button type="submit" class="btn-secondary !px-2.5 !py-1 text-xs text-red-600">Delete</button>
@@ -208,9 +219,7 @@
                   @endif
                   @endif
                   
-                  <button type="button" data-breakdown="{{ json_encode([$sheet->number, $sheet->technician->name, $salaryMonthLabel ?? $sheet->period_start->format('F Y'), $sheet->base_earnings, $sheet->ot_amount, $sheet->commission, $sheet->advances, $sheet->late_deduction, $sheet->early_leave_deduction, $sheet->half_day_deduction, $sheet->no_pay_deduction, $sheet->own_bike_deduction, $sheet->epf_employee, (float) $sheet->other_deductions + (float) $sheet->manual_deductions + (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0), $sheet->net_payable, $sheet->paid_amount, $sheet->balance_amount, $sheet->payment_method, $sheet->created_at->format('d M Y'), $sheet->gross_salary, $sheet->total_deductions, (float) $sheet->allowances + (float) $sheet->manual_additions + (float) $sheet->worked_on_leave_pay]) }}" onclick="viewBreakdown(...JSON.parse(this.dataset.breakdown))" class="btn-secondary !px-2.5 !py-1 text-xs">
-                    🔎 View
-                  </button>
+                  <a href="{{ route('technicians.salaries.show', $sheet) }}" class="btn-secondary !px-2.5 !py-1 text-xs">View</a>
                   <a target="_blank" href="{{ route('technicians.salaries.slip', ['sheet' => $sheet, 'print' => 1]) }}" class="btn-secondary !px-2.5 !py-1 text-xs" aria-label="Print salary slip {{ $sheet->number }}">🖨️</a>
                 </div>
               </td>
@@ -230,197 +239,9 @@
       </div>
     </div>
 
-    {{-- Paysheet Detailed Breakdown Modal --}}
-    <dialog id="breakdownModal" class="rounded-xl border border-slate-200 bg-white p-6 shadow-2xl w-full max-w-lg print:border-none print:shadow-none print:p-0">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 print:hidden">
-        <h3 class="text-base font-black text-slate-800">📄 Paysheet Breakdown</h3>
-        <button type="button" onclick="closeBreakdown()" class="text-slate-400 font-bold hover:text-slate-700">✕</button>
-      </div>
-
-      <div class="space-y-4 text-xs">
-        {{-- Invoice styled header for Print --}}
-        <div class="text-center pb-4 border-b border-slate-100">
-          <h2 class="text-lg font-black tracking-tight text-red-600 uppercase">Fasmir Motors</h2>
-          <p class="text-[10px] text-slate-400">Bike Repair Center & Spare Parts</p>
-          <div data-print-summary class="mt-2 text-slate-800 font-bold"><span>PAYSHEET:</span> <strong id="mdNumber" class="text-red-600"></strong></div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 border-b border-slate-100 pb-3">
-          <div data-print-summary><span class="text-slate-400">Technician:</span> <strong id="mdTech" class="text-slate-900 block text-sm"></strong></div>
-          <div class="text-right">
-            <div data-print-summary><span class="text-slate-400">Salary Period:</span> <strong id="mdPeriod" class="text-slate-900 block"></strong></div>
-            <div><span class="text-slate-400">Generated Date:</span> <span id="mdDate" class="text-slate-500"></span></div>
-          </div>
-        </div>
-
-        {{-- Additions --}}
-        <div>
-          <h4 class="font-extrabold text-green-700 uppercase tracking-wide border-b border-green-100 pb-1 mb-2">➕ Income / Additions</h4>
-          <table class="w-full text-slate-700">
-            <tr>
-              <td class="py-1">Base earnings</td>
-              <td class="text-right font-mono font-bold">Rs. <span id="mdBasic"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Overtime Payout (OT)</td>
-              <td class="text-right font-mono font-bold text-green-600">Rs. <span id="mdOt"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Commissions</td>
-              <td class="text-right font-mono font-bold text-green-600">Rs. <span id="mdCommission"></span></td>
-            </tr>
-            <tr><td class="py-1">Allowances and other earnings</td><td class="text-right font-mono">Rs. <span id="mdExtraEarnings"></span></td></tr>
-            <tr class="border-t border-slate-100 font-extrabold text-slate-900">
-              <td class="py-2">Gross Salary</td>
-              <td class="text-right font-mono">Rs. <span id="mdGross"></span></td>
-            </tr>
-          </table>
-        </div>
-
-        {{-- Deductions --}}
-        <div>
-          <h4 class="font-extrabold text-red-700 uppercase tracking-wide border-b border-red-100 pb-1 mb-2">➖ Salary Deductions</h4>
-          <table class="w-full text-slate-700">
-            <tr>
-              <td class="py-1">Advances Paid</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdAdvances"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Late Coming Deductions</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdLate"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Early Leave Deductions</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdEarly"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Half Day Deductions</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdHalf"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">No Pay / Absent Deductions</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdNoPay"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Own Bike Repair deductions</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdBike"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Employee EPF Contribution (8%)</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdEpf"></span></td>
-            </tr>
-            <tr>
-              <td class="py-1">Manual Deductions / Other</td>
-              <td class="text-right font-mono font-bold text-red-600">Rs. <span id="mdOther"></span></td>
-            </tr>
-            <tr class="border-t border-slate-100 font-extrabold text-slate-900">
-              <td class="py-2">Total Deductions</td>
-              <td class="text-right font-mono">Rs. <span id="mdTotalDeductions"></span></td>
-            </tr>
-          </table>
-        </div>
-
-        {{-- Final Net Payable --}}
-        <div class="border-t-2 border-dashed border-slate-200 pt-3">
-          <table class="w-full text-sm">
-            <tr class="font-black text-slate-900 text-base">
-              <td>Net Salary Payable</td>
-              <td class="text-right text-red-600 font-mono">Rs. <span id="mdNet"></span></td>
-            </tr>
-            <tr class="text-slate-600 font-bold">
-              <td>Paid Amount</td>
-              <td class="text-right text-emerald-600 font-mono">Rs. <span id="mdPaid"></span></td>
-            </tr>
-            <tr class="text-slate-600 font-bold border-b border-slate-100 pb-2">
-              <td>Balance Due</td>
-              <td class="text-right text-red-500 font-mono">Rs. <span id="mdBalance"></span></td>
-            </tr>
-            <tr class="text-[10px] text-slate-400">
-              <td class="pt-2">Payment Method: <strong id="mdMethod" class="text-slate-600"></strong></td>
-              <td class="text-right pt-2">Authorized Signature: ________________</td>
-            </tr>
-          </table>
-        </div>
-
-        {{-- Print Action --}}
-        <div class="flex justify-end gap-2 pt-4 print:hidden">
-          <button type="button" onclick="closeBreakdown()" class="btn-secondary">Close</button>
-          <button type="button" data-print-title="Salary Paysheet" onclick="window.workshopPrint(event)" class="btn-primary shadow-lg shadow-red-200">🖨️ Print Paysheet</button>
-        </div>
-      </div>
-    </dialog>
-
   </div>
 
   <script>
-    function viewBreakdown(number, name, period, basic, ot, commission, advances, late, early, half, noPay, bike, epf, other, net, paid, balance, method, date, savedGross, savedDeductions, extraEarnings) {
-      const basicVal = parseFloat(basic) || 0;
-      const otVal = parseFloat(ot) || 0;
-      const commVal = parseFloat(commission) || 0;
-      const advancesVal = parseFloat(advances) || 0;
-      const lateVal = parseFloat(late) || 0;
-      const earlyVal = parseFloat(early) || 0;
-      const halfVal = parseFloat(half) || 0;
-      const noPayVal = parseFloat(noPay) || 0;
-      const bikeVal = parseFloat(bike) || 0;
-      const epfVal = parseFloat(epf) || 0;
-      const otherVal = parseFloat(other) || 0;
-
-      const gross = parseFloat(savedGross) || 0;
-      const totalDeductions = parseFloat(savedDeductions) || 0;
-
-      document.getElementById('mdNumber').textContent = number;
-      document.getElementById('mdTech').textContent = name;
-      document.getElementById('mdPeriod').textContent = period;
-      document.getElementById('mdDate').textContent = date;
-      document.getElementById('mdMethod').textContent = method || 'Not disbursed';
-
-      document.getElementById('mdBasic').textContent = basicVal.toFixed(2);
-      document.getElementById('mdOt').textContent = otVal.toFixed(2);
-      document.getElementById('mdCommission').textContent = commVal.toFixed(2);
-      document.getElementById('mdExtraEarnings').textContent = (parseFloat(extraEarnings) || 0).toFixed(2);
-      document.getElementById('mdGross').textContent = gross.toFixed(2);
-
-      document.getElementById('mdAdvances').textContent = advancesVal.toFixed(2);
-      document.getElementById('mdLate').textContent = lateVal.toFixed(2);
-      document.getElementById('mdEarly').textContent = earlyVal.toFixed(2);
-      document.getElementById('mdHalf').textContent = halfVal.toFixed(2);
-      document.getElementById('mdNoPay').textContent = noPayVal.toFixed(2);
-      document.getElementById('mdBike').textContent = bikeVal.toFixed(2);
-      document.getElementById('mdEpf').textContent = epfVal.toFixed(2);
-      document.getElementById('mdOther').textContent = otherVal.toFixed(2);
-      document.getElementById('mdTotalDeductions').textContent = totalDeductions.toFixed(2);
-
-      document.getElementById('mdNet').textContent = (parseFloat(net) || 0).toFixed(2);
-      document.getElementById('mdPaid').textContent = (parseFloat(paid) || 0).toFixed(2);
-      document.getElementById('mdBalance').textContent = (parseFloat(balance) || 0).toFixed(2);
-
-      document.getElementById('breakdownModal').showModal();
-    }
-
-    function closeBreakdown() {
-      document.getElementById('breakdownModal').close();
-    }
-
-    function populateForm(sheet) {
-        document.querySelector('select[name="technician_id"]').value = sheet.technician_id;
-        document.querySelector('input[name="month"]').value = sheet.period_start.substring(0, 7);
-        
-        if (sheet.additions.length > 0) {
-            document.querySelector('input[name="addition_name"]').value = sheet.additions[0].addition_name || '';
-            document.querySelector('input[name="manual_additions"]').value = sheet.additions[0].amount || '0';
-        }
-        
-        // Note: Dynamic deductions (Alpine repeater) must be re-added manually when editing a draft.
-        
-        document.querySelector('input[name="allowances"]').value = sheet.allowances || '0';
-        
-        // Payment fields were removed from this form.
-        
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        loadSalaryPreview();
-    }
-
     let salaryPreviewRequest = 0;
     let salaryPreviewData = null;
     let salaryPreviewContext = '';
@@ -482,8 +303,11 @@
             .reduce((sum, item) => sum + salaryCents(item.amount), 0);
         const delta = bikeTotal - originalBikeTotal + manualSalaryDeductionTotal() - salaryCents(salaryPreviewData.manual_deductions);
         const totalDeductions = salaryCents(salaryPreviewData.total_deductions) + delta;
-        const exceedsSalary = totalDeductions > salaryCents(salaryPreviewData.gross_salary);
-        const net = Math.max(0, salaryCents(salaryPreviewData.net_payable) - delta);
+        const additionDelta = salaryCents(document.querySelector('[name="manual_additions"]').value) - salaryCents(salaryPreviewData.manual_additions);
+        const gross = salaryCents(salaryPreviewData.gross_salary) + additionDelta;
+        const exceedsSalary = totalDeductions > gross;
+        const net = Math.max(0, salaryCents(salaryPreviewData.net_payable) + additionDelta - delta);
+        document.getElementById('preview-gross').textContent = salaryMoney(gross / 100);
         const balance = net - salaryCents(salaryPreviewData.paid_amount);
         document.getElementById('bike-deduction-preview-total').textContent = salaryMoney(bikeTotal / 100);
         document.getElementById('bike-deduction-preview-balance').textContent = salaryMoney(remainingTotal / 100);
@@ -527,6 +351,7 @@
             if (input.dataset.technician === technician_id && input.dataset.month === month) params.set(input.name, input.value);
         });
         
+        params.set('manual_addition', document.querySelector('[name="manual_additions"]').value || '0');
         params.set('manual_deduction', (manualSalaryDeductionTotal() / 100).toFixed(2));
         
         fetch(`{{ route('technicians.salaries.preview') }}?${params.toString()}`)

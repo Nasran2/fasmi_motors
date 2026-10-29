@@ -66,7 +66,7 @@ export async function openCashierDialog(url) {
             const state = openingBalancesState(opening.value, accounts.map(input => input.value), opening.dataset.suggested, accounts.map(input => input.dataset.suggested));
             reason.required = reason.dataset.alwaysRequired === '1' || state.changed;
             opening.setCustomValidity(state.valid ? '' : 'Enter valid cashier cash and account balances.');
-            if (allocationTotal) allocationTotal.textContent = 'Cash in the cashier is separate from Main and Spare Parts balances.';
+            if (allocationTotal) allocationTotal.textContent = 'Cash in the cashier is separate from Main, Spare Parts and Bank balances.';
         };
         [opening, ...accounts].forEach(input => input.addEventListener('input', updateAllocation));
         updateAllocation();

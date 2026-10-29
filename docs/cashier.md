@@ -2,7 +2,7 @@
 
 **Opening cash in cashier** is the physical money in the drawer. It is editable and independent of Main Account, Spare Parts Account, Washing Account and Bank balances. For example, opening cashier cash can be Rs. 5,000 while Main Account is Rs. 74,838 and Spare Parts is Rs. 12,000. These amounts do not need to add up or match.
 
-The opening popup suggests the most recent recorded cashier cash, including subsequent cash movements. When there is no recorded cash count, it starts at zero for the operator to enter the real amount. Account fields suggest their separate ledger balances. Changing drawer cash does not post an adjustment to Main. Changing Main or Spare Parts posts an audited account adjustment, excluded from physical cashier cash. A negative ledger balance does not prevent opening a cashier with positive physical cash.
+The opening popup suggests the most recent recorded cashier cash, including subsequent cash movements. When there is no recorded cash count, it starts at zero for the operator to enter the real amount. Main, Spare Parts and Bank opening fields suggest their separate ledger balances and remain editable. Bank is excluded from physical cashier cash. Changing drawer cash does not post an adjustment to Main. Changing Main, Spare Parts or Bank posts an audited account adjustment, excluded from physical cashier cash. A negative ledger balance does not prevent opening a cashier with positive physical cash.
 
 The highlighted header control opens the popup when closed and the review/closing page when open. Each shop has its own session. A previous open day must be closed before starting today. Cashiers may close and reopen repeatedly on the same date. Opening/reopening events record physical cash, separate account figures, washing assignment, actor and reason. Washing commission defaults to a fixed Rs. 60 per job containing washing, with editable per-opening/per-job amounts and an optional saved default.
 
@@ -28,6 +28,8 @@ For today's open cashier, **Recalculate today from these opening balances** appl
 
 Opening means cash held before that day's receipts. Entering the current drawer amount as the original opening would count receipts twice. No financial amount is guessed, and a system start date does not automatically delete or exclude earlier transactions.
 
+Bank opening balances are editable in the same popup for new, reopened and historical sessions. Bank corrections require a reason, update only the Bank ledger and appear in opening history. They do not count as collections or change physical cashier cash. An account-only correction preserves an earlier drawer count difference even when today's recalculation option is checked. Existing three-account snapshots remain supported; adding Bank uses the existing snapshot fields and requires no additional migration.
+
 ## Compatibility and deployment
 
 Migration `2026_10_29_000006_separate_cashier_drawer_from_accounts` adds nullable physical opening/closing fields, drawer count adjustments and a separate account-opening snapshot. It does not rewrite existing financial records. Existing sessions keep their historical calculation until opened/edited through the new popup. Older API payloads retain their previous validation; all new popup submissions explicitly use separate drawer/account balances. A converted session stays separate on subsequent requests. Apply the migration before deploying the new application code.
@@ -37,3 +39,5 @@ Earlier migrations retain cashier gating, ordered collections, washing assignmen
 All work and verification for this change used the local development and isolated testing databases. No live server was accessed or changed.
 
 Verification: 132 selected backend tests passed (1,209 assertions), alongside nine JavaScript tests. Coverage includes independent opening/closing amounts, actual cash/bank receipt allocation, ledger-only corrections, cash-only edits with no ledger postings, owner withdrawal, washing sweeps, repeated opens/closes, historical edits, missing historical records, negative Main ledgers, cash count differences, stale forms, gaps between sessions, later legacy checkpoints and separate PDF/Excel rows. Production assets build, compiled cashier templates, PHP formatting and whitespace checks pass. Migration 000006 was applied only to the guarded local development database; tests used the isolated local testing database.
+
+Bank opening verification: 144 selected backend cases passed (1,314 assertions); after adding protection for an existing drawer count difference, all 30 Bank and separate-drawer cases passed (257 assertions). Nine cashier JavaScript tests, the production build, compiled cashier templates and formatting checks passed. All verification remained local.

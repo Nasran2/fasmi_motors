@@ -233,6 +233,7 @@
                 <input type="checkbox" name="enable_ot" value="1" @checked($salarySetting->enable_ot) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                 <span class="text-xs font-bold text-slate-700">Enable Overtime (OT) calculations after closing time</span>
               </label>
+              <p class="mt-2 text-xs text-slate-500">OT is eligible only for check-in at or before workshop opening time (8:00 AM when opening is 8:00). Check-in at 8:01 AM is ineligible. Closing-time grace still applies.</p>
             </div>
             <div>
               <label class="label">OT Grace Period after Closing (Minutes)</label>

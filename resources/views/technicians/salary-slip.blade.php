@@ -144,6 +144,8 @@
       </section>
     </div>
 
+    @include('technicians.partials.salary-adjustment-lines')
+
     @php($repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment'))
     @if($repairDeductions->isNotEmpty())
     <section id="staff-bike-repair-deductions" class="mt-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4 text-sm">
@@ -199,6 +201,12 @@
         <span class="text-sm font-bold uppercase tracking-widest text-slate-300">Net Salary Payable</span>
         <strong class="text-4xl tracking-tight mt-2 sm:mt-0 text-emerald-400">Rs. {{ number_format($sheet->net_payable,2) }}</strong>
     </div>
+
+    <div class="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-200 p-4 text-sm">
+        <p>Paid so far <strong class="block">Rs. {{ number_format($sheet->paid_amount, 2) }}</strong></p>
+        <p>{{ $sheet->balance_amount < 0 ? 'Overpaid' : 'Remaining balance' }} <strong class="block">Rs. {{ number_format(abs($sheet->balance_amount), 2) }}</strong></p>
+    </div>
+    @if($sheet->status === 'Draft')<p class="mt-3 text-sm font-bold text-amber-800">Draft payslip — calculation is not finalized and no payment is confirmed by this slip.</p>@elseif($sheet->status !== 'Paid')<p class="mt-3 text-sm font-bold text-amber-800">{{ $sheet->status }} — this payslip does not confirm full payment.</p>@endif
 
     @if($sheet->payment_note)
         <p class="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">

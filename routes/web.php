@@ -197,6 +197,9 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::post('technicians/salaries/{sheet}/pay', [TechnicianController::class, 'salaryPay'])->name('technicians.salaries.pay');
     Route::delete('technicians/salaries/{sheet}', [TechnicianController::class, 'salaryDestroy'])->name('technicians.salaries.destroy');
     Route::post('technicians/salaries/{sheet}/reopen', [TechnicianController::class, 'salaryReopen'])->name('technicians.salaries.reopen');
+    Route::get('technicians/salaries/{sheet}/view', [TechnicianController::class, 'salaryShow'])->name('technicians.salaries.show');
+    Route::post('technicians/salaries/{sheet}/adjustments', [TechnicianController::class, 'salaryAdjustment'])->name('technicians.salaries.adjustments');
+    Route::post('technicians/salaries/{sheet}/refresh-attendance', [TechnicianController::class, 'salaryRefreshAttendance'])->name('technicians.salaries.refresh-attendance');
     Route::get('technicians/salaries/{sheet}/slip', [TechnicianController::class, 'salarySlip'])->name('technicians.salaries.slip');
     Route::get('technicians/advances', [TechnicianController::class, 'advances'])->name('technicians.advances');
     Route::post('technicians/advances', [TechnicianController::class, 'advanceStore'])->name('technicians.advances.store');

@@ -85,12 +85,13 @@ class CashierController extends Controller
 
     public function open(Request $request, CashierService $service)
     {
+        $separateCash = $request->boolean('separate_cash_balance') || CashierSession::whereDate('session_date', today())->whereNotNull('drawer_opening_balance')->exists();
         $values = $request->validate([
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'nullable|string|max:1000',
             'save_washing_default' => 'nullable|boolean',
-        ] + $this->openingAllocationRules($request->boolean('separate_cash_balance')) + WashingCommissionService::rules());
-        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_amount'])), $request->boolean('save_washing_default'), $values['opening_balances'] ?? null, $values['balance_version'] ?? null, $request->boolean('separate_cash_balance'));
+        ] + $this->openingAllocationRules($separateCash) + WashingCommissionService::rules());
+        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_amount'])), $request->boolean('save_washing_default'), $values['opening_balances'] ?? null, $values['balance_version'] ?? null, $separateCash);
 
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index')]);
@@ -104,10 +105,11 @@ class CashierController extends Controller
         $range = $separateCash ? 'between:-999999999999.99,999999999999.99' : 'between:0,999999999999.99';
 
         return [
-            'opening_balances' => 'sometimes|array:main,spare_parts,washing',
+            'opening_balances' => 'sometimes|array:'.($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
             'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
             'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
             'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|'.$range,
+            'opening_balances.bank' => 'sometimes|required|numeric|decimal:0,2|'.$range,
             'balance_version' => 'sometimes|required|string|size:64',
             'separate_cash_balance' => 'nullable|boolean',
         ];
@@ -115,14 +117,15 @@ class CashierController extends Controller
 
     public function correctOpening(Request $request, CashierSession $cashier, CashierService $service)
     {
+        $separateCash = $request->boolean('separate_cash_balance') || $cashier->drawer_opening_balance !== null;
         $values = $request->validate([
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'required|string|max:1000',
             'recalculate_today' => 'nullable|boolean',
-            'opening_balances' => 'required|array:main,spare_parts,washing',
+            'opening_balances' => 'required|array:'.($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
             'balance_version' => 'required|string|size:64',
-        ] + $this->openingAllocationRules($request->boolean('separate_cash_balance') || $cashier->drawer_opening_balance !== null));
-        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'), $request->boolean('separate_cash_balance'));
+        ] + $this->openingAllocationRules($separateCash));
+        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'), $separateCash);
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
         }
@@ -136,7 +139,7 @@ class CashierController extends Controller
             'date' => 'required|date_format:Y-m-d|before:today',
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'required|string|max:1000',
-            'opening_balances' => 'required|array:main,spare_parts,washing',
+            'opening_balances' => 'required|array:'.($request->boolean('separate_cash_balance') ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
             'balance_version' => 'required|string|size:64',
         ] + $this->openingAllocationRules($request->boolean('separate_cash_balance')));
         $service->recordHistoricalOpening($values['date'], (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('separate_cash_balance'));

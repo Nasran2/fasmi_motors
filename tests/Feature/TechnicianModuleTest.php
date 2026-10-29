@@ -70,11 +70,11 @@ it('previews and imports biometric attendance while ignoring detail rows', funct
         ->and($attendance->import_batch_id)->toBe($batch->id);
 });
 
-it('only allows overtime when check in is strictly before opening time', function () {
+it('allows overtime when check in is at or before opening time', function () {
     SalarySetting::firstOrCreate([])->update(['opening_time' => '08:00 AM', 'closing_time' => '05:00 PM', 'ot_grace_minutes_after_closing' => 15, 'enable_ot' => true]);
     $technician = Technician::create(['name' => 'OT Rule Technician', 'phone' => '0730000000', 'basic_salary' => 50000, 'salary_type' => 'Monthly', 'ot_rate' => 600, 'commission_percentage' => 0, 'commission_type' => 'Manual only', 'active' => true]);
 
-    foreach ([['07:59', true], ['08:00', false], ['08:01', false]] as $index => [$checkIn, $eligible]) {
+    foreach ([['07:59', true], ['08:00', true], ['08:01', false]] as $index => [$checkIn, $eligible]) {
         $this->post(route('technicians.attendance.store'), [
             'technician_id' => $technician->id,
             'date' => now()->startOfMonth()->addDays($index)->toDateString(),

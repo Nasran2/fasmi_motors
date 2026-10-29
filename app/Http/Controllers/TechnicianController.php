@@ -26,6 +26,7 @@ use App\Services\JobCommissionService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
 use App\Services\SalaryRepairCorrectionService;
+use App\Services\SalarySheetDetailService;
 use App\Services\StaffBikeRepairService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -636,7 +637,7 @@ class TechnicianController extends Controller
 
     public function salaries(Request $request)
     {
-        $sheets = TechnicianSalarySheet::with('technician')->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))->latest('period_start')->paginate(15)->withQueryString();
+        $sheets = TechnicianSalarySheet::with(['technician', 'additions', 'paymentDeductions'])->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id))->latest('period_start')->paginate(15)->withQueryString();
         $month = TechnicianSalarySheet::whereBetween('period_end', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()])
             ->when($request->technician, fn (Builder $q, $id) => $q->where('technician_id', $id));
 
@@ -688,7 +689,8 @@ class TechnicianController extends Controller
             'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
             'manual_deductions' => ['nullable'],
             'manual_deductions.*.name' => ['required_with:manual_deductions.*.amount', 'string', 'max:150'],
-            'manual_deductions.*.amount' => ['required_with:manual_deductions.*.name', 'numeric', 'min:0'],
+            'manual_deductions.*.amount' => ['required_with:manual_deductions.*.name', 'numeric', 'min:0', 'decimal:0,2', 'max:999999999999.99'],
+            'manual_deductions.*.reason' => ['nullable', 'string', 'max:500'],
             'addition_name' => ['nullable', 'max:150'], 'addition_reason' => ['nullable', 'max:500'],
             'paid_amount' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])],
             'payment_date' => ['nullable', 'date'], 'payment_note' => ['nullable', 'max:1000'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
@@ -760,7 +762,7 @@ class TechnicianController extends Controller
             if (count($manualDeductionsList) > 0) {
                 foreach ($manualDeductionsList as $md) {
                     if (! empty($md['amount']) && $md['amount'] > 0) {
-                        $sheet->paymentDeductions()->create(['technician_id' => $technician->id, 'deduction_name' => $md['name'] ?? 'Manual deduction', 'amount' => $md['amount'], 'reason' => null, 'deduction_date' => today(), 'created_by' => auth()->id()]);
+                        $sheet->paymentDeductions()->create(['technician_id' => $technician->id, 'deduction_name' => $md['name'] ?? 'Manual deduction', 'amount' => $md['amount'], 'reason' => $md['reason'] ?? null, 'deduction_date' => today(), 'created_by' => auth()->id()]);
                     }
                 }
             } elseif ((float) ($data['manual_deductions'] ?? 0) > 0) {
@@ -901,6 +903,30 @@ class TechnicianController extends Controller
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Sheet Deleted', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['status' => 'Deleted'], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
         return back()->with('success', "Salary sheet {$sheet->number} deleted successfully.");
+    }
+
+    public function salaryShow(TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
+    {
+        return view('technicians.salary-show', ['sheet' => $sheet->load(['technician', 'additions', 'paymentDeductions']),
+            'attendanceRows' => collect($details->attendanceRows($sheet))->keyBy('date')]);
+    }
+
+    public function salaryAdjustment(Request $request, TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
+    {
+        $data = $request->validate(['type' => ['required', Rule::in(['addition', 'deduction'])],
+            'description' => ['required', 'string', 'max:150'], 'reason' => ['nullable', 'string', 'max:500'],
+            'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:999999999999.99']]);
+        $details->addAdjustment($sheet, $data);
+
+        return back()->with('success', 'Salary adjustment saved and included on the payslip.');
+    }
+
+    public function salaryRefreshAttendance(Request $request, TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
+    {
+        $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:500']]);
+        $details->refreshAttendance($sheet, $data['reason']);
+
+        return back()->with('success', 'Draft attendance and OT refreshed. Manual amounts and descriptions were retained.');
     }
 
     public function salarySlip(TechnicianSalarySheet $sheet)

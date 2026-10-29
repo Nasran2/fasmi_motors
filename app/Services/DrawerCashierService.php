@@ -35,7 +35,7 @@ class DrawerCashierService
 
     public function accountDefaults(array $summary, bool $reopening): array
     {
-        return collect(CashPositionService::ACCOUNTS)->map(fn ($label, $type) => $summary['accounts'][$type][$reopening ? 'closing' : 'opening'])->all();
+        return collect(CashierService::ACCOUNTS)->map(fn ($label, $type) => $summary['accounts'][$type][$reopening ? 'closing' : 'opening'])->all();
     }
 
     private function validate(float $cash, ?array $balances, array $source): array
@@ -44,7 +44,7 @@ class DrawerCashierService
             throw ValidationException::withMessages(['opening_balance' => 'Enter the physical cash in the cashier.']);
         }
         $result = [];
-        foreach (CashPositionService::ACCOUNTS as $type => $label) {
+        foreach (CashierService::ACCOUNTS as $type => $label) {
             $amount = $balances[$type] ?? $source[$type];
             if (! is_numeric($amount) || ! is_finite((float) $amount) || $amount < -999999999999.99 || $amount > 999999999999.99) {
                 throw ValidationException::withMessages(['opening_balances.'.$type => 'Enter a valid balance for '.$label.'.']);
@@ -92,7 +92,7 @@ class DrawerCashierService
         $adjustment = $session ? round($cash - $root - $moves, 2) : 0;
         $washing += ['washing_person_id' => null, 'washing_commission_amount' => app(WashingCommissionService::class)->defaultAmount()];
         $values = ['opening_balance' => $root, 'drawer_opening_balance' => $root, 'drawer_adjustment' => $adjustment,
-            'account_opening_balances' => $session?->account_opening_balances ?? $confirmed,
+            'account_opening_balances' => $session ? array_replace($this->accountDefaults($summary, false), $session->account_opening_balances ?? []) : $confirmed,
             'status' => 'open', 'notes' => $reason, 'closed_at' => null, 'closed_by' => null,
             'washing_person_id' => $washing['washing_person_id'], 'washing_commission_amount' => $washing['washing_commission_amount']];
         if ($session) {
@@ -107,7 +107,7 @@ class DrawerCashierService
         }
         $session->events()->create(['action' => $reopening ? 'reopened' : 'opened', 'cash_amount' => $cash,
             'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
-            'details' => ['reason' => $reason, 'separate_cash_balance' => true, 'cash_balances' => $confirmed, 'drawer_adjustment' => $adjustment], 'created_by' => auth()->id()]);
+            'details' => ['reason' => $reason, 'separate_cash_balance' => true, 'cash_balances' => $confirmed, 'bank_balance' => $confirmed['bank'], 'drawer_adjustment' => $adjustment], 'created_by' => auth()->id()]);
 
         return $session;
     }
@@ -133,7 +133,9 @@ class DrawerCashierService
         $closeEvents = $session->events()->where('action', 'closed')->orderBy('id')->get();
         $hasCount = $closeEvents->isNotEmpty() || $closing?->cash_actual_balance !== null || $session->cash_balances || $session->drawer_closing_balance !== null;
         $moves = collect(app(CashPositionService::class)->accounts($date, null, null, true))->sum('closing');
-        $adjustment = $recalculate ? 0.0 : ($hasCount ? round($summary['cash_in_hand'] - $cash - $moves, 2) : (float) $session->drawer_adjustment);
+        // An account-only edit must not reset a physical drawer count variance.
+        $adjustment = $recalculate && $cashChange != 0 ? 0.0
+            : (($hasCount || $session->drawer_opening_balance === null) ? round($summary['cash_in_hand'] - $cash - $moves, 2) : (float) $session->drawer_adjustment);
         if ($session->drawer_opening_balance !== null && $cashChange == 0 && ! array_filter($changes) && $adjustment == (float) $session->drawer_adjustment) {
             return;
         }
@@ -163,7 +165,7 @@ class DrawerCashierService
             'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
             'details' => ['reason' => $reason, 'separate_cash_balance' => true, 'recalculate_today' => $recalculate,
                 'previous_opening' => $source, 'previous_drawer_opening' => $oldCash, 'cash_balances' => $confirmed,
-                'previous_closing' => $previous['closing'], 'drawer_adjustment' => $adjustment], 'created_by' => auth()->id()]);
+                'previous_closing' => $previous['closing'], 'bank_balance' => $confirmed['bank'], 'drawer_adjustment' => $adjustment], 'created_by' => auth()->id()]);
     }
 
     private function refreshClosing(?DailyClosing $closing, array $changes, float $cashChange, bool $beforeLast): void

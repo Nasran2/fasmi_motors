@@ -168,7 +168,7 @@ class AttendanceCalculationService
 
     public function calculateOTEligibility(CarbonInterface $checkIn, CarbonInterface $checkOut, CarbonInterface $opening, CarbonInterface $closing, int $graceMinutes): bool
     {
-        return $checkIn->lt($opening) && $checkOut->gt($closing->copy()->addMinutes($graceMinutes));
+        return $checkIn->lte($opening) && $checkOut->gt($closing->copy()->addMinutes($graceMinutes));
     }
 
     public function calculateOTMinutes(CarbonInterface $checkOut, CarbonInterface $closing): int

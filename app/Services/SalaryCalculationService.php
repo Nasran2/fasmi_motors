@@ -348,7 +348,7 @@ class SalaryCalculationService
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 
@@ -418,6 +418,9 @@ class SalaryCalculationService
             $snapshot = $sheet->calculation_snapshot ?? [];
             if (isset($snapshot['attendance_summary']) && $snapshot['attendance_summary'] != $this->getAttendanceSummary($sheet->technician_id, $sheet->period_start, $sheet->period_end)) {
                 throw ValidationException::withMessages(['month' => 'Attendance changed after this draft was calculated. Regenerate the salary draft.']);
+            }
+            if (isset($snapshot['attendance_records']) && $snapshot['attendance_records'] != app(SalarySheetDetailService::class)->captureAttendance($sheet->technician_id, $sheet->period_start->toDateString(), $sheet->period_end->toDateString())) {
+                throw ValidationException::withMessages(['month' => 'Attendance times changed after this draft was calculated. Refresh the draft attendance.']);
             }
             if (isset($snapshot['technician']) && $snapshot['technician'] != Arr::only($this->getTechnicianSalaryData($sheet->technician_id), array_keys($snapshot['technician']))) {
                 throw ValidationException::withMessages(['month' => 'Staff salary settings changed. Regenerate the salary draft.']);
