@@ -99,6 +99,10 @@
         @endif
     </section>
 
+    @if(data_get($sheet->calculation_snapshot, 'contributions.basic_salary') !== null)
+        <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
+    @endif
+
     @if($showAttendance)
     <section class="mt-6">
         <h2 class="border-b pb-2 font-black text-blue-700 uppercase tracking-wider text-xs">Attendance & Activity</h2>
@@ -118,7 +122,7 @@
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>
           <dl class="mt-3 space-y-2 text-sm">
-            @foreach(['Base earnings'=>$sheet->base_earnings,'OT amount'=>$sheet->ot_amount,'Commission'=>$sheet->commission,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
+            @foreach(['Base earnings'=>$sheet->base_earnings,'OT amount'=>$sheet->ot_amount,'Other allowances'=>$sheet->allowances,'Manual additions'=>$sheet->manual_additions,'Worked-on-leave pay'=>$sheet->worked_on_leave_pay] as $label=>$amount)
                 <div class="flex justify-between"><dt class="text-slate-600">{{ $label }}</dt><dd class="font-medium">Rs. {{ number_format($amount,2) }}</dd></div>
             @endforeach
             <div class="flex justify-between border-t border-emerald-200 pt-2 font-black text-emerald-700 mt-3">
@@ -144,6 +148,7 @@
       </section>
     </div>
 
+    @if((float) $sheet->commission !== 0.0)<p class="mt-3 text-sm text-amber-800">Commission included in this earlier salary: Rs. {{ number_format($sheet->commission, 2) }}. This historical amount remains in its saved totals.</p>@endif
     @include('technicians.partials.salary-adjustment-lines')
 
     @php($repairDeductions = collect(data_get($sheet->calculation_snapshot, 'pending_deductions.items', []))->where('kind', 'bike_installment'))

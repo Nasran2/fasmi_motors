@@ -17,7 +17,7 @@ class JobCommissionService
         }
         $base = $job->service_labor_commission_base;
         $records = TechnicianCommission::where('job_card_id', $job->id)->where('status', 'Pending')
-            ->whereNull('salary_sheet_id')->where('commission_type', 'like', 'Job Card - %')
+            ->whereNull('salary_sheet_id')->where('paid_amount', 0)->where('deducted_amount', 0)->where('commission_type', 'like', 'Job Card - %')
             ->whereNotIn('commission_type', ['Job Card - Parts', WashingCommissionService::TYPE])->lockForUpdate()->get();
         foreach ($records as $record) {
             $values = ['base_amount' => $base, 'amount' => round($base * (float) $record->percentage / 100, 2), 'commission_type' => self::TYPE];

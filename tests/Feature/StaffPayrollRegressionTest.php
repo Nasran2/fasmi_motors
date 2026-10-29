@@ -67,7 +67,7 @@ it('calculates an empty commission amount and respects an explicit zero', functi
     }
 });
 
-it('rejects stale commission drafts and links only calculated commissions', function () {
+it('keeps changing commissions independent of salary finalization and reopen', function () {
     $commission = TechnicianCommission::create([
         'technician_id' => $this->staff->id, 'commission_type' => 'Manual',
         'base_amount' => 1000, 'percentage' => 10, 'amount' => 100,
@@ -76,12 +76,9 @@ it('rejects stale commission drafts and links only calculated commissions', func
     $this->post(route('technicians.salaries.store'), ['technician_id' => $this->staff->id, 'month' => '2026-06'])->assertSessionHasNoErrors();
     $sheet = TechnicianSalarySheet::firstOrFail();
     $commission->update(['amount' => 200]);
-    $this->post(route('technicians.salaries.finalize', $sheet))->assertSessionHasErrors('month');
-    expect($sheet->fresh()->status)->toBe('Draft')->and($commission->fresh()->status)->toBe('Pending');
-    $this->post(route('technicians.salaries.store'), ['technician_id' => $this->staff->id, 'month' => '2026-06'])->assertSessionHasNoErrors();
-    $sheet = TechnicianSalarySheet::firstOrFail();
     $this->post(route('technicians.salaries.finalize', $sheet))->assertSessionHasNoErrors();
-    expect($commission->fresh()->salary_sheet_id)->toBe($sheet->id);
+    expect((float) $sheet->fresh()->commission)->toBe(0.0)->and($commission->fresh()->salary_sheet_id)->toBeNull()
+        ->and($commission->fresh()->status)->toBe('Pending');
     $this->post(route('technicians.salaries.reopen', $sheet), ['reason' => 'Correct payroll audit'])->assertSessionHasNoErrors();
     expect($commission->fresh()->status)->toBe('Pending')->and($commission->fresh()->salary_sheet_id)->toBeNull();
 });
@@ -167,7 +164,7 @@ it('does not mix previous years into current monthly staff totals', function () 
             'basic_salary' => 26000, 'gross_salary' => 26000, 'net_payable' => 26000, 'created_by' => auth()->id(),
         ]);
     }
-    $this->get(route('technicians.commissions'))->assertOk()->assertViewHas('stats', fn ($stats) => (float) $stats['total'] === 100.0);
+    $this->get(route('technicians.commissions'))->assertOk()->assertViewHas('totals', fn ($totals) => (float) $totals['earned'] === 100.0);
     $this->get(route('technicians.advances'))->assertOk()->assertViewHas('stats', fn ($stats) => (float) $stats['month'] === 500.0);
     $this->get(route('technicians.salaries'))->assertOk()->assertViewHas('stats', fn ($stats) => (float) $stats['payable'] === 26000.0);
 });

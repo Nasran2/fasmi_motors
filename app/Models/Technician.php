@@ -15,9 +15,11 @@ class Technician extends Model
 
     protected $guarded = [];
 
+    protected $attributes = ['epf_etf_basic_salary' => 30000];
+
     protected function casts(): array
     {
-        return ['date_of_birth' => 'date', 'joining_date' => 'date', 'active' => 'boolean', 'commission_enabled' => 'boolean', 'epf_eligible' => 'boolean', 'etf_eligible' => 'boolean', 'salary_start_day' => 'integer'];
+        return ['date_of_birth' => 'date', 'joining_date' => 'date', 'active' => 'boolean', 'commission_enabled' => 'boolean', 'epf_eligible' => 'boolean', 'etf_eligible' => 'boolean', 'epf_etf_basic_salary' => 'decimal:2', 'salary_start_day' => 'integer'];
     }
 
     /** @return HasMany<JobCard, $this> */

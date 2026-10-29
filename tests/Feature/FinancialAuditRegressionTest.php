@@ -95,6 +95,7 @@ test('edited paid invoice reallocates existing receipts without duplicate income
 
 test('insufficient stock rolls back job part creation and totals', function () {
     $job = financialAuditJob(0, 0);
+    $job->update(['status' => 'In Progress']); // Reach stock validation on an editable job.
     $store = Store::create(['name' => 'Audit Store', 'active' => true]);
     $product = Product::create(['code' => 'AUDIT-PART', 'name' => 'Part', 'cost_price' => 50, 'selling_price' => 100, 'active' => true]);
     StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 1]);

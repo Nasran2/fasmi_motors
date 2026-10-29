@@ -104,10 +104,11 @@ test('job overrides earn washing commission separately from service and labor at
     app(JobCommissionService::class)->syncPending($job->fresh());
     app(WashingCommissionService::class)->sync($job->fresh());
     expect((float) $washing->fresh()->amount)->toBe(20.0)->and(TechnicianCommission::where('commission_type', WashingCommissionService::TYPE)->count())->toBe(1);
-    $this->get(route('technicians.commissions'))->assertOk()->assertSeeText('Other Washer')->assertSeeText(WashingCommissionService::TYPE);
+    $this->get(route('technicians.commissions'))->assertOk()->assertSeeText('Other Washer');
+    $this->get(route('technicians.commissions.show', $this->otherWasher))->assertOk()->assertSeeText(WashingCommissionService::TYPE);
     $this->otherWasher->update(['salary_period_mode' => 'normal_calendar']);
     $salary = app(SalaryCalculationService::class)->generateMonthlySalary($this->otherWasher, today());
-    expect($salary['commission'])->toBe(20.0);
+    expect($salary['commission'])->toBe(0.0);
 });
 
 test('billed job washing assignment updates only its pending washing commission and paid payroll is protected', function () {

@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Commission Slip · {{ $technician->name }} · {{ $period['label'] }}</title>@vite(['resources/css/app.css'])
+<style>@page{size:A4 landscape;margin:12mm}body{background:#f8fafc;color:#0f172a}th,td{vertical-align:top}tr{break-inside:avoid}thead{display:table-header-group}@media print{.no-print{display:none!important}body{background:white}.slip{border:0!important;box-shadow:none!important;padding:0!important;max-width:none!important}}</style></head>
+<body class="p-4"><div class="slip mx-auto max-w-6xl rounded-xl border bg-white p-6"><div class="no-print mb-5 flex justify-between gap-3"><a href="{{ route('technicians.commissions') }}" class="btn-secondary">Back to Commission</a><button onclick="window.print()" class="btn-primary">Print / Save PDF</button></div>
+<header class="mb-5 border-b pb-4"><h1 class="text-2xl font-black">FASMIR MOTORS · Commission Slip</h1><p class="mt-2 font-bold">{{ $technician->name }} · {{ $period['label'] }}</p><p class="text-xs text-slate-500">Generated {{ now()->format('d M Y h:i A') }} · Commission is separate from salary. This statement shows earned amounts, deductions, payments and remaining balances.</p></header>
+@include('technicians.partials.commission-report')
+</div></body></html>

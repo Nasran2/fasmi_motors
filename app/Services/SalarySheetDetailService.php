@@ -102,8 +102,7 @@ class SalarySheetDetailService
                 throw ValidationException::withMessages(['reason' => 'The salary cycle changed. Regenerate the draft for the correct period.']);
             }
             $sheet->update(Arr::only($values, array_keys($sheet->getAttributes())));
-            TechnicianContribution::where('salary_sheet_id', $sheet->id)->update(['basic_salary' => $values['basic_salary'],
-                'employee_epf_amount' => $values['epf_employee'], 'company_epf_amount' => $values['epf_company'], 'company_etf_amount' => $values['etf_company']]);
+            TechnicianContribution::where('salary_sheet_id', $sheet->id)->update($values['calculation_snapshot']['contributions']);
             $this->audit($sheet, 'Salary Draft Refreshed', $before, ['reason' => $reason]);
         }, 3);
     }

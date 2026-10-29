@@ -267,7 +267,7 @@
         <thead><tr>@if($format !== '80mm')<th class="line-number" style="width:5%;color:#fff">#</th>@endif<th style="width:{{ $format === '80mm' ? '49' : '43' }}%">Description</th><th class="num" style="width:10%">Qty</th><th class="num" style="width:20%">Unit price</th><th class="num" style="width:22%">Amount</th></tr></thead>
         <tbody>
             @forelse($lines as $line)
-                <tr>@if($format !== '80mm')<td class="line-number">{{ $loop->iteration }}</td>@endif<td><div class="item-name">{{ $line['name'] }}</div></td><td class="num">{{ number_format($line['qty'], $line['qty'] == floor($line['qty']) ? 0 : 2) }}</td><td class="num">{{ number_format($line['rate'], 2) }}</td><td class="num line-amount">{{ number_format($line['total'], 2) }}</td></tr>
+                <tr>@if($format !== '80mm')<td class="line-number">{{ $loop->iteration }}</td>@endif<td><div class="item-name">{{ $line['name'] }}</div>@if(($line['line_discount'] ?? 0) > 0)<small>Line discount: Rs. {{ number_format($line['line_discount'], 2) }}</small>@endif</td><td class="num">{{ number_format($line['qty'], $line['qty'] == floor($line['qty']) ? 0 : 2) }}</td><td class="num">{{ number_format($line['rate'], 2) }}</td><td class="num line-amount">{{ number_format($line['total'], 2) }}</td></tr>
             @empty
                 <tr><td colspan="{{ $format === '80mm' ? 4 : 5 }}" class="muted">No line items recorded.</td></tr>
             @endforelse

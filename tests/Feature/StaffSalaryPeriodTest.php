@@ -181,8 +181,8 @@ it('creates new staff with an individual calendar month without changing the def
         ->and($this->staff->fresh()->salary_period_mode)->toBe('system_default');
 });
 
-it('keeps attendance and earned commissions in each staff member own payroll period', function () {
-    $calendarStaff = Technician::create(['name' => 'Calendar Colleague', 'phone' => '0701000002', 'active' => true, 'salary_period_mode' => 'normal_calendar', 'salary_type' => 'Daily', 'basic_salary' => 30000, 'daily_salary' => 1000, 'commission_type' => 'Manual only']);
+it('keeps attendance in each staff payroll period and commissions separate', function () {
+    $calendarStaff = Technician::create(['name' => 'Calendar Colleague', 'phone' => '0701000002', 'active' => true, 'salary_period_mode' => 'normal_calendar', 'salary_type' => 'Daily', 'basic_salary' => 30000, 'daily_salary' => 1000, 'commission_type' => 'Manual only', 'epf_eligible' => false, 'etf_eligible' => false]);
     foreach ([$this->staff, $calendarStaff] as $staff) {
         foreach (['2026-09-30' => 37, '2026-10-31' => 83] as $date => $amount) {
             TechnicianAttendance::create(['technician_id' => $staff->id, 'date' => $date, 'status' => 'Present', 'created_by' => auth()->id()]);
@@ -192,7 +192,7 @@ it('keeps attendance and earned commissions in each staff member own payroll per
     $calculator = app(SalaryCalculationService::class);
     $default = $calculator->generateSalaryPreview($this->staff->id, '2026-10');
     $calendar = $calculator->generateSalaryPreview($calendarStaff->id, '2026-10');
-    expect($default['salary_period_start'])->toBe('2026-09-30')->and($default['commission'])->toBe(37.0)
-        ->and($calendar['salary_period_start'])->toBe('2026-10-01')->and($calendar['commission'])->toBe(83.0)
+    expect($default['salary_period_start'])->toBe('2026-09-30')->and($default['commission'])->toBe(0.0)
+        ->and($calendar['salary_period_start'])->toBe('2026-10-01')->and($calendar['commission'])->toBe(0.0)
         ->and($default['attendance']['present_days'])->toBe(1)->and($calendar['attendance']['present_days'])->toBe(1);
 });

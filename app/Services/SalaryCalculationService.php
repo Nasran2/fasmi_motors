@@ -37,6 +37,7 @@ class SalaryCalculationService
             'id' => $technician->id,
             'name' => $technician->name,
             'basic_salary' => (float) $technician->basic_salary,
+            'epf_etf_basic_salary' => (float) $technician->epf_etf_basic_salary,
             'salary_type' => $technician->salary_type,
             'hourly_salary' => (float) $technician->hourly_salary,
             'salary_period_mode' => $technician->salary_period_mode ?? 'system_default',
@@ -261,9 +262,9 @@ class SalaryCalculationService
             $attendanceSalary -= $attendanceAdjustment;
             $attendanceAdjustment = 0;
         }
-        $commissions = TechnicianCommission::where('technician_id', $technician->id)
-            ->whereBetween('earned_date', [$start, $end])->where('status', 'Pending')->orderBy('id')->get();
-        $commission = (float) $commissions->sum('amount');
+        // Commission has its own deductions and payout ledger; it is never salary earnings.
+        $commissions = collect();
+        $commission = 0.0;
         $allowances = max(0, (float) ($custom['allowances'] ?? $custom['other_allowances'] ?? 0));
         $manualAdditions = max(0, (float) ($custom['manual_additions'] ?? $custom['manual_addition'] ?? 0));
         $otherDeductions = max(0, (float) ($custom['other_deductions'] ?? 0));
@@ -271,7 +272,7 @@ class SalaryCalculationService
         $workedOnLeavePay = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
         $paidAmount = max(0, (float) ($custom['paid_amount'] ?? 0));
         $noPay = in_array($technician->salary_type, ['Daily', 'Hourly'], true) ? 0 : $attendance['absent_days'] * (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
-        $contributions = $this->calculateEPFETF($technician, $attendanceSalary);
+        $contributions = $this->calculateEPFETF($technician);
         $gross = $this->calculateGrossSalary($attendanceSalary, $otAmount, $commission, $allowances, $manualAdditions, $workedOnLeavePay);
         $deductionParts = [
             'late' => $attendance['late_deduction'], 'early_leave' => $attendance['early_leave_deduction'],
@@ -417,6 +418,9 @@ class SalaryCalculationService
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Draft', 422);
             $snapshot = $sheet->calculation_snapshot ?? [];
+            if (isset($snapshot['technician']) && ! array_key_exists('epf_etf_basic_salary', $snapshot['technician']) && ($technician->epf_eligible || $technician->etf_eligible)) {
+                throw ValidationException::withMessages(['month' => 'Refresh this draft to calculate EPF and ETF from the separate salary basic before finalizing.']);
+            }
             if (isset($snapshot['attendance_summary']) && $snapshot['attendance_summary'] != $this->getAttendanceSummary($sheet->technician_id, $sheet->period_start, $sheet->period_end)) {
                 throw ValidationException::withMessages(['month' => 'Attendance changed after this draft was calculated. Regenerate the salary draft.']);
             }
@@ -444,12 +448,8 @@ class SalaryCalculationService
             if (isset($snapshot['pending_deductions']) && $snapshotManual != $currentManual) {
                 throw ValidationException::withMessages(['month' => 'Staff deductions changed. Regenerate the salary draft.']);
             }
-            $commissions = TechnicianCommission::where('technician_id', $sheet->technician_id)->where('status', 'Pending')
-                ->whereBetween('earned_date', [$sheet->period_start, $sheet->period_end])->orderBy('id')->lockForUpdate()->get();
-            $commissionItems = $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all();
-            if (round((float) $commissions->sum('amount'), 2) !== round((float) $sheet->commission, 2)
-                || (array_key_exists('commissions', $snapshot) && $snapshot['commissions'] != $commissionItems)) {
-                throw ValidationException::withMessages(['month' => 'Commissions changed after this draft was calculated. Regenerate the salary draft.']);
+            if ((float) $sheet->commission !== 0.0) {
+                throw ValidationException::withMessages(['month' => 'Commission is paid separately now. Refresh this draft to remove commission before finalizing salary.']);
             }
             $advanceIds = collect(data_get($snapshot, 'advance_summary.items', []))->pluck('id')->filter();
             $advances = TechnicianAdvance::whereIn('id', $advanceIds)->lockForUpdate()->get();
@@ -498,7 +498,6 @@ class SalaryCalculationService
                     'next_deduction_month' => $deducted >= (float) $plan->total_amount ? null : Carbon::parse(data_get($snapshot, 'salary_cycle.salary_month', $sheet->period_start))->startOfMonth()->addMonth(),
                 ]);
             }
-            TechnicianCommission::whereIn('id', $commissions->modelKeys())->update(['status' => 'Paid', 'salary_sheet_id' => $sheet->id]);
             $sheet->update(['status' => 'Finalized', 'finalized_at' => now(), 'finalized_by' => $userId]);
 
             return $sheet->fresh();
@@ -544,9 +543,15 @@ class SalaryCalculationService
         });
     }
 
-    public function calculateEPFETF(Technician $technician, float $eligibleSalary): array
+    public function calculateEPFETF(Technician $technician): array
     {
+        $eligibleSalary = (float) $technician->epf_etf_basic_salary;
+
         return [
+            'basic_salary' => $eligibleSalary,
+            'employee_epf_percentage' => (float) $technician->epf_employee_percentage,
+            'company_epf_percentage' => (float) $technician->epf_company_percentage,
+            'company_etf_percentage' => (float) $technician->etf_company_percentage,
             'employee_epf_amount' => round($technician->epf_eligible ? $eligibleSalary * (float) $technician->epf_employee_percentage / 100 : 0, 2),
             'company_epf_amount' => round($technician->epf_eligible ? $eligibleSalary * (float) $technician->epf_company_percentage / 100 : 0, 2),
             'company_etf_amount' => round($technician->etf_eligible ? $eligibleSalary * (float) $technician->etf_company_percentage / 100 : 0, 2),

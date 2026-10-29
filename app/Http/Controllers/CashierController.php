@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AccountTransaction;
 use App\Models\CashierSession;
 use App\Models\DailyClosing;
 use App\Models\Technician;
 use App\Services\AccountService;
+use App\Services\AccountTransactionSourceService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
 use App\Services\DrawerCashierService;
@@ -17,6 +19,28 @@ use Illuminate\Validation\ValidationException;
 
 class CashierController extends Controller
 {
+    public function movements(Request $request, AccountTransactionSourceService $sources)
+    {
+        $values = $request->validate([
+            'date' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'account' => 'required|in:'.implode(',', array_keys(CashierService::ACCOUNTS)),
+            'side' => 'required|in:credit,debit',
+            'page' => 'sometimes|integer|min:1',
+        ]);
+        $date = $values['date'];
+        $side = $values['side'];
+        $label = CashierService::ACCOUNTS[$values['account']];
+        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($values['account'])->id)
+            ->whereDate('transaction_date', $date)
+            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening']))
+            ->where($side, '>', 0);
+        $total = (float) (clone $query)->sum($side);
+        $rows = $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate(25)->withQueryString();
+        $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
+
+        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total'));
+    }
+
     public function index(Request $request, CashierService $service, AccountService $accounts)
     {
         $request->validate(['date' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'method' => 'nullable|in:all,cash,bank']);

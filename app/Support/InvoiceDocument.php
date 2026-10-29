@@ -74,6 +74,7 @@ final class InvoiceDocument
                 ])->filter()->implode(' · '),
                 'qty' => max(0, (float) $item->quantity - (float) ($item->returned_quantity ?? 0)),
                 'rate' => (float) $item->unit_price,
+                'line_discount' => $item instanceof JobCardPart ? (float) $item->discount : 0,
                 'total' => (float) $item->total - round((float) $item->total * (float) ($item->returned_quantity ?? 0) / (float) $item->quantity, 2),
             ];
         }

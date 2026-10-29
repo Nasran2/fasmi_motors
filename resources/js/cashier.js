@@ -126,3 +126,54 @@ if (typeof document !== 'undefined') {
     const auto = document.querySelector('[data-auto-open-cashier]');
     if (auto) openCashierDialog(auto.dataset.autoOpenCashier);
 }
+
+let movementsDialog;
+export async function openCashierMovements(url) {
+    if (movementsDialog?.open) return;
+    const dialog = document.createElement('dialog');
+    movementsDialog = dialog;
+    dialog.className = 'm-auto w-[min(96vw,1100px)] max-h-[90vh] overflow-auto rounded-2xl border-0 bg-white p-5 sm:p-6 shadow-2xl backdrop:bg-slate-950/60';
+    dialog.setAttribute('aria-labelledby', 'cashier-movements-title');
+    let pending;
+    const load = async address => {
+        pending?.abort();
+        const request = new AbortController();
+        pending = request;
+        dialog.innerHTML = '<div class="flex items-center justify-between gap-4"><h2 id="cashier-movements-title" class="text-xl font-bold">Transaction details</h2><button type="button" data-close-cashier-movements class="btn-secondary" aria-label="Close transaction details">✕</button></div><p role="status" class="mt-4">Loading transactions…</p>';
+        dialog.setAttribute('aria-busy', 'true');
+        try {
+            const response = await fetch(address, {signal: request.signal, headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html'}});
+            if (!response.ok || response.redirected) throw new Error('Unable to load transactions. Refresh the cashier page and try again.');
+            const content = await response.text();
+            if (!dialog.open || request.signal.aborted) return;
+            dialog.innerHTML = content;
+            dialog.scrollTop = 0;
+            dialog.querySelector('[data-close-cashier-movements]')?.focus();
+        } catch (error) {
+            if (request.signal.aborted) return;
+            const message = dialog.querySelector('[role="status"]');
+            message.setAttribute('role', 'alert');
+            message.textContent = error.message || 'Unable to load transactions. Please try again.';
+        } finally {
+            if (pending === request) dialog.removeAttribute('aria-busy');
+        }
+    };
+    dialog.addEventListener('click', event => {
+        if (event.target.closest('[data-close-cashier-movements]')) dialog.close();
+        const page = event.target.closest('[data-movement-pagination] a');
+        if (page) { event.preventDefault(); load(page.href); }
+    });
+    dialog.addEventListener('close', () => { pending?.abort(); dialog.remove(); movementsDialog = null; }, {once: true});
+    document.body.append(dialog);
+    dialog.showModal();
+    await load(url);
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('click', event => {
+        const button = event.target.closest('[data-cashier-movements]');
+        if (!button) return;
+        event.preventDefault();
+        openCashierMovements(button.dataset.cashierMovements);
+    });
+}

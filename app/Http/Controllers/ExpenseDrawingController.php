@@ -28,6 +28,24 @@ class ExpenseDrawingController extends Controller
         return $this->listing($request, 'drawing');
     }
 
+    public function showExpense(Expense $expense)
+    {
+        return $this->showRecord($expense, 'expense');
+    }
+
+    public function showDrawing(Drawing $drawing)
+    {
+        return $this->showRecord($drawing, 'drawing');
+    }
+
+    private function showRecord(Expense|Drawing $record, string $module)
+    {
+        $record->load(['account', 'creator']);
+        abort_if($record->account_id && ! $record->account, 404);
+
+        return view('finance-management.show', compact('record', 'module'));
+    }
+
     public function createExpense()
     {
         return $this->form('expense');

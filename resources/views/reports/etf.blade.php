@@ -15,7 +15,7 @@
             <tr>
               <th class="px-4 py-3 font-bold">Month</th>
               <th class="px-4 py-3 font-bold">Technician</th>
-              <th class="px-4 py-3 font-bold">Basic Salary</th>
+              <th class="px-4 py-3 font-bold">EPF / ETF salary basic</th>
               <th class="px-4 py-3 font-bold">Company ETF %</th>
               <th class="px-4 py-3 font-bold">Company ETF Amount</th>
               <th class="px-4 py-3 font-bold">Status</th>

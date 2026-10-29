@@ -41,9 +41,9 @@
             @forelse($rows as $row)
             <tr class="hover:bg-slate-50/50 transition">
               <td class="px-4 py-3">{{ $row->transaction_date->format("d M Y") }}</td>
-<td class="px-4 py-3">{{ $row->transaction_no }}</td>
+<td class="px-4 py-3"><a href="{{ route('reports.transaction-source', $row) }}" target="_blank" rel="noopener" class="font-bold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900" aria-label="Open source for {{ $row->transaction_no }}">{{ $row->transaction_no }}</a></td>
 <td class="px-4 py-3">{{ $row->transaction_type }}</td>
-<td class="px-4 py-3">{{ $row->description }}</td>
+<td class="px-4 py-3"><a href="{{ route('reports.transaction-source', $row) }}" target="_blank" rel="noopener" class="text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900">{{ $row->description }}</a></td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->credit, 2) }}</td>
 <td class="px-4 py-3">{{ "Rs. " . number_format($row->debit, 2) }}</td>
             </tr>

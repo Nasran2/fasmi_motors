@@ -14,7 +14,7 @@
     <section class="panel p-5">
         <div class="grid gap-6 sm:grid-cols-2">
             <div><h2 class="font-black text-emerald-700">Earnings</h2><dl class="mt-3 space-y-2 text-sm">
-                @foreach(['Base earnings' => $sheet->base_earnings, 'Overtime' => $sheet->ot_amount, 'Commission' => $sheet->commission, 'Allowances' => $sheet->allowances, 'Manual additions' => $sheet->manual_additions, 'Worked-on-leave pay' => $sheet->worked_on_leave_pay] as $label => $amount)
+                @foreach(['Base earnings' => $sheet->base_earnings, 'Overtime' => $sheet->ot_amount, 'Allowances' => $sheet->allowances, 'Manual additions' => $sheet->manual_additions, 'Worked-on-leave pay' => $sheet->worked_on_leave_pay] as $label => $amount)
                 <div class="flex justify-between gap-3"><dt>{{ $label }}</dt><dd class="font-bold">{{ number_format($amount, 2) }}</dd></div>
                 @endforeach
             </dl></div>
@@ -24,7 +24,11 @@
                 @endforeach
             </dl></div>
         </div>
-        @include('technicians.partials.salary-adjustment-lines')
+        @if((float) $sheet->commission !== 0.0)<p class="mt-3 text-sm text-amber-800">Commission included in this earlier salary: Rs. {{ number_format($sheet->commission, 2) }}. This historical amount remains in its saved totals.</p>@endif
+    @if(data_get($sheet->calculation_snapshot, 'contributions.basic_salary') !== null)
+        <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
+    @endif
+    @include('technicians.partials.salary-adjustment-lines')
     </section>
     @if(in_array($sheet->status, ['Draft', 'Finalized', 'Partially Paid'], true))
     <form id="salary-adjustments" method="POST" action="{{ route('technicians.salaries.adjustments', $sheet) }}" class="panel space-y-4 p-5">

@@ -119,3 +119,65 @@ test('outer expenses can be found by bike and job references and cannot overflow
     $this->post(route('jobs.parts.outer', $this->job), array_replace($this->outerData, ['cost_price' => 99999999, 'unit_price' => 1, 'quantity' => 999999]))->assertSessionHasErrors('cost_price');
     expect($this->job->parts()->count())->toBe(1)->and(Expense::count())->toBe(1)->and(($this->balance)('main'))->toBe(-60.0);
 });
+
+test('each stock part can save edit preserve and clear its own line discount', function () {
+    $product = Product::create(['code' => 'LINE-DISC', 'name' => 'Discount Brake Pad', 'cost_price' => 40, 'selling_price' => 100, 'active' => true]);
+    StoreStock::create(['store_id' => $this->store->id, 'product_id' => $product->id, 'quantity' => 5]);
+    $this->post(route('jobs.parts.store', $this->job), ['product_id' => $product->id, 'store_id' => $this->store->id, 'quantity' => 2, 'unit_price' => 100, 'discount' => 10])->assertSessionHasNoErrors();
+    $part = $this->job->parts()->sole();
+    $edit = ['quantity' => 2, 'unit_price' => 100, 'discount' => 50];
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), $edit)->assertSessionHasNoErrors();
+    expect((float) $part->fresh()->discount)->toBe(50.0)->and((float) $part->fresh()->total)->toBe(150.0)
+        ->and((float) $part->fresh()->profit)->toBe(70.0)->and((float) $this->job->fresh()->parts_total)->toBe(150.0)
+        ->and((float) StoreStock::first()->quantity)->toBe(3.0);
+    $this->get(route('jobs.show', $this->job))->assertOk()->assertSee('id="pe-discount"', false)->assertSeeText('Line total after discount:')->assertSeeText('Discount (LKR)');
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), ['quantity' => 2, 'unit_price' => 100])->assertSessionHasNoErrors();
+    expect((float) $part->fresh()->discount)->toBe(50.0)->and((float) $part->fresh()->total)->toBe(150.0);
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), array_replace($edit, ['discount' => 0]))->assertSessionHasNoErrors();
+    expect((float) $part->fresh()->discount)->toBe(0.0)->and((float) $part->fresh()->total)->toBe(200.0);
+});
+
+test('line discounts flow to an invoice once and stay separate from the overall job discount', function () {
+    $this->post(route('jobs.parts.outer', $this->job), $this->outerData + ['quantity' => 2])->assertSessionHasNoErrors();
+    $part = $this->job->parts()->sole();
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), ['quantity' => 2, 'unit_price' => 100, 'discount' => 20])->assertSessionHasNoErrors();
+    $this->put(route('jobs.update', $this->job), ['status' => 'Received', 'discount_percentage' => 10, 'fixed_discount' => 0])->assertSessionHasNoErrors();
+    $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 0, 'payment_method' => 'Credit/Due'])->assertSessionHasNoErrors();
+    $invoice = $this->job->fresh()->invoice;
+    expect((float) $invoice->parts_amount)->toBe(180.0)->and((float) $invoice->discount)->toBe(18.0)->and((float) $invoice->total)->toBe(162.0);
+    $this->get(route('invoices.public', $invoice->public_token))->assertOk()->assertSeeText('Line discount: Rs. 20.00');
+    $this->get(route('sales.invoices.show', $invoice))->assertOk()->assertSeeText('Line discount: Rs. 20.00');
+    $this->get(route('invoices.public', ['token' => $invoice->public_token, 'format' => '80mm']))->assertOk()->assertSeeText('Line discount: Rs. 20.00');
+    $this->post(route('jobs.unlock', $this->job), ['status' => 'In Progress', 'reason' => 'Correct line discount'])->assertSessionHasNoErrors();
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), ['quantity' => 2, 'unit_price' => 100, 'discount' => 30])->assertSessionHasNoErrors();
+    expect((float) $invoice->fresh()->parts_amount)->toBe(170.0)->and((float) $invoice->fresh()->discount)->toBe(17.0)->and((float) $invoice->fresh()->total)->toBe(153.0);
+});
+
+test('discounting an outer product changes profit without reposting its purchase expense', function () {
+    $this->post(route('jobs.parts.outer', $this->job), $this->outerData)->assertSessionHasNoErrors();
+    $part = $this->job->parts()->sole();
+    $ledgerCount = AccountTransaction::count();
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), ['quantity' => 1, 'unit_price' => 100, 'discount' => 15])->assertSessionHasNoErrors();
+    expect((float) $part->fresh()->discount)->toBe(15.0)->and((float) $part->fresh()->profit)->toBe(25.0)
+        ->and((float) Expense::first()->amount)->toBe(60.0)->and(AccountTransaction::count())->toBe($ledgerCount);
+});
+
+test('invalid per-product discounts roll back totals stock and expenses', function ($discount) {
+    $this->post(route('jobs.parts.outer', $this->job), $this->outerData)->assertSessionHasNoErrors();
+    $part = $this->job->parts()->sole();
+    $ledgerCount = AccountTransaction::count();
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), ['quantity' => 2, 'unit_price' => 100, 'discount' => $discount])->assertSessionHasErrors('discount');
+    expect((float) $part->fresh()->quantity)->toBe(1.0)->and((float) $part->fresh()->total)->toBe(100.0)->and((float) $part->fresh()->discount)->toBe(0.0)
+        ->and(AccountTransaction::count())->toBe($ledgerCount)->and((float) Expense::first()->amount)->toBe(60.0);
+})->with([-1, 201, 1.234, 'invalid', null]);
+
+test('discount edits cannot bypass billed-job locks or reduce an invoice below money already received', function () {
+    $this->post(route('jobs.parts.outer', $this->job), $this->outerData)->assertSessionHasNoErrors();
+    $part = $this->job->parts()->sole();
+    $this->post(route('jobs.invoice', $this->job), ['paid_amount' => 100, 'payment_method' => 'Cash'])->assertSessionHasNoErrors();
+    $edit = ['quantity' => 1, 'unit_price' => 100, 'discount' => 10];
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), $edit)->assertSessionHasErrors('parts');
+    $this->post(route('jobs.unlock', $this->job), ['status' => 'In Progress', 'reason' => 'Review part discount'])->assertSessionHasNoErrors();
+    $this->post(route('jobs.parts.update', ['job' => $this->job, 'part' => $part]), $edit)->assertSessionHasErrors('total');
+    expect((float) $part->fresh()->discount)->toBe(0.0)->and((float) $this->job->fresh()->invoice->total)->toBe(100.0);
+});

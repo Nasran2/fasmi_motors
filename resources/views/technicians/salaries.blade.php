@@ -33,7 +33,7 @@
     <form id="salary-form" method="POST" action="{{ route('technicians.salaries.store') }}" onsubmit="updateSalaryDeductionPreview(); return !document.getElementById('save-draft-btn').disabled;" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
       @csrf<x-submission-token/>
       <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Generate Salary Sheet</h2>
-      <p class="text-xs text-slate-400">Attendance, OT slabs, commission, advances, own-bike repair installments and EPF/ETF are computed automatically.</p>
+      <p class="text-xs text-slate-400">Attendance, OT, advances, own-bike repair installments and EPF/ETF are computed automatically. Commission is paid separately from the Commission page.</p>
       
       <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div>

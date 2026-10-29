@@ -776,11 +776,7 @@ class TechnicianController extends Controller
             ]);
             TechnicianContribution::create([
                 'technician_id' => $technician->id, 'salary_sheet_id' => $sheet->id, 'month' => $calculation['salary_month'] ?? $calculation['period_start'],
-                'basic_salary' => $calculation['basic_salary'], 'employee_epf_percentage' => $technician->epf_employee_percentage,
-                'employee_epf_amount' => $calculation['epf_employee'], 'company_epf_percentage' => $technician->epf_company_percentage,
-                'company_epf_amount' => $calculation['epf_company'], 'company_etf_percentage' => $technician->etf_company_percentage,
-                'company_etf_amount' => $calculation['etf_company'],
-            ]);
+            ] + $calculation['calculation_snapshot']['contributions']);
             if ((float) ($data['manual_additions'] ?? 0) > 0) {
                 $sheet->additions()->create(['technician_id' => $technician->id, 'addition_name' => ($data['addition_name'] ?? null) ?: 'Manual addition', 'amount' => $data['manual_additions'], 'reason' => $data['addition_reason'] ?? null, 'addition_date' => today(), 'created_by' => auth()->id()]);
             }
@@ -1102,15 +1098,6 @@ class TechnicianController extends Controller
         ]);
     }
 
-    public function commissions(Request $request)
-    {
-        $records = TechnicianCommission::with(['technician', 'jobCard.intake.bike.customer', 'invoice'])->latest('earned_date')->paginate(15);
-
-        $month = TechnicianCommission::whereBetween('earned_date', [today()->startOfMonth()->toDateString(), today()->endOfMonth()->toDateString()]);
-
-        return view('technicians.commissions', ['records' => $records, 'technicians' => $this->technicians(), 'jobs' => JobCard::with('invoice')->whereNotNull('main_technician_id')->latest()->limit(100)->get(), 'stats' => ['total' => (clone $month)->sum('amount'), 'paid' => TechnicianCommission::where('status', 'Paid')->sum('amount'), 'pending' => TechnicianCommission::where('status', 'Pending')->sum('amount'), 'highest' => (clone $month)->selectRaw('technician_id,sum(amount) total')->groupBy('technician_id')->orderByDesc('total')->with('technician')->first()]]);
-    }
-
     public function commissionStore(Request $request)
     {
         $data = $request->validate(['technician_id' => ['required', 'exists:technicians,id'], 'job_card_id' => ['nullable', 'exists:job_cards,id'], 'commission_type' => ['required', 'max:100'], 'base_amount' => ['required', 'numeric', 'min:0'], 'percentage' => ['required', 'numeric', 'min:0', 'max:100'], 'amount' => ['nullable', 'numeric', 'min:0'], 'earned_date' => ['required', 'date'], 'note' => ['nullable', 'max:1000']]);
@@ -1331,6 +1318,7 @@ class TechnicianController extends Controller
             'etf_number' => ['nullable', 'max:50'],
             'epf_eligible' => ['nullable', 'boolean'],
             'etf_eligible' => ['nullable', 'boolean'],
+            'epf_etf_basic_salary' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'between:0,999999999999.99'],
             'epf_employee_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'epf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'etf_company_percentage' => ['required', 'numeric', 'min:0', 'max:100'],

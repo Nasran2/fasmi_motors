@@ -1,0 +1,1 @@
+<x-layouts::app title="Commission Details"><div class="space-y-5"><a href="{{ route('technicians.commissions') }}" class="btn-secondary">Back to Commission</a><x-flash /><section class="panel p-5">@include('technicians.partials.commission-detail')</section></div></x-layouts::app>

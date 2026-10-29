@@ -66,8 +66,8 @@ class BillDetailsService
     {
         $changedDate = $invoice->bill_date->toDateString() !== $date;
         $commissions = TechnicianCommission::where('invoice_id', $invoice->id)->lockForUpdate()->get();
-        if ($changedDate && $commissions->contains(fn ($commission) => $commission->salary_sheet_id !== null || $commission->status === 'Paid')) {
-            throw ValidationException::withMessages(['bill_date' => 'Reopen the salary sheet containing this bill’s commission before changing its date.']);
+        if ($changedDate && $commissions->contains(fn ($commission) => $commission->salary_sheet_id !== null || $commission->status === 'Paid' || (float) $commission->paid_amount > 0 || (float) $commission->deducted_amount > 0)) {
+            throw ValidationException::withMessages(['bill_date' => 'This bill has settled commission or commission linked to a salary. Resolve that settlement before changing its date.']);
         }
         $values = ['bill_date' => Carbon::parse($date)->setTimeFrom($invoice->bill_date)];
         if ($changedDate && $invoice->due_date && $invoice->bill_date->copy()->addDays(30)->isSameDay($invoice->due_date)) {

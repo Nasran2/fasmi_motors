@@ -75,7 +75,8 @@ class JobPartService
             'display_name' => isset($data['display_name']) ? trim($data['display_name']) : $part->name,
             'note' => array_key_exists('note', $data) ? $this->note($data) : $part->note,
             'quantity' => $data['quantity'], 'unit_price' => $data['unit_price'], 'selling_price' => $data['unit_price'],
-            'cost_price' => $cost, 'total' => $total, 'profit' => round($total - $this->totalCost($cost, (float) $data['quantity']), 2),
+            'cost_price' => $cost, 'discount' => $data['discount'] ?? $part->discount,
+            'total' => $total, 'profit' => round($total - $this->totalCost($cost, (float) $data['quantity']), 2),
         ]);
         $part->save();
         if ($part->is_external) {

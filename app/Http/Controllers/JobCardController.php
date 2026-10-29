@@ -368,6 +368,7 @@ class JobCardController extends Controller
             'display_name' => 'sometimes|required|string|max:255', 'note' => 'nullable|string|max:255',
             'cost_price' => 'sometimes|required|numeric|decimal:0,2|min:0|max:99999999.99',
             'unit_price' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
+            'discount' => 'sometimes|required|numeric|decimal:0,2|min:0|max:99999999.99',
             'quantity' => 'required|numeric|decimal:0,2|min:0.01|max:999999.99', 'account_id' => 'nullable|exists:accounts,id',
         ]);
         DB::transaction(function () use ($job, $partId, $data, $parts) {

@@ -52,9 +52,9 @@ class WashingCommissionService
         $amount = round((float) $job->washing_commission_amount, 2);
         $eligible = $job->washing_person_id && $base > 0 && $amount > 0;
         foreach ($records as $record) {
-            if ($record->status !== 'Pending' || $record->salary_sheet_id !== null) {
+            if ($record->status !== 'Pending' || $record->salary_sheet_id !== null || (float) $record->paid_amount > 0 || (float) $record->deducted_amount > 0) {
                 if (! $eligible || (int) $record->technician_id !== (int) $job->washing_person_id || (float) $record->base_amount !== $base || (float) $record->amount !== $amount) {
-                    throw ValidationException::withMessages(['washing_person_id' => 'This washing commission is already included in payroll or paid. Resolve its payroll entry before changing the washing assignment or amount.']);
+                    throw ValidationException::withMessages(['washing_person_id' => 'This washing commission is already settled, adjusted or included in earlier payroll. Resolve that settlement before changing the washing assignment or amount.']);
                 }
 
                 return;

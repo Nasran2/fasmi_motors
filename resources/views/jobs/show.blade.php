@@ -382,6 +382,8 @@
                         <input type="number" step="0.01" min="0" name="unit_price" id="pe-price" required class="w-full font-mono bg-white text-slate-900 p-2.5 rounded-lg" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important;">
                     </div>
                 </div>
+                <label class="block"><span class="label">Discount · LKR for this line</span><input id="pe-discount" name="discount" type="number" min="0" max="99999999.99" step="0.01" required value="0" class="field" aria-describedby="pe-discount-note"><span id="pe-discount-note" class="mt-1 block text-xs text-slate-500">Deducted once from quantity × unit price. Enter 0 for no discount.</span></label>
+                <p class="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800" aria-live="polite">Line total after discount: <span id="pe-total">Rs. 0.00</span></p>
                 <label id="pe-account-field" class="block" hidden><span class="label">Payment Account</span><select name="account_id" id="pe-account" class="field" disabled>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
                 <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                     <button type="button" id="btn-delete-part" class="btn-secondary text-xs text-red-600 border-red-200 bg-red-50 hover:bg-red-100" onclick="workshopConfirm('Are you sure you want to remove this part?').then(ok => { if (ok) document.getElementById('part-delete-form').requestSubmit(); })">🗑 Delete Part</button>
@@ -553,7 +555,7 @@ function confirmDeletePart(partId) {
 document.querySelectorAll('[data-edit-part]').forEach(button => button.addEventListener('click', () => openPartModal(JSON.parse(button.dataset.editPart))));
 
 function openPartModal(details) {
-    const {id: partId, name, cost, price, quantity: qty, note, external, account_id} = details;
+    const {id: partId, name, cost, price, quantity: qty, discount, note, external, account_id} = details;
     const modal = document.getElementById('part-edit-modal');
     const form = document.getElementById('part-edit-form');
     const delForm = document.getElementById('part-delete-form');
@@ -573,9 +575,26 @@ function openPartModal(details) {
     document.getElementById('pe-cost').value = parseFloat(cost).toFixed(2);
     document.getElementById('pe-qty').value = parseFloat(qty);
     document.getElementById('pe-price').value = parseFloat(price);
+    document.getElementById('pe-discount').value = Number(discount) || 0;
+    updatePartEditTotal();
     
     modal.showModal();
 }
+
+function updatePartEditTotal() {
+    const qty = Number(document.getElementById('pe-qty').value) || 0;
+    const price = Number(document.getElementById('pe-price').value) || 0;
+    const input = document.getElementById('pe-discount');
+    const discount = Number(input.value) || 0;
+    const gross = Math.round((qty * price + Number.EPSILON) * 100) / 100;
+    input.max = Math.min(99999999.99, Math.max(0, gross)).toFixed(2);
+    const net = qty * price - discount;
+    const rounded = Math.sign(net) * Math.round((Math.abs(net) + Number.EPSILON) * 100) / 100;
+    input.setCustomValidity(rounded < 0 ? 'Discount cannot exceed the line amount.' : '');
+    const total = Math.max(0, rounded);
+    document.getElementById('pe-total').textContent = 'Rs. ' + total.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+['pe-qty', 'pe-price', 'pe-discount'].forEach(id => document.getElementById(id).addEventListener('input', updatePartEditTotal));
 
 let currentEditingHiddenInputId = '';
 
