@@ -80,7 +80,7 @@ test('cash closing accepts only cash balances and does not change bank funds', f
     $session = CashierSession::active();
     $service = app(CashierService::class);
     $summary = $service->summary(today()->toDateString());
-    $payload = ['owner_withdrawal' => 0, 'balances' => ['main' => 390, 'washing' => 200, 'spare_parts' => 0], 'difference_reason' => 'Verified physical cash count', 'balance_version' => $service->fingerprint($summary)];
+    $payload = ['owner_withdrawal' => 0, 'closing_balance' => 590, 'difference_reason' => 'Verified physical cash count', 'balance_version' => $service->fingerprint($summary)];
     $this->post(route('cashier.close', $session), $payload)->assertSessionHasNoErrors();
     expect(Account::systemAccount('bank')->balance)->toBe(600.0)->and(array_sum($session->fresh()->cash_balances))->toEqual(590);
     $this->travel(1)->days();
@@ -93,7 +93,7 @@ test('owner cannot withdraw bank collections as spare parts cash', function () {
     $session = CashierSession::active();
     $service = app(CashierService::class);
     $summary = $service->summary(today()->toDateString());
-    $this->post(route('cashier.close', $session), ['owner_withdrawal' => 100, 'balances' => ['main' => 0, 'washing' => 0, 'spare_parts' => -100], 'balance_version' => $service->fingerprint($summary)])->assertSessionHasErrors('owner_withdrawal');
+    $this->post(route('cashier.close', $session), ['owner_withdrawal' => 100, 'closing_balance' => 0, 'balance_version' => $service->fingerprint($summary)])->assertSessionHasErrors('owner_withdrawal');
     expect($session->fresh()->status)->toBe('open');
 });
 

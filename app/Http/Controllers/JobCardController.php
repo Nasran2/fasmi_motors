@@ -286,8 +286,8 @@ class JobCardController extends Controller
     public function washingAssignment(Request $request, JobCard $job, WashingCommissionService $service)
     {
         $values = $request->validate(WashingCommissionService::rules());
-        if (! array_key_exists('washing_person_id', $values) || ! array_key_exists('washing_commission_percentage', $values)) {
-            throw ValidationException::withMessages(['washing_person_id' => 'Select a washing assignment and commission rate.']);
+        if (! array_key_exists('washing_person_id', $values) || ! array_key_exists('washing_commission_amount', $values)) {
+            throw ValidationException::withMessages(['washing_person_id' => 'Select a washing assignment and fixed commission amount.']);
         }
         DB::transaction(function () use ($job, $values, $service) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);

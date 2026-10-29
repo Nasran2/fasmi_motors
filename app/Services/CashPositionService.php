@@ -39,12 +39,16 @@ class CashPositionService
                 $opening = (float) $session->cash_opening_balances[$type];
             }
             $rows = $rows->where('category', '!=', 'cashier_opening');
-            $income = $expenses = $outgoing = $otherIn = 0.0;
+            $income = $expenses = $outgoing = $otherIn = $internalIn = $internalOut = 0.0;
             $groups = $rows->groupBy(fn ($row) => $row->reference_id ? $row->reference_type.'|'.$row->reference_id : 'entry-'.$row->id);
             foreach ($groups as $entries) {
                 $net = round($entries->sum('credit') - $entries->sum('debit'), 2);
                 $receipt = $entries->contains(fn ($row) => $row->reference_type === (new Payment)->getMorphClass()
                     ? in_array($row->reference_id, $collectedPaymentIds) : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true));
+                if ($entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep')) {
+                    $internalIn += max(0, $net);
+                    $internalOut += max(0, -$net);
+                }
                 if ($net > 0) {
                     if ($receipt) {
                         $income += $net;
@@ -59,7 +63,7 @@ class CashPositionService
                 }
             }
             $result[$type] = ['opening' => round($opening, 2), 'income' => round($income, 2), 'other_in' => round($otherIn, 2),
-                'expenses' => round($expenses, 2), 'outgoing' => round($outgoing, 2),
+                'internal_in' => round($internalIn, 2), 'internal_out' => round($internalOut, 2), 'expenses' => round($expenses, 2), 'outgoing' => round($outgoing, 2),
                 'closing' => round($opening + $rows->sum('credit') - $rows->sum('debit'), 2)];
         }
 

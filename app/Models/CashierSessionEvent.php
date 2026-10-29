@@ -11,7 +11,7 @@ class CashierSessionEvent extends Model
 
     protected function casts(): array
     {
-        return ['details' => 'array', 'cash_amount' => 'decimal:2', 'washing_commission_percentage' => 'decimal:2'];
+        return ['details' => 'array', 'cash_amount' => 'decimal:2', 'washing_commission_amount' => 'decimal:2', 'washing_commission_percentage' => 'decimal:2'];
     }
 
     public function washingPerson(): BelongsTo

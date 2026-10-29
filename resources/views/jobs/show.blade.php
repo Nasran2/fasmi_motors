@@ -24,7 +24,7 @@
 <x-bill-details-form :job="$job"/>
 @include('jobs.partials.spare-parts')
 @if($job->status !== 'Cancelled')
-<section class="panel mb-5"><form method="POST" action="{{ route('jobs.washing-assignment', $job) }}" class="space-y-4">@csrf<x-submission-token />@method('PUT')<div class="flex flex-wrap justify-between gap-2"><h2 class="font-bold">Washing Assignment</h2><p class="text-sm text-blue-700">@if($job->washing_person_id)Washing commission: Rs. {{ number_format((float) $job->washing_total * (float) $job->washing_commission_percentage / 100, 2) }}@else Assign a washing person to earn commission @endif</p></div><x-washing-assignment :job="$job" :technicians="$technicians" /><div class="flex justify-end"><button class="btn-secondary">Update Washing Assignment</button></div></form></section>
+<section class="panel mb-5"><form method="POST" action="{{ route('jobs.washing-assignment', $job) }}" class="space-y-4">@csrf<x-submission-token />@method('PUT')<div class="flex flex-wrap justify-between gap-2"><h2 class="font-bold">Washing Assignment</h2><p class="text-sm text-blue-700">@if($job->washing_person_id)Washing commission: Rs. {{ number_format((float) $job->washing_total > 0 ? (float) $job->washing_commission_amount : 0, 2) }}@else Assign a washing person to earn commission @endif</p></div><x-washing-assignment :job="$job" :technicians="$technicians" /><div class="flex justify-end"><button class="btn-secondary">Update Washing Assignment</button></div></form></section>
 @endif
 <div class="grid gap-5 xl:grid-cols-3" x-data="{
     discountPercentage: @js(old('discount_percentage', $job->discount_percentage ?? 0)),

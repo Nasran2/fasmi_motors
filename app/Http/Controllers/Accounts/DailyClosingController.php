@@ -55,23 +55,33 @@ class DailyClosingController extends BaseAccountController
             $snapshot = $cashier?->status === 'closed' ? $cashier->closing_summary : null;
             $cash = $snapshot['cash_accounts'] ?? $summary['cash_accounts'];
             $withdrawal = (float) ($snapshot['closing_withdrawal'] ?? 0);
-            $rows = collect(CashPositionService::ACCOUNTS)->map(function ($label, $type) use ($cash, $cashier, $withdrawal) {
+            $washingTransfer = (float) ($snapshot['closing_washing_transfer'] ?? 0);
+            $rows = collect(CashPositionService::ACCOUNTS)->map(function ($label, $type) use ($cash, $cashier, $withdrawal, $washingTransfer) {
                 $account = $cash[$type];
-                $expected = $account['closing'] - ($type === 'spare_parts' ? $withdrawal : 0);
-                $actual = $cashier?->status === 'closed' ? ($cashier->cash_balances[$type] ?? $expected) : $expected;
+                $sweepChange = match ($type) {
+                    'main' => $washingTransfer, 'washing' => -$washingTransfer, default => 0
+                };
+                $expected = $account['closing'] - ($type === 'spare_parts' ? $withdrawal : 0) + $sweepChange;
+                $actual = $cashier?->status === 'closed' ? ($cashier->cash_balances[$type] ?? null) : $expected;
 
-                return [$label.' (Cash)', $account['opening'], $account['income'] + $account['other_in'],
-                    $account['outgoing'] + ($type === 'spare_parts' ? $withdrawal : 0), $expected, $actual, $actual - $expected];
+                return [$label.' (Cash)', $account['opening'], $account['income'] + $account['other_in'] + max(0, $sweepChange),
+                    $account['outgoing'] + ($type === 'spare_parts' ? $withdrawal : 0) + max(0, -$sweepChange), $expected, $actual, $actual === null ? null : $actual - $expected];
             })->values()->all();
+            $bank = $snapshot['accounts']['bank'] ?? $summary['accounts']['bank'];
+            $actualBank = $cashier?->status === 'closed'
+                ? ($snapshot['closing_bank_balance'] ?? $cashier->actual_balances['bank'] ?? null)
+                : $bank['closing'];
+            $rows[] = ['Bank Account (Non-cash)', $bank['opening'], $bank['income'], $bank['outgoing'], $bank['closing'], $actualBank,
+                $actualBank === null ? null : round($actualBank - $bank['closing'], 2)];
         } else {
             $rows = collect(CashierService::ACCOUNTS)->map(function ($label, $type) use ($summary, $closing) {
                 $account = $summary['accounts'][$type];
                 $expected = $closing ? (float) $closing->{$type.'_closing_balance'} : $account['closing'];
-                $actual = $closing ? (float) $closing->{$type.'_actual_balance'} : $expected;
+                $actual = $closing ? ($closing->{$type.'_actual_balance'} === null ? null : (float) $closing->{$type.'_actual_balance'}) : $expected;
 
                 return [$label, $closing ? (float) $closing->{$type.'_opening_balance'} : $account['opening'],
                     $closing ? (float) $closing->{$type.'_income'} : $account['income'],
-                    $closing ? (float) $closing->{$type.'_expense'} : $account['outgoing'], $expected, $actual, $actual - $expected];
+                    $closing ? (float) $closing->{$type.'_expense'} : $account['outgoing'], $expected, $actual, $actual === null ? null : $actual - $expected];
             })->values()->all();
         }
         if ($request->input('format') === 'excel') {

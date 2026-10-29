@@ -10,4 +10,8 @@ Migration 2026_10_29_000002 corrects existing pending automatic job commissions 
 
 Validation on 29 October 2026: the full suite passes 768/772 tests (8,665 assertions), including all washing, cashier and salary-preview checks. The four previously identified stock/display failures remain. Build, PHP formatting, template syntax and browser checks pass. See `docs/cashier.md` for the popup and repeated-opening validation.
 
-Washing-person commission is separate from the regular technician commission: washing charge × the percentage saved on the job. Opening the cashier provides today’s person and editable 10% default; the checkbox can persist a new default. Normal/quick jobs can override both values. Billing creates one pending Washing commission, included in that person’s salary preview. Updating an eligible pending assignment updates that record; paid/payroll-linked records are protected. Cash collection order and cash-only closing remain unchanged.
+Washing-person commission is a fixed amount per job containing washing, initially Rs. 60. Cashier opening and individual jobs can override it, including zero to disable it. The checkbox at opening saves a new default. Billing creates one pending fixed Washing commission; changing the washing charge does not multiply or scale it. Paid/payroll-linked commissions remain protected and retain historical earnings.
+
+Cashier closing asks for the physical closing balance and auto-fills editable Main and Spare Parts allocations; their sum must match the cash count. It automatically transfers washing cash, after expenses, into Main Account. Non-cash washing allocations and bank balances remain unchanged. The paired ledger transfer changes account allocations without creating another receipt or expense.
+
+Latest validation: full suite 776/779 passed; the three existing inventory failures remain. All washing commission, migration, cashier and salary-preview tests pass.

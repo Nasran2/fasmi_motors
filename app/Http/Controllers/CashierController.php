@@ -27,24 +27,40 @@ class CashierController extends Controller
         $transactions = $summary['collections']->where('channel', 'cash');
         $suggestedOpening = $service->suggestedOpening();
         $events = $session?->events()->with('washingPerson', 'creator')->latest('id')->get() ?? collect();
+        $canCorrectOpening = $service->canCorrectOpening($session);
+        $canRecordOpening = ! $session && $date < today()->toDateString();
+        $closing = DailyClosing::whereDate('closing_date', $date)->first();
         $history = CashierSession::orderByDesc('session_date')->paginate(15)->withQueryString();
 
-        return view('cashier.index', compact('active', 'date', 'session', 'summary', 'balanceVersion', 'transactions', 'suggestedOpening', 'history', 'events'));
+        return view('cashier.index', compact('active', 'date', 'session', 'summary', 'balanceVersion', 'transactions', 'suggestedOpening', 'history', 'events', 'canCorrectOpening', 'canRecordOpening', 'closing'));
     }
 
     public function openingPopup(Request $request, CashierService $service, WashingCommissionService $washing)
     {
+        $request->validate(['date' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'edit' => 'nullable|boolean']);
         $active = CashierSession::active();
-        if ($active) {
+        $editing = $request->boolean('edit');
+        $openingDate = $editing ? $request->input('date', today()->toDateString()) : today()->toDateString();
+        $editingSession = $editing ? CashierSession::whereDate('session_date', $openingDate)->first() : null;
+        $recording = $editing && ! $editingSession && $openingDate < today()->toDateString();
+        if ($editing && ! $recording && ! $service->canCorrectOpening($editingSession)) {
+            return response('Choose a saved cashier opening dated today or earlier.', 409);
+        }
+        if ($active && ! $editing) {
             return response('A cashier is already open. Review and close it before opening again.', 409);
         }
         $todaySession = CashierSession::whereDate('session_date', today())->first();
-        $suggestedOpening = $service->suggestedOpening();
+        $summary = $service->summary($openingDate);
+        $openingBalances = $editing
+            ? collect($summary['cash_accounts'])->map(fn ($account) => $account['opening'])->all()
+            : $service->openingDefaults();
+        $suggestedOpening = round(array_sum($openingBalances), 2);
+        $balanceVersion = $service->fingerprint($summary);
         $washingPerson = $todaySession?->washing_person_id;
-        $defaultPercentage = $washing->defaultPercentage();
+        $defaultAmount = $washing->defaultAmount();
         $technicians = Technician::where('active', true)->orderBy('name')->get();
 
-        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultPercentage', 'technicians'));
+        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active'));
     }
 
     public function collections(Request $request)
@@ -73,8 +89,8 @@ class CashierController extends Controller
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'nullable|string|max:1000',
             'save_washing_default' => 'nullable|boolean',
-        ] + WashingCommissionService::rules());
-        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_percentage'])), $request->boolean('save_washing_default'));
+        ] + $this->openingAllocationRules() + WashingCommissionService::rules());
+        $service->open((float) $values['opening_balance'], $values['opening_reason'] ?? null, array_intersect_key($values, array_flip(['washing_person_id', 'washing_commission_amount'])), $request->boolean('save_washing_default'), $values['opening_balances'] ?? null, $values['balance_version'] ?? null);
 
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'redirect' => route('cashier.index')]);
@@ -83,14 +99,61 @@ class CashierController extends Controller
         return redirect()->route('cashier.index')->with('success', 'Cashier opened. Job cards, quick jobs and parts sales are now available.');
     }
 
+    private function openingAllocationRules(): array
+    {
+        return [
+            'opening_balances' => 'sometimes|array:main,spare_parts,washing',
+            'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|between:0,999999999999.99',
+            'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|between:0,999999999999.99',
+            'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|between:0,999999999999.99',
+            'balance_version' => 'sometimes|required|string|size:64',
+        ];
+    }
+
+    public function correctOpening(Request $request, CashierSession $cashier, CashierService $service)
+    {
+        $values = $request->validate([
+            'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'opening_reason' => 'required|string|max:1000',
+            'opening_balances' => 'required|array:main,spare_parts,washing',
+            'balance_version' => 'required|string|size:64',
+        ] + $this->openingAllocationRules());
+        $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version']);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
+        }
+
+        return redirect()->route('cashier.index', ['date' => $cashier->session_date->toDateString()])->with('success', 'Opening balances corrected. The account changes are recorded in cashier history.');
+    }
+
+    public function recordHistoricalOpening(Request $request, CashierService $service)
+    {
+        $values = $request->validate([
+            'date' => 'required|date_format:Y-m-d|before:today',
+            'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'opening_reason' => 'required|string|max:1000',
+            'opening_balances' => 'required|array:main,spare_parts,washing',
+            'balance_version' => 'required|string|size:64',
+        ] + $this->openingAllocationRules());
+        $service->recordHistoricalOpening($values['date'], (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version']);
+        $redirect = route('cashier.index', ['date' => $values['date']]);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'redirect' => $redirect]);
+        }
+
+        return redirect($redirect)->with('success', 'Historical opening saved with its reason. Recorded cash counts are preserved.');
+    }
+
     public function close(Request $request, CashierSession $cashier, CashierService $service)
     {
         $values = $request->validate([
             'owner_withdrawal' => 'required|numeric|decimal:0,2|min:0|max:999999999999.99',
-            'owner_name' => 'nullable|string|max:100', 'balances' => 'required|array:main,washing,spare_parts',
-            'balances.main' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
-            'balances.washing' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
-            'balances.spare_parts' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'owner_name' => 'nullable|string|max:100',
+            'closing_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'balances' => 'sometimes|array:main,spare_parts,bank',
+            'balances.main' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'balances.spare_parts' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'balances.bank' => 'sometimes|required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'difference_reason' => 'nullable|string|max:1000', 'balance_version' => 'required|string|size:64',
         ]);
         $service->close($cashier, $values);
@@ -110,7 +173,7 @@ class CashierController extends Controller
             }
             $cashier->update(['status' => 'open', 'reopen_reason' => $values['reason']]);
             $cashier->events()->create(['action' => 'reopened', 'cash_amount' => $service->suggestedOpening(),
-                'washing_person_id' => $cashier->washing_person_id, 'washing_commission_percentage' => $cashier->washing_commission_percentage,
+                'washing_person_id' => $cashier->washing_person_id, 'washing_commission_amount' => $cashier->washing_commission_amount,
                 'details' => ['reason' => $values['reason']], 'created_by' => auth()->id()]);
             DailyClosing::whereDate('closing_date', today())->update(['status' => 'reopened', 'reopen_reason' => $values['reason'], 'reopened_by' => auth()->id(), 'reopened_at' => now()]);
         });

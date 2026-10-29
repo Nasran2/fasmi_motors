@@ -54,6 +54,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::get('cashier/opening-popup', [CashierController::class, 'openingPopup'])->name('cashier.opening-popup');
     Route::get('cashier/collections', [CashierController::class, 'collections'])->name('cashier.collections');
     Route::post('cashier/open', [CashierController::class, 'open'])->name('cashier.open');
+    Route::post('cashier/historical-opening', [CashierController::class, 'recordHistoricalOpening'])->name('cashier.historical-opening');
+    Route::post('cashier/{cashier}/opening-balances', [CashierController::class, 'correctOpening'])->name('cashier.opening-balances');
     Route::post('cashier/{cashier}/close', [CashierController::class, 'close'])->name('cashier.close');
     Route::post('cashier/{cashier}/reopen', [CashierController::class, 'reopen'])->name('cashier.reopen');
     Route::get('dashboard', DashboardController::class)->name('dashboard');

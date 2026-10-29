@@ -21,10 +21,8 @@ beforeEach(function () {
     $this->service = app(CashierService::class);
     $this->closeData = function (float $withdrawal = 0, array $overrides = []) {
         $summary = $this->service->summary(today()->toDateString());
-        $balances = collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all();
-        $balances['spare_parts'] -= $withdrawal;
 
-        return array_replace_recursive(['owner_withdrawal' => $withdrawal, 'owner_name' => 'Owner', 'balances' => $balances, 'balance_version' => $this->service->fingerprint($summary)], $overrides);
+        return array_replace(['owner_withdrawal' => $withdrawal, 'owner_name' => 'Owner', 'closing_balance' => $summary['cash_in_hand'] - $withdrawal, 'balance_version' => $this->service->fingerprint($summary)], $overrides);
     };
 });
 
@@ -56,7 +54,7 @@ test('opening uses previous cash balances and rejects duplicate openings', funct
 
 test('opening correction needs a reason and is recorded once in opening rather than income', function () {
     $this->post(route('cashier.open'), ['opening_balance' => 3200])->assertSessionHasErrors('opening_reason');
-    $this->post(route('cashier.open'), ['opening_balance' => 3200, 'opening_reason' => 'Verified carried cash'])->assertSessionHasNoErrors();
+    $this->post(route('cashier.open'), ['opening_balance' => 3200, 'opening_reason' => 'Verified carried cash', 'opening_balances' => ['main' => 1200, 'spare_parts' => 2000, 'washing' => 0]])->assertSessionHasNoErrors();
     $summary = $this->service->summary(today()->toDateString());
     expect($summary['accounts']['main']['opening'])->toBe(1200.0)
         ->and($summary['accounts']['main']['income'])->toBe(0.0)
@@ -65,7 +63,7 @@ test('opening correction needs a reason and is recorded once in opening rather t
 
 test('closing records owner drawing only in parts and carries verified balances to next opening', function () {
     $session = $this->service->open(3000, null);
-    $this->post(route('cashier.close', $session), ($this->closeData)(300, ['balances' => ['main' => 950], 'difference_reason' => 'Verified physical cash count']))->assertSessionHasNoErrors();
+    $this->post(route('cashier.close', $session), ($this->closeData)(300, ['closing_balance' => 2650, 'difference_reason' => 'Verified physical cash count']))->assertSessionHasNoErrors();
     expect($session->fresh()->status)->toBe('closed')
         ->and(Account::systemAccount('spare_parts')->balance)->toBe(1700.0)
         ->and(Account::systemAccount('main')->balance)->toBe(950.0)
@@ -80,7 +78,7 @@ test('closing records owner drawing only in parts and carries verified balances 
 
 test('changed balances require an explanation and excessive withdrawal cannot post', function () {
     $session = $this->service->open(3000, null);
-    $this->post(route('cashier.close', $session), ($this->closeData)(100, ['balances' => ['main' => 500]]))->assertSessionHasErrors('difference_reason');
+    $this->post(route('cashier.close', $session), ($this->closeData)(100, ['closing_balance' => 2400]))->assertSessionHasErrors('difference_reason');
     $this->post(route('cashier.close', $session), ($this->closeData)(2001))->assertSessionHasErrors('owner_withdrawal');
     expect($session->fresh()->status)->toBe('open')->and(Drawing::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
 });
@@ -203,7 +201,7 @@ test('closing a forgotten previous day carries its verified balance into today',
     $session = $this->service->open(3000, null);
     $this->travel(1)->days();
     $summary = $this->service->summary($session->session_date->toDateString());
-    $this->post(route('cashier.close', $session), ['owner_withdrawal' => 100, 'balances' => ['main' => 900, 'washing' => 0, 'spare_parts' => 1900], 'difference_reason' => 'Yesterday verified balance', 'balance_version' => $this->service->fingerprint($summary)])->assertSessionHasNoErrors();
+    $this->post(route('cashier.close', $session), ['owner_withdrawal' => 100, 'closing_balance' => 2800, 'difference_reason' => 'Yesterday verified balance', 'balance_version' => $this->service->fingerprint($summary)])->assertSessionHasNoErrors();
     $this->get(route('cashier.index'))->assertOk()->assertViewHas('suggestedOpening', 2800.0);
     $this->post(route('cashier.open'), ['opening_balance' => 2800])->assertSessionHasNoErrors();
     expect(CashierSession::isOpenToday())->toBeTrue();

@@ -84,7 +84,7 @@ class QuickJobController extends Controller
                 'is_staff_bike' => $request->boolean('is_technician_bike') || (bool) $bike?->is_technician_bike,
                 'staff_bike_owner_id' => $request->boolean('is_technician_bike') ? $data['technician_id'] : $bike?->technician_id,
                 'main_technician_id' => $data['main_technician_id'] ?? null,
-                'washing_person_id' => $data['washing_person_id'], 'washing_commission_percentage' => $data['washing_commission_percentage'],
+                'washing_person_id' => $data['washing_person_id'], 'washing_commission_amount' => $data['washing_commission_amount'],
                 'number' => 'JOB-'.now()->format('ymd').'-'.Str::upper(Str::random(6)),
                 'status' => ! empty($data['main_technician_id']) ? 'Assigned' : 'Received', 'priority' => 'Normal',
                 'service_total' => $data['service_total'] ?? 0, 'labor_total' => $data['labor_total'] ?? 0,

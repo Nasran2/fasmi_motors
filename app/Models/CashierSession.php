@@ -17,7 +17,7 @@ class CashierSession extends Model
     {
         return [
             'session_date' => 'date', 'opening_balance' => 'decimal:2',
-            'washing_commission_percentage' => 'decimal:2', 'owner_withdrawal' => 'decimal:2', 'closing_summary' => 'array',
+            'washing_commission_amount' => 'decimal:2', 'washing_commission_percentage' => 'decimal:2', 'owner_withdrawal' => 'decimal:2', 'closing_summary' => 'array',
             'actual_balances' => 'array', 'cash_balances' => 'array', 'cash_opening_balances' => 'array', 'opened_at' => 'datetime', 'closed_at' => 'datetime',
         ];
     }
