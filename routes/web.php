@@ -60,6 +60,8 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::post('cashier/open', [CashierController::class, 'open'])->name('cashier.open');
     Route::post('cashier/historical-opening', [CashierController::class, 'recordHistoricalOpening'])->name('cashier.historical-opening');
     Route::post('cashier/{cashier}/opening-balances', [CashierController::class, 'correctOpening'])->name('cashier.opening-balances');
+    Route::get('cashier/{cashier}/account-total-popup', [CashierController::class, 'accountTotalPopup'])->name('cashier.account-total-popup');
+    Route::post('cashier/{cashier}/account-total', [CashierController::class, 'correctAccountTotal'])->name('cashier.account-total');
     Route::get('cashier/{cashier}/closing-popup', [CashierController::class, 'closingPopup'])->name('cashier.closing-popup');
     Route::post('cashier/{cashier}/closing-balances', [CashierController::class, 'correctClosing'])->name('cashier.closing-balances');
     Route::post('cashier/{cashier}/close', [CashierController::class, 'close'])->name('cashier.close');

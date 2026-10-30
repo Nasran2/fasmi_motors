@@ -9,6 +9,7 @@ use App\Models\DailyClosing;
 use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\AccountTransactionSourceService;
+use App\Services\CashierAccountBalanceService;
 use App\Services\CashierClosingHistoryService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
@@ -116,7 +117,7 @@ class CashierController extends Controller
             ?? ($session->cash_balances ? array_sum($session->cash_balances) : null);
         $closingVersion = app(CashierClosingHistoryService::class)->version($session);
         $canEdit = ! $event && $session->status === 'closed' && $request->user()->canAccess('account.daily_closing');
-        $audit = $session->events()->with('creator', 'washingPerson')->whereIn('action', ['closed', 'closing_corrected'])->latest('id')->get();
+        $audit = $session->events()->with('creator', 'washingPerson')->whereIn('action', ['closed', 'closing_corrected', 'account_balance_corrected'])->latest('id')->get();
         $query = AccountTransaction::posted()->whereIn('account_id', collect(CashierService::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date);
         if (isset($summary['closing_transaction_ids'])) {
             $query->whereIn('id', $summary['closing_transaction_ids']);
@@ -127,6 +128,39 @@ class CashierController extends Controller
         $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
 
         return view('cashier.closing-popup', compact('session', 'date', 'isToday', 'event', 'liveClosing', 'summary', 'balanceVersion', 'expectedBalances', 'closing', 'savedBalances', 'savedCash', 'closingVersion', 'canEdit', 'audit', 'rows', 'details'));
+    }
+
+    private function accountTotalRules(): array
+    {
+        return [
+            'account' => 'required|in:main,spare_parts',
+            'account_addition' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'owner_withdrawal' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'balance_version' => 'required|string|size:64',
+        ] + OutgoingFundingService::rules();
+    }
+
+    public function accountTotalPopup(Request $request, CashierSession $cashier, CashierAccountBalanceService $service)
+    {
+        $values = $request->validate($this->accountTotalRules());
+        $preview = $service->preview($cashier, $values);
+
+        return view('cashier.account-total-popup', compact('cashier', 'values', 'preview'));
+    }
+
+    public function correctAccountTotal(Request $request, CashierSession $cashier, CashierAccountBalanceService $service)
+    {
+        $values = $request->validate($this->accountTotalRules() + [
+            'total_balance' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'reason' => 'required|string|min:3|max:1000',
+        ]);
+        $result = $service->correct($cashier, $values);
+        if ($request->expectsJson()) {
+            return response()->json($result);
+        }
+
+        return redirect()->route('cashier.index', ['date' => $cashier->session_date->toDateString()])
+            ->with('success', 'Account total corrected. The reason is recorded and the balance carries forward.');
     }
 
     public function correctClosing(Request $request, CashierSession $cashier, CashierClosingHistoryService $service)

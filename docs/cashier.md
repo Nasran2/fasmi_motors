@@ -96,3 +96,13 @@ Users with the existing Daily Closing permission can expand **Edit saved closing
 Later recorded openings and closing counts are preserved. An account correction is reconciled at the next recorded opening checkpoint, with the reason retained. Physical count corrections change the selected closing remainder, while later saved physical openings remain as recorded. Stale closing-edit forms are rejected. Original close events remain viewable after corrections.
 
 No new migration is required. These changes were authored locally without running tests or changing live data. Frontend assets were rebuilt for the user's manual testing.
+
+## Editing the full Main or Spare Parts total while closing
+
+Each Main/Spare Parts **Account balance after addition** card has an **Edit total** button for users with Daily Closing permission. Its popup shows the total currently displayed (including the entered daily addition), accepts the corrected full account total and requires a reason. Saving immediately posts only the difference as a `cashier_account_balance_correction` adjustment to that account's carried funds. Physical cashier cash, daily additions, pending withdrawals and other accounts remain unchanged.
+
+The server recomputes the displayed total from the saved account base, entered addition and selected opening-funded withdrawal; it does not trust a submitted old total. Account locks and the closing balance fingerprint reject a stale popup. The correction event saves the old/new displayed totals, actual ledger balance before/after, difference, pending amounts, operator and reason. It appears in both daily event history and the closing audit popup.
+
+For example, a displayed Main total of Rs. 30,598 corrected to Rs. 30,000 posts a Rs. 598 decrease. The close form updates its account base and full total without resetting unsaved additions or counted cash. Completing the closing still posts its allocations and withdrawals separately. Future ledgers and opening suggestions include the saved correction; it is not a one-time display override, receipt or expense. Existing saved opening/closing count records are not rewritten.
+
+No new migration is required. These changes were authored locally without running tests or changing live data; frontend assets were rebuilt.

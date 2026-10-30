@@ -64,7 +64,7 @@ final class RoutePermission
             return collect(['account.daily_closing', 'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
                 ->contains(fn ($permission) => $user->canAccess($permission));
         }
-        if ($routeName === 'cashier.closing-balances') {
+        if (in_array($routeName, ['cashier.closing-balances', 'cashier.account-total-popup', 'cashier.account-total'], true)) {
             return $user->canAccess('account.daily_closing');
         }
         if ($routeName === 'cashier.reopen') {

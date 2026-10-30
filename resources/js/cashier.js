@@ -24,6 +24,7 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         allocationConfig,
         dailyAdditionsMode: allocationConfig !== null,
         additions,
+        savedAccountCorrections: {main:false, spare_parts:false},
         independent: drawerExpected !== null,
         withdrawal: initialWithdrawal,
         withdrawalFunding: initialWithdrawalFunding,
@@ -76,6 +77,29 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         },
         closingAccountBalance(type) {
             return (this.cents(this.accountAdditionBase(type)) + this.cents(this.additions[type])) / 100;
+        },
+        editAccountTotal(type, button) {
+            const form = button.closest('form');
+            const params = new URLSearchParams({account:type, account_addition:this.additions[type], owner_withdrawal:this.withdrawal || 0, balance_version:form.elements.namedItem('balance_version').value});
+            if (this.cents(this.withdrawal) > 0) for (const [name, value] of new FormData(form)) {
+                if (name.startsWith('funding[')) params.append(name, value);
+            }
+            openCashierAccountTotal(`${button.dataset.accountTotalUrl}?${params}`, form, button);
+        },
+        applyAccountTotal(data) {
+            this.allocationConfig.accounts = data.allocation_accounts;
+            this.expected = data.expected;
+            this.cashierFunds = data.cashier_funds;
+            this.drawerExpected = data.cash_in_hand;
+            this.savedAccountCorrections[data.account] = true;
+            this.$el.elements.namedItem('balance_version').value = data.balance_version;
+            this.$el.querySelectorAll('[data-funding-source] option').forEach(option => {
+                const source = data.funding_options.find(item => item.value === option.value);
+                if (!source) return;
+                option.dataset.unavailable = source.disabled ? '1' : '0';
+                option.disabled = source.disabled;
+                option.textContent = `${source.label} · Rs. ${this.money(source.balance)}${source.disabled ? ' · Cashier closed' : ''}`;
+            });
         },
         expectedBalance(type) {
             return (this.cents(this.expected[type]) + (type === 'main' ? this.cents(this.expected.washing) : 0) - this.withdrawalTotals[type]) / 100;
@@ -367,3 +391,56 @@ if (typeof document !== 'undefined') document.addEventListener('click', event =>
     event.preventDefault();
     openCashierClosing(button.dataset.cashierClosing);
 });
+
+
+let accountTotalDialog;
+export async function openCashierAccountTotal(url, sourceForm, trigger) {
+    if (accountTotalDialog?.open) return;
+    const dialog = document.createElement('dialog');
+    accountTotalDialog = dialog;
+    dialog.className = 'm-auto w-[min(94vw,640px)] max-h-[90vh] overflow-auto rounded-2xl border-0 bg-white p-6 shadow-2xl backdrop:bg-slate-950/60';
+    dialog.setAttribute('aria-labelledby', 'account-total-title');
+    dialog.innerHTML = '<header class="flex justify-between gap-4"><h2 id="account-total-title" class="text-xl font-black">Edit account total</h2><button type="button" data-close-account-total class="btn-secondary">✕</button></header><p class="mt-4" role="status">Loading account balance…</p>';
+    const request = new AbortController();
+    dialog.addEventListener('click', event => { if (event.target.closest('[data-close-account-total]')) dialog.close(); });
+    dialog.addEventListener('close', () => { request.abort(); dialog.remove(); accountTotalDialog = null; trigger?.focus(); }, {once:true});
+    document.body.append(dialog); dialog.showModal();
+    try {
+        const response = await fetch(url, {signal:request.signal, headers:{'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest'}});
+        if (!response.ok || response.redirected) {
+            const data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : {};
+            throw new Error(Object.values(data.errors ?? {}).flat().join(' ') || data.message || 'Unable to load this account balance. Refresh the cashier page and try again.');
+        }
+        const content = await response.text();
+        if (!dialog.open) return;
+        dialog.innerHTML = content;
+        const form = dialog.querySelector('[data-account-total-form]');
+        const amount = form.elements.namedItem('total_balance');
+        const update = () => {
+            const delta = (Math.round((Number(amount.value) || 0) * 100) - Math.round(Number(amount.dataset.previousTotal) * 100)) / 100;
+            dialog.querySelector('[data-account-correction-delta]').textContent = `Account correction: ${delta > 0 ? '+' : ''}Rs. ${delta.toLocaleString('en-LK', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        };
+        amount.addEventListener('input', update); update(); amount.focus(); amount.select();
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (form.dataset.submitting === 'true' || !form.reportValidity()) return;
+            form.dataset.submitting = 'true';
+            const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
+            let alert = form.querySelector('[data-account-total-errors]');
+            if (!alert) { alert = document.createElement('p'); alert.dataset.accountTotalErrors = 'true'; alert.className = 'rounded-xl bg-red-50 p-3 text-sm text-red-800'; alert.setAttribute('role','alert'); alert.tabIndex = -1; form.prepend(alert); }
+            alert.hidden = true;
+            try {
+                const result = await fetch(form.action, {method:'POST', body:new FormData(form), headers:{'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest'}});
+                const data = await result.json();
+                if (!result.ok || !data.success) { alert.textContent = Object.values(data.errors ?? {}).flat().join(' ') || data.message || 'Unable to save the account total.'; alert.hidden = false; alert.focus(); return; }
+                sourceForm.dispatchEvent(new CustomEvent('cashier-account-total-updated', {bubbles:true, detail:data}));
+                dialog.close();
+            } catch { alert.textContent = 'Unable to save. Refresh the cashier page to check the account balance before trying again.'; alert.hidden = false; alert.focus(); }
+            finally { delete form.dataset.submitting; submit.disabled = false; }
+        });
+    } catch (error) {
+        if (request.signal.aborted) return;
+        const message = dialog.querySelector('[role="status"]');
+        if (message) { message.setAttribute('role','alert'); message.textContent = error.message; }
+    }
+}
