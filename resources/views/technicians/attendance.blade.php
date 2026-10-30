@@ -9,6 +9,12 @@
         <p class="page-subtitle">Track technician In/Out punches, working minutes, OT slabs, and attendance status</p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <a href="{{ route('technicians.attendance.export', request()->query()) }}" class="btn-secondary flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800" title="Export matching attendance to Excel">
+          📊 Export Excel
+        </a>
+        <a href="{{ route('technicians.attendance.export', array_merge(request()->query(), ['format' => 'pdf'])) }}" target="_blank" class="btn-secondary flex items-center gap-1.5 text-rose-700 hover:text-rose-800" title="Export matching attendance to PDF">
+          📄 Export PDF
+        </a>
         <button type="button" onclick="openImportModal()" class="btn-secondary flex items-center gap-1">
           📥 Import Excel
         </button>
@@ -270,8 +276,14 @@
           @endforeach
         </select>
       </div>
-      <div class="pt-6">
-        <button class="btn-secondary w-full">Apply Filters</button>
+      <div class="pt-6 flex gap-2">
+        <button type="submit" class="btn-secondary flex-1">Apply Filters</button>
+        <a href="{{ route('technicians.attendance.export', request()->query()) }}" class="btn-secondary flex items-center justify-center px-3 text-emerald-700 hover:text-emerald-800 font-bold" title="Export filtered records to Excel (.xlsx)">
+          📊 Excel
+        </a>
+        <a href="{{ route('technicians.attendance.export', array_merge(request()->query(), ['format' => 'pdf'])) }}" target="_blank" class="btn-secondary flex items-center justify-center px-3 text-rose-700 hover:text-rose-800 font-bold" title="Export filtered records to PDF">
+          📄 PDF
+        </a>
       </div>
     </form>
 
@@ -293,6 +305,21 @@
 
     {{-- Table List --}}
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white">
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3.5 border-b border-slate-200 bg-slate-50/70">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-700">Attendance Records</span>
+          <span class="rounded-full bg-slate-200/80 px-2 py-0.5 text-[11px] font-extrabold text-slate-700">{{ $records->total() }}</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <a href="{{ route('technicians.attendance.export', request()->query()) }}" class="font-bold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1">
+            📊 Export Excel
+          </a>
+          <span class="text-slate-300">|</span>
+          <a href="{{ route('technicians.attendance.export', array_merge(request()->query(), ['format' => 'pdf'])) }}" target="_blank" class="font-bold text-rose-700 hover:text-rose-800 hover:underline flex items-center gap-1">
+            📄 Export PDF
+          </a>
+        </div>
+      </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-xs whitespace-nowrap">
           <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">

@@ -184,6 +184,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::get('technicians/create', [TechnicianController::class, 'create'])->name('technicians.create');
     Route::get('technicians/{technician}/edit', [TechnicianController::class, 'edit'])->name('technicians.edit');
     Route::get('technicians/attendance', [TechnicianController::class, 'attendanceIndex'])->name('technicians.attendance.index');
+    Route::get('technicians/attendance/export', [TechnicianController::class, 'attendanceExport'])->name('technicians.attendance.export');
     Route::get('technicians/attendance/preview', [TechnicianController::class, 'attendancePreview'])->name('technicians.attendance.preview');
     Route::post('technicians/attendance', [TechnicianController::class, 'attendanceStore'])->name('technicians.attendance.store');
     Route::post('technicians/attendance/recalculate-all', [TechnicianController::class, 'attendanceRecalculateAll'])->name('technicians.attendance.recalculate-all');

@@ -356,3 +356,43 @@ it('returns structured json errors when salary preview validation fails without 
         ->assertHeader('content-type', 'application/json')
         ->assertJsonStructure(['message', 'errors']);
 });
+
+it('exports filtered attendance to excel and pdf', function () {
+    $technician = Technician::create([
+        'name' => 'Export Tech',
+        'phone' => '0714445555',
+        'basic_salary' => 30000,
+        'salary_type' => 'Monthly',
+        'active' => true,
+    ]);
+
+    TechnicianAttendance::create([
+        'technician_id' => $technician->id,
+        'date' => '2026-10-15',
+        'status' => 'Present',
+        'in_time' => '08:00:00',
+        'out_time' => '17:00:00',
+        'working_hours' => 9,
+        'working_minutes' => 540,
+        'ot_hours' => 1,
+        'ot_amount' => 500,
+        'created_by' => auth()->id(),
+    ]);
+
+    // Test Excel download
+    $excelRes = $this->get(route('technicians.attendance.export', [
+        'month' => '2026-10',
+        'technician' => $technician->id,
+    ]));
+    $excelRes->assertOk();
+    expect($excelRes->headers->get('content-disposition'))->toContain('attendance_export-tech_2026-10.xlsx');
+
+    // Test PDF download
+    $pdfRes = $this->get(route('technicians.attendance.export', [
+        'month' => '2026-10',
+        'technician' => $technician->id,
+        'format' => 'pdf',
+    ]));
+    $pdfRes->assertOk();
+    expect($pdfRes->headers->get('content-disposition'))->toContain('attendance_export-tech_2026-10.pdf');
+});

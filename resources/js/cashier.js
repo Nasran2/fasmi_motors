@@ -135,7 +135,10 @@ export async function openCashierDialog(url) {
     dialog.setAttribute('aria-labelledby', 'cashier-opening-title');
     try {
         const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html'}});
-        if (!response.ok) throw new Error('The opening form is unavailable. Refresh the cashier page and try again.');
+        if (!response.ok) {
+            const errorText = (await response.text()).trim();
+            throw new Error(errorText || 'The opening form is unavailable. Refresh the cashier page and try again.');
+        }
         dialog.innerHTML = await response.text();
         document.body.append(dialog);
         dialog.querySelectorAll('[data-close-cashier-popup]').forEach(button => button.addEventListener('click', () => dialog.close()));

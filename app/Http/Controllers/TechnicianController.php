@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\TechnicianAttendanceExport;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\AttendanceImportBatch;
@@ -31,6 +32,7 @@ use App\Services\SalaryCycleService;
 use App\Services\SalaryRepairCorrectionService;
 use App\Services\SalarySheetDetailService;
 use App\Services\StaffBikeRepairService;
+use App\Support\PrintDocument;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -39,6 +41,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Maatwebsite\Excel\Facades\Excel;
 
 class TechnicianController extends Controller
 {
@@ -152,6 +155,76 @@ class TechnicianController extends Controller
                 'ot' => (clone $query)->sum('ot_hours'),
             ],
         ]);
+    }
+
+    public function attendanceExport(Request $request)
+    {
+        $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+            'month' => ['nullable', 'date_format:Y-m'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'format' => ['nullable', 'in:excel,pdf,csv'],
+        ]);
+
+        if ($request->filled('month')) {
+            $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
+            $to = $from->copy()->endOfMonth();
+            $label = $from->format('Y-m');
+        } elseif ($request->filled('date')) {
+            $from = Carbon::parse($request->date);
+            $to = $from->copy();
+            $label = $from->format('Y-m-d');
+        } elseif ($request->filled('from') || $request->filled('to')) {
+            $from = $request->filled('from') ? Carbon::parse($request->from) : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to) : today()->endOfMonth();
+            $label = $from->format('Ymd').'-'.$to->format('Ymd');
+        } else {
+            $from = today()->startOfMonth();
+            $to = today()->endOfMonth();
+            $label = $from->format('Y-m');
+        }
+
+        $technician = $request->filled('technician') ? Technician::find($request->technician) : null;
+        $status = $request->input('status');
+
+        $query = TechnicianAttendance::with('technician')
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->when($technician, fn (Builder $q) => $q->where('technician_id', $technician->id))
+            ->when($status, fn (Builder $q, $s) => $q->where('status', $s))
+            ->orderBy('date', 'asc')
+            ->orderBy('technician_id', 'asc');
+
+        $prefix = 'attendance';
+        if ($technician) {
+            $prefix .= '_'.Str::slug($technician->name);
+        }
+        if ($status) {
+            $prefix .= '_'.Str::slug($status);
+        }
+        $filename = "{$prefix}_{$label}";
+
+        $format = $request->input('format', 'excel');
+
+        if ($format === 'pdf') {
+            $records = $query->get();
+            $pdf = PrintDocument::pdf('technicians.exports.attendance-pdf', [
+                'records' => $records,
+                'from' => $from,
+                'to' => $to,
+                'technician' => $technician,
+                'status' => $status,
+                'printedBy' => $request->user(),
+            ]);
+
+            return $request->boolean('print') ? $pdf->stream("{$filename}.pdf") : $pdf->download("{$filename}.pdf");
+        }
+
+        if ($format === 'csv') {
+            return Excel::download(new TechnicianAttendanceExport($query), "{$filename}.csv", \Maatwebsite\Excel\Excel::CSV);
+        }
+
+        return Excel::download(new TechnicianAttendanceExport($query), "{$filename}.xlsx");
     }
 
     public function attendancePreview(Request $request, AttendanceCalculationService $calculator)
