@@ -9,6 +9,7 @@ use App\Models\DailyClosing;
 use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\AccountTransactionSourceService;
+use App\Services\CashierClosingHistoryService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
 use App\Services\DrawerCashierService;
@@ -73,7 +74,7 @@ class CashierController extends Controller
             return response('Choose a saved cashier opening dated today or earlier.', 409);
         }
         if ($active && ! $editing) {
-            return response('A cashier is already open. Review and close it before opening again.', 409);
+            return $this->closingPopup($request, $active, $service, app(AccountTransactionSourceService::class));
         }
         $todaySession = CashierSession::whereDate('session_date', today())->first();
         $summary = $service->summary($openingDate);
@@ -87,6 +88,68 @@ class CashierController extends Controller
         $technicians = Technician::where('active', true)->orderBy('name')->get();
 
         return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active', 'canRecalculateToday', 'summary', 'openingPlan'));
+    }
+
+    public function closingPopup(Request $request, CashierSession $cashier, CashierService $service, AccountTransactionSourceService $sources)
+    {
+        $request->validate(['event' => 'nullable|integer|min:1', 'page' => 'nullable|integer|min:1']);
+        abort_if($cashier->session_date->isFuture(), 404);
+        $session = $cashier;
+        $date = $session->session_date->toDateString();
+        $isToday = $session->session_date->isToday();
+        $event = $request->filled('event') ? $session->events()->with('creator', 'washingPerson')
+            ->whereIn('action', ['closed', 'closing_corrected'])->findOrFail($request->integer('event')) : null;
+        $liveClosing = $session->status === 'open' && ! $event;
+        $summary = $liveClosing ? $service->summary($date) : (($event ? ($event->details['closing_snapshot'] ?? []) : ($session->closing_summary ?? [])));
+        $balanceVersion = $liveClosing ? $service->fingerprint($summary) : null;
+        $expectedBalances = $liveClosing ? collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all() : [];
+        if ($liveClosing) {
+            foreach (['main', 'spare_parts', 'bank'] as $type) {
+                $expectedBalances[$type] = $summary['accounts'][$type]['closing'];
+            }
+        }
+        $closing = DailyClosing::whereDate('closing_date', $date)->first();
+        $savedBalances = $event ? ($event->details['cash_balances'] ?? $event->details['balances'] ?? []) : ($session->actual_balances ?? []);
+        $savedBalances['bank'] = $event ? ($event->details['bank_balance'] ?? $savedBalances['bank'] ?? $summary['closing_bank_balance'] ?? null)
+            : ($savedBalances['bank'] ?? $summary['closing_bank_balance'] ?? $closing?->bank_actual_balance);
+        $savedCash = $event?->cash_amount ?? $session->drawer_closing_balance ?? $closing?->cash_actual_balance
+            ?? ($session->cash_balances ? array_sum($session->cash_balances) : null);
+        $closingVersion = app(CashierClosingHistoryService::class)->version($session);
+        $canEdit = ! $event && $session->status === 'closed' && $request->user()->canAccess('account.daily_closing');
+        $audit = $session->events()->with('creator', 'washingPerson')->whereIn('action', ['closed', 'closing_corrected'])->latest('id')->get();
+        $query = AccountTransaction::posted()->whereIn('account_id', collect(CashierService::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date);
+        if (isset($summary['closing_transaction_ids'])) {
+            $query->whereIn('id', $summary['closing_transaction_ids']);
+        } elseif (! $liveClosing && ($event?->created_at ?? $session->closed_at)) {
+            $query->where('created_at', '<=', $event?->created_at ?? $session->closed_at);
+        }
+        $rows = $query->with('account')->orderBy('transaction_date')->orderBy('id')->paginate(50)->withQueryString();
+        $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
+
+        return view('cashier.closing-popup', compact('session', 'date', 'isToday', 'event', 'liveClosing', 'summary', 'balanceVersion', 'expectedBalances', 'closing', 'savedBalances', 'savedCash', 'closingVersion', 'canEdit', 'audit', 'rows', 'details'));
+    }
+
+    public function correctClosing(Request $request, CashierSession $cashier, CashierClosingHistoryService $service)
+    {
+        $values = $request->validate([
+            'closing_version' => 'required|string|size:64', 'reason' => 'required|string|min:3|max:1000',
+            'closing_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'balances' => 'required|array:main,spare_parts,bank,washing',
+            'balances.main' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'balances.spare_parts' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'balances.bank' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'balances.washing' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
+            'account_additions' => 'sometimes|array:main,spare_parts',
+            'account_additions.main' => 'required_with:account_additions|numeric|decimal:0,2|between:0,999999999999.99',
+            'account_additions.spare_parts' => 'required_with:account_additions|numeric|decimal:0,2|between:0,999999999999.99',
+        ]);
+        $service->correct($cashier, $values);
+        $redirect = route('cashier.index', ['date' => $cashier->session_date->toDateString()]);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'redirect' => $redirect]);
+        }
+
+        return redirect($redirect)->with('success', 'Closing corrected with its reason. Later recorded opening and closing counts are preserved.');
     }
 
     public function collections(Request $request)
@@ -194,6 +257,9 @@ class CashierController extends Controller
             'difference_reason' => 'nullable|string|max:1000', 'balance_version' => 'required|string|size:64',
         ] + OutgoingFundingService::rules());
         $service->close($cashier, $values);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
+        }
 
         return redirect()->route('cashier.index', ['date' => $cashier->session_date->toDateString()])->with('success', 'Cashier closed. Cash withdrawal and verified cash-in-hand balances have been saved.');
     }

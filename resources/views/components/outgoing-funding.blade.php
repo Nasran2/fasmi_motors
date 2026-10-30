@@ -1,6 +1,6 @@
-@props(['default' => 'main_cashier', 'initial' => null, 'amountName' => 'amount', 'quantityName' => '', 'accountId' => null])
+@props(['default' => 'main_cashier', 'initial' => null, 'amountName' => 'amount', 'quantityName' => '', 'accountId' => null, 'date' => null, 'cashierClosing' => false])
 @php
-    $fundingOptions = app(\App\Services\OutgoingFundingService::class)->options();
+    $fundingOptions = app(\App\Services\OutgoingFundingService::class)->options($date, $cashierClosing);
     $fundingRows = old('funding', $initial ?? [['source' => $default, 'amount' => '']]);
 @endphp
 <div {{ $attributes->class(['space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4']) }} data-outgoing-funding data-amount-name="{{ $amountName }}" data-quantity-name="{{ $quantityName }}" data-default-source="{{ $default }}">

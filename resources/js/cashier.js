@@ -135,11 +135,17 @@ export async function openCashierDialog(url) {
     dialog.setAttribute('aria-labelledby', 'cashier-opening-title');
     try {
         const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html'}});
-        if (!response.ok) {
-            const errorText = (await response.text()).trim();
-            throw new Error(errorText || 'The opening form is unavailable. Refresh the cashier page and try again.');
+        if (!response.ok || response.redirected) {
+            const message = response.status < 500 && response.headers.get('content-type')?.includes('text/plain') ? (await response.text()).trim() : '';
+            throw new Error(message || 'The opening form is unavailable. Use Closing history to review an earlier open cashier, or refresh the page.');
         }
-        dialog.innerHTML = await response.text();
+        const content = await response.text();
+        if (content.includes('data-cashier-closing-content')) {
+            openingDialog = null;
+            await openCashierClosing(url, content);
+            return;
+        }
+        dialog.innerHTML = content;
         document.body.append(dialog);
         dialog.querySelectorAll('[data-close-cashier-popup]').forEach(button => button.addEventListener('click', () => dialog.close()));
         const opening = dialog.querySelector('[name="opening_balance"]');
@@ -265,3 +271,99 @@ if (typeof document !== 'undefined') {
         openCashierMovements(button.dataset.cashierMovements);
     });
 }
+
+
+let closingDialog;
+export async function openCashierClosing(url, initialContent = null) {
+    if (closingDialog?.open) return closingDialog.loadCashierClosing(url, initialContent);
+    const dialog = document.createElement('dialog');
+    closingDialog = dialog;
+    dialog.className = 'm-auto w-[min(96vw,1100px)] max-h-[92vh] overflow-auto rounded-2xl border-0 bg-white p-5 sm:p-6 shadow-2xl backdrop:bg-slate-950/60';
+    dialog.setAttribute('aria-labelledby', 'cashier-closing-title');
+    let pending;
+    let address = url;
+    const load = async (nextUrl, content = null) => {
+        pending?.abort();
+        const request = new AbortController();
+        pending = request;
+        address = nextUrl;
+        dialog.innerHTML = '<header class="flex justify-between gap-4"><h2 id="cashier-closing-title" class="text-xl font-black">Cashier closing</h2><button type="button" data-close-cashier-closing class="btn-secondary">✕</button></header><p class="mt-4" role="status">Loading closing details…</p>';
+        dialog.setAttribute('aria-busy', 'true');
+        try {
+            if (content === null) {
+                const response = await fetch(nextUrl, {signal: request.signal, headers: {'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest'}});
+                if (!response.ok || response.redirected) throw new Error('Unable to load this closing. Refresh the cashier page and try again.');
+                content = await response.text();
+            }
+            if (request.signal.aborted || !dialog.open) return;
+            dialog.innerHTML = content;
+            window.Alpine?.initTree(dialog);
+            dialog.scrollTop = 0;
+            dialog.querySelector('[data-close-cashier-closing]')?.focus();
+        } catch (error) {
+            if (request.signal.aborted) return;
+            const message = dialog.querySelector('[role="status"]');
+            if (message) { message.setAttribute('role', 'alert'); message.textContent = error.message; }
+        } finally { if (pending === request) dialog.removeAttribute('aria-busy'); }
+    };
+    dialog.loadCashierClosing = load;
+    dialog.addEventListener('click', event => {
+        if (event.target.closest('[data-close-cashier-closing]')) dialog.close();
+        const page = event.target.closest('[data-closing-pagination] a');
+        const reload = event.target.closest('[data-reload-cashier-closing]');
+        if (page || reload) { event.preventDefault(); load(page?.href ?? address); }
+    });
+    dialog.addEventListener('input', event => {
+        const input = event.target.closest('[data-closing-addition]');
+        if (!input) return;
+        const form = input.form;
+        const cents = value => Math.round((Number(value) || 0) * 100);
+        let total = 0;
+        form.querySelectorAll('[data-closing-addition]').forEach(addition => {
+            total += cents(addition.value);
+            form.elements.namedItem(`balances[${addition.dataset.type}]`).value = ((cents(addition.dataset.base) + cents(addition.value)) / 100).toFixed(2);
+        });
+        const remaining = (cents(form.dataset.available) - total) / 100;
+        form.elements.namedItem('closing_balance').value = remaining.toFixed(2);
+        form.querySelector('[data-closing-edit-total]').textContent = `Cash left after these additions: Rs. ${remaining.toLocaleString('en-LK', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    });
+    dialog.addEventListener('submit', async event => {
+        const form = event.target.closest('[data-cashier-closing-form], [data-cashier-closing-correction]');
+        if (!form) return;
+        event.preventDefault();
+        if (form.dataset.submitting === 'true' || !form.reportValidity()) return;
+        form.dataset.submitting = 'true';
+        const submit = form.querySelector('[type="submit"], button:not([type])');
+        if (submit) submit.disabled = true;
+        let alert = form.querySelector('[data-closing-errors]');
+        if (!alert) {
+            alert = document.createElement('div'); alert.dataset.closingErrors = 'true';
+            alert.className = 'rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+            alert.setAttribute('role', 'alert'); alert.tabIndex = -1; form.prepend(alert);
+        }
+        alert.hidden = true;
+        try {
+            const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}});
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                alert.textContent = Object.values(data.errors ?? {}).flat().join(' ') || data.message || 'Unable to save this closing.';
+                const reload = document.createElement('button'); reload.type = 'button'; reload.dataset.reloadCashierClosing = 'true';
+                reload.className = 'ml-2 font-bold underline'; reload.textContent = 'Reload closing details'; alert.append(reload);
+                alert.hidden = false; alert.focus(); return;
+            }
+            window.location.assign(data.redirect);
+        } catch {
+            alert.textContent = 'Unable to save. Check your connection or refresh the page and review the closing again.';
+            alert.hidden = false; alert.focus();
+        } finally { delete form.dataset.submitting; if (submit) submit.disabled = false; }
+    });
+    dialog.addEventListener('close', () => { pending?.abort(); window.Alpine?.destroyTree(dialog); dialog.remove(); closingDialog = null; }, {once: true});
+    document.body.append(dialog); dialog.showModal(); await load(url, initialContent);
+}
+
+if (typeof document !== 'undefined') document.addEventListener('click', event => {
+    const button = event.target.closest('[data-cashier-closing]');
+    if (!button) return;
+    event.preventDefault();
+    openCashierClosing(button.dataset.cashierClosing);
+});

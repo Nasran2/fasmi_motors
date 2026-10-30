@@ -430,6 +430,9 @@ class CashierService
         DB::transaction(function () use ($session, $values) {
             $this->lock();
             $session = CashierSession::lockForUpdate()->findOrFail($session->id);
+            if ($session->session_date->isFuture()) {
+                throw ValidationException::withMessages(['cashier' => 'A future cashier date cannot be closed.']);
+            }
             if ($session->status !== 'open') {
                 throw ValidationException::withMessages(['cashier' => 'This cashier session is already closed.']);
             }
@@ -525,7 +528,7 @@ class CashierService
                     'note' => 'Cashier closing #'.$session->id, 'created_by' => auth()->id(),
                 ]);
                 if ($fundedWithdrawal) {
-                    app(OutgoingFundingService::class)->post($withdrawalPlan, $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', $effectiveAt, 'owner_withdrawal', transactionType: 'drawing');
+                    app(OutgoingFundingService::class)->post($withdrawalPlan, $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', $effectiveAt, 'owner_withdrawal', transactionType: 'drawing', closingSession: $session);
                 } else {
                     $this->accounts->recordTransaction('spare_parts', 'drawing', $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', transactionDate: $effectiveAt, category: 'owner_withdrawal');
                 }
@@ -601,10 +604,18 @@ class CashierService
             $summary['closing_allocated_today'] = $allocatedToday;
             $closingRows = AccountTransaction::posted()->whereIn('account_id', collect(self::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date)->get();
             $summary['closing_ledger_snapshot'] = app(DrawerCashierService::class)->ledgerSnapshot($closingRows);
+            foreach (self::ACCOUNTS as $type => $label) {
+                $summary['closing_account_totals'][$type] = ['opening' => $closingData[$type.'_opening_balance'], 'income' => $closingData[$type.'_income'], 'outgoing' => $closingData[$type.'_expense']];
+            }
+            $summary['closing_transaction_ids'] = $closingRows->pluck('id')->all();
+            $summary['closing_verified_balances'] = $operational;
+            $summary['closing_counted_cash'] = $counted;
+            $summary['closing_expected_cash'] = $drawerExpected;
+            $summary['closing_cash_difference'] = $drawerDifference;
             unset($summary['transactions'], $summary['collections']);
             $session->events()->create(['action' => 'closed', 'cash_amount' => $counted,
                 'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
-                'details' => ['separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'withdrawal_funding' => $withdrawalPlan, 'cash_withdrawal' => $cashWithdrawal, 'account_additions' => $dailyAdditions, 'allocation_bases' => $allocationBases, 'allocated_today' => $allocatedToday, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
+                'details' => ['closing_snapshot' => $summary, 'separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'withdrawal_funding' => $withdrawalPlan, 'cash_withdrawal' => $cashWithdrawal, 'account_additions' => $dailyAdditions, 'allocation_bases' => $allocationBases, 'allocated_today' => $allocatedToday, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
             $session->update([
                 'status' => 'closed', 'closed_by' => auth()->id(), 'closed_at' => now(),
                 'owner_withdrawal' => (float) $session->owner_withdrawal + $withdrawal,

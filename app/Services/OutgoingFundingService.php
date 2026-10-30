@@ -44,10 +44,11 @@ class OutgoingFundingService
         return $fallback;
     }
 
-    public function options(): array
+    public function options(?string $date = null, bool $closing = false): array
     {
-        $open = CashierSession::isOpenToday();
-        $balances = $this->balances(today()->toDateString());
+        $date ??= today()->toDateString();
+        $open = $closing ? CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists() : CashierSession::isOpenToday();
+        $balances = $this->balances($date);
 
         return collect(self::SOURCES)->map(fn ($label, $source) => [
             'value' => $source, 'label' => $label, 'account_id' => Account::systemAccount($this->type($source))->id,
@@ -131,16 +132,17 @@ class OutgoingFundingService
         return array_map(fn ($row) => ['source' => $row['source'], 'amount' => number_format((float) $row['amount'], 2, '.', '')], $rows);
     }
 
-    public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense'): void
+    public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense', ?CashierSession $closingSession = null): void
     {
         $rows = $this->plan(['funding' => $rows], $amount);
         $date = Carbon::parse($date ?? now());
-        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType) {
+        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType, $closingSession) {
             app(CashierService::class)->lock();
-            $session = CashierSession::whereDate('session_date', today())->lockForUpdate()->first();
+            $session = CashierSession::whereDate('session_date', $closingSession ? $date->toDateString() : today()->toDateString())->lockForUpdate()->first();
+            $lateClose = $closingSession && $session?->id === $closingSession->id && $session->session_date->toDateString() === $date->toDateString() && ! $date->isFuture();
             foreach ($rows as $row) {
                 $source = $row['source'];
-                if (str_ends_with($source, '_cashier') && (! $date->isToday() || $session?->status !== 'open')) {
+                if (str_ends_with($source, '_cashier') && ((! $date->isToday() && ! $lateClose) || $session?->status !== 'open')) {
                     throw ValidationException::withMessages(['funding' => 'Cashier sources are available only for today while the cashier is open.']);
                 }
                 if ($source !== 'bank' && $method !== 'Cash') {

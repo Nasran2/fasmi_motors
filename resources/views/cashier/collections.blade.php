@@ -1,6 +1,6 @@
 <x-layouts::app title="All Collections">
 <div class="mx-auto max-w-[1700px] space-y-5 p-4 sm:p-6 lg:p-8">
-    <header><p class="text-xs font-black uppercase tracking-widest text-blue-700">Cash & Bank</p><h1 class="page-title">All Collections</h1><p class="page-subtitle">Settled money received, counted once per receipt. Allocation order: Service → Labour → Washing → Other → Spare Parts.</p></header>
+    <a href="{{ route('cashier.index') }}#cashier-history" class="btn-secondary inline-flex">Cashier / Closing history</a><header><p class="text-xs font-black uppercase tracking-widest text-blue-700">Cash & Bank</p><h1 class="page-title">All Collections</h1><p class="page-subtitle">Settled money received, counted once per receipt. Allocation order: Service → Labour → Washing → Other → Spare Parts.</p></header>
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">@foreach(['Cash received' => $totals['cash'], 'Bank received' => $totals['bank'], 'All collections' => $totals['all'], 'Filtered collection total' => $totals['filtered']] as $label => $amount)<article class="panel"><p class="label">{{ $label }}</p><p class="text-2xl font-black">Rs. {{ number_format($amount, 2) }}</p></article>@endforeach</div>
     <form method="GET" class="panel grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <label><span class="label">From</span><input type="date" name="from" value="{{ $from }}" max="{{ today()->toDateString() }}" required class="field"></label>

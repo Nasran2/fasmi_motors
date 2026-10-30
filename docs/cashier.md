@@ -82,3 +82,17 @@ An opening event stores the confirmed cash/account balances and snapshots of the
 Cash received after the last saved close is included in the suggested physical opening and excluded from the suggested separate account balance. An allocation adjustment records that distinction when opening; it is not a customer receipt. Closing snapshots identify which ledger movements were already included in the last count. Opening corrections continue to retain reasons and earlier recorded count checkpoints.
 
 These changes use existing session/event snapshot fields and require no new migration. They were made locally without running tests or changing live data.
+
+## Overdue sessions and closing history
+
+Cashiers are closed manually. Crossing midnight does not enter a closing count, close a session, or discard its transactions. The highlighted cashier control opens the active session's closing popup, even when it belongs to an earlier date. An opening-popup request that finds an active session also shows that closing form. Close the overdue date first, then open today's cashier. Other sales and ordinary cashier-funded outgoings still require today's cashier to be open.
+
+The overdue closing form uses that session's date and balances. A withdrawal submitted as part of this form can use its open cashier sources; this exception is scoped to the locked session passed internally by the closing service. It does not enable backdated cashier spending in ordinary payment forms. The transaction is effective on the cash date, while the closing event records when the operator actually completed it.
+
+**Closing history** is available beside the header cashier control and from All Collections. Each history row offers **Close cashier** for an open date or **View / edit closing** for a saved close. The popup displays the counted cashier remainder, account balances, additions, withdrawals and their sources, washing settlement/assignment, related transactions with invoice/job/bike links, and original close/correction events. New closing events include a saved account summary and transaction-ID snapshot. Older events show their recorded fields without inventing unavailable snapshots.
+
+Users with the existing Daily Closing permission can expand **Edit saved closing balances**. A reason is mandatory. For closes using daily additions, Main and Spare Parts edits are amounts added at that close, with full balances calculated from the saved account bases; the cashier remainder recalculates and remains editable. Bank and Washing balances are independent. Saving records account adjustments and an immutable correction event with previous/new values; it does not repay withdrawals or receipts. Correct payments through their source transaction.
+
+Later recorded openings and closing counts are preserved. An account correction is reconciled at the next recorded opening checkpoint, with the reason retained. Physical count corrections change the selected closing remainder, while later saved physical openings remain as recorded. Stale closing-edit forms are rejected. Original close events remain viewable after corrections.
+
+No new migration is required. These changes were authored locally without running tests or changing live data. Frontend assets were rebuilt for the user's manual testing.
