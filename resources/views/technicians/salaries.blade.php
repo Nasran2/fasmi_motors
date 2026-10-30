@@ -534,6 +534,7 @@
         form.action = url;
         const amountInput = document.getElementById('payment-amount');
         amountInput.value = balance;
+        form.querySelector('[data-outgoing-funding]').dispatchEvent(new CustomEvent('funding-reset'));
         amountInput.max = Math.max(0, Number(balance));
         
         const desc = document.getElementById('payment-modal-desc');
@@ -686,15 +687,7 @@
               <input type="number" step="0.01" min="0" name="amount" id="payment-amount" class="w-full font-mono font-bold text-lg text-emerald-700" required>
           </div>
           
-          <div>
-              <label class="label">Account <span class="required-star">*</span></label>
-              <select name="account_id" id="payment-account" class="w-full" required>
-                  <option value="">Select account</option>
-                  @foreach($accounts as $account)
-                  <option value="{{ $account->id }}" @selected($account->code === 'MAIN' || $account->type === 'main')>{{ $account->name }}</option>
-                  @endforeach
-              </select>
-          </div>
+          <x-outgoing-funding default="main_cashier" account-id="payment-account"/>
 
           <div class="grid grid-cols-2 gap-4">
               <div>

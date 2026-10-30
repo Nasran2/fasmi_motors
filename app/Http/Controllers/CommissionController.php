@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\JobCard;
 use App\Models\Technician;
 use App\Services\CommissionSettlementService;
+use App\Services\OutgoingFundingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -84,7 +85,7 @@ class CommissionController extends Controller
             'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Card', 'Online', 'Other'])],
             'payment_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'], 'note' => ['nullable', 'string', 'max:1000']]
             : ['description' => ['required', 'string', 'min:3', 'max:500']];
-        $data = $request->validate($rules);
+        $data = $request->validate($rules + ($payment ? OutgoingFundingService::rules() : []));
         $payout = $service->settle($technician, $period, $data, $payment);
         $query = $request->only(['period', 'date', 'month', 'from', 'to', 'technician']);
 

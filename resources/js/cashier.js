@@ -1,34 +1,115 @@
-export function cashierClosing(expected, initialBalance = '', initialWithdrawal = 0, initialBalances = {}, drawerExpected = null) {
+export function cashierClosing(expected, initialBalance = '', initialWithdrawal = 0, initialBalances = {}, drawerExpected = null, autoFillCount = false, initialWithdrawalFunding = null, cashierFunds = null, allocationConfig = null) {
+    const cents = value => Math.round((Number(value) || 0) * 100);
+    const totals = {main:0, spare_parts:0, bank:0};
+    if (initialWithdrawalFunding !== null) {
+        for (const row of initialWithdrawalFunding) {
+            const type = row.source.replace('_cashier', '');
+            if (type in totals) totals[type] += cents(row.amount);
+        }
+    } else totals.spare_parts = cents(initialWithdrawal);
+    const main = String(initialBalances.main ?? ((cents(expected.main) + cents(expected.washing) - totals.main) / 100));
+    const spareParts = String(initialBalances.spare_parts ?? ((cents(expected.spare_parts) - totals.spare_parts) / 100));
+    const totalBeforeSeparation = cents(expected.main) + cents(expected.washing) + cents(expected.spare_parts) - totals.main - totals.spare_parts;
+    const pendingCashier = type => initialWithdrawalFunding === null
+        ? (type === 'spare_parts' ? cents(initialWithdrawal) : 0)
+        : initialWithdrawalFunding.filter(row => row.source === `${type}_cashier`).reduce((sum,row) => sum + cents(row.amount),0);
+    const additions = Object.fromEntries(['main','spare_parts'].map(type => [type, String(allocationConfig?.additions?.[type] ?? Math.max(0, (cents(allocationConfig?.accounts?.[type]?.suggested_addition) - pendingCashier(type)) / 100))]));
+    const firstCount = allocationConfig === null
+        ? ((totalBeforeSeparation - cents(main) - cents(spareParts)) / 100).toFixed(2)
+        : ((cents(cashierFunds?.total) - pendingCashier('main') - pendingCashier('spare_parts') - cents(additions.main) - cents(additions.spare_parts)) / 100).toFixed(2);
     return {
         expected,
         drawerExpected,
+        cashierFunds,
+        allocationConfig,
+        dailyAdditionsMode: allocationConfig !== null,
+        additions,
         independent: drawerExpected !== null,
         withdrawal: initialWithdrawal,
-        closingBalance: initialBalance,
+        withdrawalFunding: initialWithdrawalFunding,
+        closingBalance: autoFillCount && String(initialBalance).trim() === '' ? firstCount : initialBalance,
         balances: {
-            bank: String(initialBalances.bank ?? expected.bank ?? 0),
-            main: String(initialBalances.main ?? ((Math.round(Number(expected.main) * 100) + Math.round(Number(expected.washing || 0) * 100)) / 100)),
-            spare_parts: String(initialBalances.spare_parts ?? ((Math.round(Number(expected.spare_parts) * 100) - Math.round(Number(initialWithdrawal) * 100)) / 100)),
+            bank: String(initialBalances.bank ?? ((cents(expected.bank) - totals.bank) / 100)),
+            main,
+            spare_parts: spareParts,
+        },
+        init() {
+            this.$watch(this.dailyAdditionsMode ? 'additions.main' : 'balances.main', () => this.updateClosingBalance());
+            this.$watch(this.dailyAdditionsMode ? 'additions.spare_parts' : 'balances.spare_parts', () => this.updateClosingBalance());
+            if (this.dailyAdditionsMode) this.$watch('currentCashInHand', () => this.updateClosingBalance());
+        },
+        updateClosingBalance() {
+            this.closingBalance = this.remainingCashTotal.toFixed(2);
         },
         cents(value) { return Math.round((Number(value) || 0) * 100); },
         money(value) { return Number(value).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+        get withdrawalTotals() {
+            const result = {main:0, spare_parts:0, bank:0};
+            if (this.withdrawalFunding === null) result.spare_parts = this.cents(this.withdrawal);
+            else for (const row of this.withdrawalFunding) {
+                const type = row.source.replace('_cashier', '');
+                if (type in result) result[type] += this.cents(row.amount);
+            }
+            return result;
+        },
+        get cashWithdrawal() {
+            return this.withdrawalFunding === null ? Number(this.withdrawal) || 0 : this.withdrawalFunding.filter(row => row.source.endsWith('_cashier')).reduce((sum,row) => sum + this.cents(row.amount),0) / 100;
+        },
+        currentCashierAmount(type) {
+            const pending = this.withdrawalFunding === null
+                ? (type === 'spare_parts' ? this.cents(this.withdrawal) : 0)
+                : this.withdrawalFunding.filter(row => row.source === `${type}_cashier`).reduce((sum,row) => sum + this.cents(row.amount),0);
+            return (this.cents(this.cashierFunds?.[type]) - pending) / 100;
+        },
+        get currentCashInHand() {
+            return (this.cents(this.cashierFunds?.opening) + this.cents(this.currentCashierAmount('main')) + this.cents(this.currentCashierAmount('spare_parts'))) / 100;
+        },
+        pendingCashierWithdrawal(type, rows = this.withdrawalFunding) {
+            return rows === null ? (type === 'spare_parts' ? this.cents(this.withdrawal) : 0)
+                : rows.filter(row => row.source === `${type}_cashier`).reduce((sum,row) => sum + this.cents(row.amount),0);
+        },
+        accountAdditionBase(type) {
+            return (this.cents(this.allocationConfig?.accounts?.[type]?.base) - this.withdrawalTotals[type] + this.pendingCashierWithdrawal(type)) / 100;
+        },
+        accountOtherMovements(type) {
+            return (this.cents(this.accountAdditionBase(type)) - this.cents(this.allocationConfig?.accounts?.[type]?.opening)) / 100;
+        },
+        closingAccountBalance(type) {
+            return (this.cents(this.accountAdditionBase(type)) + this.cents(this.additions[type])) / 100;
+        },
         expectedBalance(type) {
-            if (type === 'bank') return Number(this.expected.bank) || 0;
-            return type === 'main' ? (this.cents(this.expected.main) + this.cents(this.expected.washing)) / 100 : (this.cents(this.expected.spare_parts) - this.cents(this.withdrawal)) / 100;
+            return (this.cents(this.expected[type]) + (type === 'main' ? this.cents(this.expected.washing) : 0) - this.withdrawalTotals[type]) / 100;
         },
         updateWithdrawal(value) {
-            const change = this.cents(value) - this.cents(this.withdrawal);
-            this.balances.spare_parts = ((this.cents(this.balances.spare_parts) - change) / 100).toFixed(2);
+            if (this.withdrawalFunding === null) {
+                const change = this.cents(value) - this.cents(this.withdrawal);
+                this.balances.spare_parts = ((this.cents(this.balances.spare_parts) - change) / 100).toFixed(2);
+            }
             this.withdrawal = value;
         },
-        get allocatedCashTotal() { return (this.cents(this.balances.main) + this.cents(this.balances.spare_parts)) / 100; },
-        get cashMatchesAccounts() { return this.hasCount && (this.independent || this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal)); },
-        get expectedCashTotal() { return this.independent ? (this.cents(this.drawerExpected) - this.cents(this.withdrawal)) / 100 : (['main', 'washing', 'spare_parts'].reduce((sum, type) => sum + this.cents(this.expected[type]), 0) - this.cents(this.withdrawal)) / 100; },
+        updateWithdrawalFunding(rows) {
+            const previous = this.withdrawalTotals;
+            const previousRows = this.withdrawalFunding;
+            this.withdrawalFunding = rows;
+            const next = this.withdrawalTotals;
+            for (const type of ['main', 'spare_parts', 'bank']) {
+                if (this.dailyAdditionsMode && type !== 'bank') {
+                    const change = this.pendingCashierWithdrawal(type, rows) - this.pendingCashierWithdrawal(type, previousRows);
+                    if (change) this.additions[type] = (Math.max(0, this.cents(this.additions[type]) - change) / 100).toFixed(2);
+                } else if (next[type] !== previous[type]) this.balances[type] = ((this.cents(this.balances[type]) + previous[type] - next[type]) / 100).toFixed(2);
+            }
+        },
+        get allocatedCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.additions.main) + this.cents(this.additions.spare_parts)) / 100 : (this.cents(this.balances.main) + this.cents(this.balances.spare_parts)) / 100; },
+        get separationCashTotal() { return this.dailyAdditionsMode ? this.currentCashInHand : (this.cents(this.expectedBalance('main')) + this.cents(this.expectedBalance('spare_parts'))) / 100; },
+        get remainingCashTotal() { return (this.cents(this.separationCashTotal) - this.cents(this.allocatedCashTotal)) / 100; },
+        get additionsTooHigh() { return this.dailyAdditionsMode && this.cents(this.remainingCashTotal) < 0; },
+        get cashMatchesAccounts() { return this.hasCount && (this.dailyAdditionsMode ? !this.additionsTooHigh : (this.independent || this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal))); },
+        get expectedCashTotal() { return this.dailyAdditionsMode ? this.remainingCashTotal : (this.independent ? (this.cents(this.drawerExpected) - this.cents(this.cashWithdrawal)) / 100 : (['main', 'washing', 'spare_parts'].reduce((sum, type) => sum + this.cents(this.expected[type]), 0) - this.cents(this.withdrawal)) / 100); },
         get countedCashTotal() { return this.cents(this.closingBalance) / 100; },
         get cashDifference() { return (this.cents(this.closingBalance) - this.cents(this.expectedCashTotal)) / 100; },
         get hasCount() { return String(this.closingBalance).trim() !== ''; },
-        get hasDifference() { return (this.hasCount && this.cents(this.closingBalance) !== this.cents(this.expectedCashTotal)) || Object.keys(this.balances).some(type => this.cents(this.balances[type]) !== this.cents(this.expectedBalance(type))); },
-        get withdrawalTooHigh() { return this.cents(this.withdrawal) > 0 && (this.cents(this.expected.spare_parts) < this.cents(this.withdrawal) || this.expectedCashTotal < 0); },
+        get hasDifference() { return (this.hasCount && this.cents(this.closingBalance) !== this.cents(this.expectedCashTotal)) || (this.dailyAdditionsMode ? this.cents(this.balances.bank) !== this.cents(this.expectedBalance('bank')) : Object.keys(this.balances).some(type => this.cents(this.balances[type]) !== this.cents(this.expectedBalance(type)))); },
+        get withdrawalTooHigh() { return ['main','spare_parts','bank'].some(type => this.withdrawalTotals[type] > 0 && this.expectedBalance(type) < 0) || (this.cashWithdrawal > 0 && this.expectedCashTotal < 0); },
     };
 }
 

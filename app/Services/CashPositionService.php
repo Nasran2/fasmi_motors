@@ -22,14 +22,16 @@ class CashPositionService
         $result = [];
         foreach (self::ACCOUNTS as $type => $label) {
             $account = Account::systemAccount($type);
-            $base = AccountTransaction::posted()->where('account_id', $account->id)->where(function ($query) use ($bankId) {
-                $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
-                    ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
-                    ->orWhere(function ($query) use ($bankId) {
-                        $query->where('reference_type', (new AccountTransfer)->getMorphClass())
-                            ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
-                    });
-            });
+            $base = AccountTransaction::posted()->where('account_id', $account->id)
+                ->where(fn ($query) => $query->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
+                ->where(function ($query) use ($bankId) {
+                    $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
+                        ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
+                        ->orWhere(function ($query) use ($bankId) {
+                            $query->where('reference_type', (new AccountTransfer)->getMorphClass())
+                                ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
+                        });
+                });
             if ($movementsOnly) {
                 $base->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', [
                     'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase',

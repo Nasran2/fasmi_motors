@@ -47,7 +47,7 @@
                                                 'technician_id' => $advance->technician_id, 'staff_name' => $advance->technician?->name ?? 'Former staff',
                                                 'account_id' => $advance->account_id, 'account_name' => $advance->account?->name ?? 'Unavailable account',
                                                 'payment_date' => $advance->payment_date->toDateString(),
-                                                'amount' => $advance->amount, 'payment_method' => $advance->payment_method,
+                                                'funding' => $advance->funding_allocations, 'amount' => $advance->amount, 'payment_method' => $advance->payment_method,
                                                 'deduct_month' => $advance->deduct_month->format('Y-m'), 'note' => $advance->note,
                                             ];
                                         @endphp
@@ -119,11 +119,12 @@
                 form.elements.namedItem('_editing_advance_id').value = data.id;
                 document.getElementById('edit-advance-number').textContent = data.number;
                 ensureOption('technician_id', data.technician_id, data.staff_name);
-                ensureOption('account_id', data.account_id, data.account_name);
+
                 ensureOption('payment_method', data.payment_method, data.payment_method);
                 for (const name of ['technician_id', 'payment_date', 'amount', 'account_id', 'payment_method', 'deduct_month', 'note']) {
                     form.elements.namedItem(name).value = data[name] ?? '';
                 }
+                form.querySelector('[data-outgoing-funding]').dispatchEvent(new CustomEvent('funding-reset', {detail: data.funding}));
                 dialog.showModal();
                 form.elements.namedItem('technician_id').focus();
             });

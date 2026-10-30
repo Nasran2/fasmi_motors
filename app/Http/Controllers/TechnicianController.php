@@ -24,6 +24,8 @@ use App\Services\AttendanceImportService;
 use App\Services\AttendanceRecalculationService;
 use App\Services\HolidayService;
 use App\Services\JobCommissionService;
+use App\Services\OutgoingFundingService;
+use App\Services\SalaryBalanceService;
 use App\Services\SalaryCalculationService;
 use App\Services\SalaryCycleService;
 use App\Services\SalaryRepairCorrectionService;
@@ -698,6 +700,10 @@ class TechnicianController extends Controller
                 'paid_amount' => ['nullable', 'numeric', 'min:0'], 'worked_on_leave_pay' => ['nullable', 'numeric', 'min:0'],
                 'bike_installments' => ['nullable', 'array'], 'bike_installments.*' => ['numeric', 'min:0'],
             ] + $this->salaryBalanceRules());
+            // Preview may receive stale choices while changing staff/month. Saving
+            // still validates every submitted debt against the selected staff.
+            $eligibleOldBalances = array_column(app(SalaryBalanceService::class)->items((int) $data['technician_id'], $data['month'].'-01'), 'id');
+            $data['old_balance_installments'] = array_intersect_key($data['old_balance_installments'] ?? [], array_flip($eligibleOldBalances));
             try {
                 $response = $calculator->generateSalaryPreview((int) $data['technician_id'], $data['month'].'-01', $data);
             } catch (ValidationException $exception) {
@@ -894,7 +900,7 @@ class TechnicianController extends Controller
         if ($request->routeIs('technicians.salaries.pay') && $request->has('bike_installments')) {
             throw ValidationException::withMessages(['bike_installments' => 'Repair deductions were already applied when salary was finalized. Reopen an unpaid sheet to change them.']);
         }
-        $data = $request->validate(['amount' => ['required', 'numeric', 'min:0.01', 'decimal:0,2', 'max:999999999999.99'], 'account_id' => ['required', Rule::exists('accounts', 'id')->where('active', true)->where('shop_type', session('shop_mode', 'workshop'))], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'payment_note' => ['nullable', 'max:1000']]);
+        $data = $request->validate(['amount' => ['required', 'numeric', 'min:0.01', 'decimal:0,2', 'max:999999999999.99'], 'account_id' => ['required', Rule::exists('accounts', 'id')->where('active', true)->where('shop_type', session('shop_mode', 'workshop'))], 'payment_method' => ['required', Rule::in(['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online', 'Other'])], 'payment_date' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'payment_note' => ['nullable', 'max:1000']] + OutgoingFundingService::rules());
         DB::transaction(function () use ($sheet, $data) {
             Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
@@ -903,20 +909,12 @@ class TechnicianController extends Controller
             $date = Carbon::parse($data['payment_date'] ?? today())->startOfDay();
             $balance = round((float) $sheet->net_payable - $paid, 2);
             $overpaid = max(0, -$balance);
+            $funding = app(OutgoingFundingService::class);
+            $plan = $funding->plan($data, (float) $data['amount'], $funding->defaultSource((int) $data['account_id'], $data['payment_method']));
+            $data['account_id'] = Account::systemAccount($funding->type($plan[0]['source']))->id;
             $sheet->update(['paid_amount' => $paid, 'balance_amount' => $balance, 'overpaid_amount' => $overpaid, 'status' => $balance <= 0 ? 'Paid' : 'Partially Paid', 'account_id' => $data['account_id'], 'payment_method' => $data['payment_method'], 'payment_date' => $date, 'payment_note' => $data['payment_note'] ?? null, 'paid_at' => $balance <= 0 ? $date : null, 'paid_by' => auth()->id()]);
             app(SalaryRepairCorrectionService::class)->syncOverpayment($sheet, 'Automatically carried forward from an overpaid salary.');
-            $account = Account::findOrFail($data['account_id']);
-            $type = match ($account->code) {
-                Account::systemCode('main') => 'main',
-                Account::systemCode('spare_parts') => 'spare_parts',
-                Account::systemCode('bank') => 'bank',
-                default => 'cash',
-            };
-            $accounts = app(AccountService::class);
-            $accounts->recordTransaction($type, 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $data['payment_note'] ?? null, $account->id, $date, 'salary');
-            if ($type !== 'bank' && $data['payment_method'] !== 'Cash') {
-                $accounts->recordTransaction('bank', 'expense', (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], null, null, $date, 'salary');
-            }
+            $funding->post($plan, (float) $data['amount'], "Salary payment {$sheet->number}", $sheet, $data['payment_method'], $date, 'salary', $data['payment_note'] ?? null);
         });
         AuditLog::create(['user_id' => auth()->id(), 'event' => 'Salary Payment Recorded', 'auditable_type' => $sheet->getMorphClass(), 'auditable_id' => $sheet->id, 'new_values' => ['amount' => $data['amount'], 'status' => $sheet->fresh()->status], 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
 
@@ -1035,7 +1033,7 @@ class TechnicianController extends Controller
             $oldValues = $advance->getAttributes();
             $advance->fill($data);
 
-            if ($advance->isDirty(['amount', 'account_id', 'payment_date', 'payment_method'])) {
+            if ($advance->isDirty(['amount', 'account_id', 'payment_date', 'payment_method', 'funding_allocations'])) {
                 $this->reverseAdvanceLedger($advance, 'Advance payment corrected');
                 $advance->save();
                 $this->postAdvanceLedger($advance);
@@ -1073,7 +1071,11 @@ class TechnicianController extends Controller
             'payment_method' => ['required', 'string', 'max:50'],
             'deduct_month' => ['required', 'date_format:Y-m'],
             'note' => ['nullable', 'string', 'max:1000'],
-        ], [], ['technician_id' => 'staff member']);
+        ] + OutgoingFundingService::rules(), [], ['technician_id' => 'staff member']);
+        $funding = app(OutgoingFundingService::class);
+        $data['funding_allocations'] = $funding->plan($data, (float) $data['amount'], $funding->defaultSource((int) $data['account_id'], $data['payment_method']));
+        $data['account_id'] = Account::systemAccount($funding->type($data['funding_allocations'][0]['source']))->id;
+        unset($data['funding']);
         $data['deduct_month'] .= '-01';
         $data['note'] = $data['note'] ?? null;
 
@@ -1089,18 +1091,9 @@ class TechnicianController extends Controller
 
     private function postAdvanceLedger(TechnicianAdvance $advance): void
     {
-        $account = Account::findOrFail($advance->account_id);
-        $type = match ($account->code) {
-            Account::systemCode('main') => 'main',
-            Account::systemCode('spare_parts') => 'spare_parts',
-            Account::systemCode('bank') => 'bank',
-            default => 'cash',
-        };
-        $service = app(AccountService::class);
-        $service->recordTransaction($type, 'expense', (float) $advance->amount, "Staff advance {$advance->number}", $advance, $advance->payment_method, $advance->note, $account->id, $advance->payment_date, 'salary_advance');
-        if ($type !== 'bank' && $advance->payment_method !== 'Cash') {
-            $service->recordTransaction('bank', 'expense', (float) $advance->amount, "Staff advance {$advance->number}", $advance, $advance->payment_method, null, null, $advance->payment_date, 'salary_advance');
-        }
+        $funding = app(OutgoingFundingService::class);
+        $plan = $advance->funding_allocations ?? $funding->plan([], (float) $advance->amount, $funding->defaultSource((int) $advance->account_id, $advance->payment_method));
+        $funding->post($plan, (float) $advance->amount, "Staff advance {$advance->number}", $advance, $advance->payment_method, $advance->payment_date, 'salary_advance', $advance->note);
     }
 
     private function reverseAdvanceLedger(TechnicianAdvance $advance, string $reason): void

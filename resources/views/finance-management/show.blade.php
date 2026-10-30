@@ -8,6 +8,6 @@
         'Recorded by' => $record->creator?->name, 'Cancellation reason' => $record->cancel_reason] as $label => $value)
         @if($value !== null && $value !== '')<div><dt class="text-xs font-bold uppercase text-slate-500">{{ $label }}</dt><dd class="mt-1 whitespace-pre-wrap text-base font-semibold">{{ $value }}</dd></div>@endif
     @endforeach
-    </dl></section>
+    </dl><x-funding-breakdown :record="$record"/></section>
 </div>
 </x-layouts::app>

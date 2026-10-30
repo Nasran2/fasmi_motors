@@ -37,9 +37,10 @@ class AccountService
         ?string $note = null,
         ?int $accountId = null,
         CarbonInterface|string|null $transactionDate = null,
-        ?string $category = null
+        ?string $category = null,
+        ?string $fundingSource = null
     ): AccountTransaction {
-        return DB::transaction(function () use ($accountType, $transactionType, $amount, $description, $reference, $paymentMethod, $note, $accountId, $transactionDate, $category) {
+        return DB::transaction(function () use ($accountType, $transactionType, $amount, $description, $reference, $paymentMethod, $note, $accountId, $transactionDate, $category, $fundingSource) {
 
             // Determine debit/credit logic based on transaction type and account
             // Income/receipts increase balance
@@ -108,12 +109,13 @@ class AccountService
                 'credit' => $credit,
                 'amount' => $amount,
                 'category' => $category,
+                'funding_source' => $fundingSource,
                 'running_balance' => $newBalance,
                 'payment_method' => $paymentMethod,
                 'reference_type' => $reference?->getMorphClass(),
                 'reference_id' => $reference?->getKey(),
                 'description' => $description,
-                'note' => $note,
+                'note' => $fundingSource ? trim(($note ? $note.' · ' : '').'Source: '.OutgoingFundingService::SOURCES[$fundingSource]) : $note,
                 'status' => 'active',
                 'created_by' => auth()->id() ?? 1,
             ]);
@@ -154,6 +156,7 @@ class AccountService
                 'transaction_type' => 'reversal', 'debit' => $transaction->credit, 'credit' => $transaction->debit,
                 'amount' => $transaction->amount, 'running_balance' => $previous + (float) $transaction->debit - (float) $transaction->credit,
                 'payment_method' => $transaction->payment_method, 'reference_type' => $transaction->reference_type,
+                'funding_source' => $transaction->funding_source, 'category' => $transaction->category,
                 'reference_id' => $transaction->reference_id, 'description' => "Reversal of {$transaction->transaction_no}",
                 'note' => "Reason: {$reason}", 'status' => 'active', 'created_by' => auth()->id() ?? 1,
             ]);

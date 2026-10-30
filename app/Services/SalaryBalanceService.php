@@ -51,6 +51,9 @@ class SalaryBalanceService
     {
         $items = $this->items($staffId, $month);
         $itemIds = array_map('strval', array_column($items, 'id'));
+        if (array_diff(array_map('strval', array_keys($inputs['old_balance_installments'] ?? [])), $itemIds)) {
+            throw ValidationException::withMessages(['old_balance_installments' => 'An old balance changed or belongs to another staff member. Refresh the preview before saving.']);
+        }
         $choices = array_filter(
             $inputs['old_balance_installments'] ?? [],
             fn ($key) => in_array((string) $key, $itemIds, true),

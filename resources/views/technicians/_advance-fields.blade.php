@@ -13,14 +13,7 @@
             </label>
             <label><span class="label">Payment Date *</span><input type="date" name="payment_date" value="{{ $fieldValue('payment_date', $formAdvance?->payment_date?->toDateString() ?? today()->toDateString()) }}" class="field" required></label>
             <label><span class="label">Amount *</span><input type="number" step=".01" min=".01" name="amount" value="{{ $fieldValue('amount', $formAdvance?->amount) }}" class="field" required></label>
-            <label>
-                <span class="label">Paid From Account *</span>
-                <select name="account_id" class="field" required>
-                    @foreach($accounts as $account)
-                        <option value="{{ $account->id }}" @selected($fieldValue('account_id', $formAdvance?->account_id ?? $accounts->firstWhere('code', \App\Models\Account::systemCode('main'))?->id) == $account->id)>{{ $account->name }}</option>
-                    @endforeach
-                </select>
-            </label>
+            <x-outgoing-funding :default="app(\App\Services\OutgoingFundingService::class)->defaultSource($formAdvance?->account_id, $formAdvance?->payment_method ?? 'Cash')" :initial="$formAdvance?->funding_allocations" class="md:col-span-2"/>
             <label>
                 <span class="label">Payment Method *</span>
                 <select name="payment_method" class="field" required>

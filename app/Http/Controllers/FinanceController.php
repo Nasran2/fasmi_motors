@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Drawing;
 use App\Models\Expense;
 use App\Services\AccountService;
+use App\Services\OutgoingFundingService;
 use App\Services\WorkshopService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,8 @@ class FinanceController extends Controller
             $account = Account::where('active', true)->findOrFail($v['account_id']);
             $type = collect(['main', 'spare_parts', 'bank', 'washing'])->first(fn ($type) => $account->id === Account::systemAccount($type)?->id);
             abort_unless($type, 422, 'Select a configured system account.');
-            $accountService->outgoing($type, (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], $v['expense_date'], $v['category'], $type !== 'bank');
+            $funding = app(OutgoingFundingService::class);
+            $funding->post($funding->plan($r->all(), (float) $v['amount'], $funding->defaultSource((int) $v['account_id'], $v['payment_method'])), (float) $v['amount'], "{$v['category']} expense", $e, $v['payment_method'], $v['expense_date'], $v['category']);
         });
 
         return back()->with('success', 'Expense recorded in the ledger.');
@@ -52,7 +54,8 @@ class FinanceController extends Controller
 
             $accountService = app(AccountService::class);
             // Defaulting to cash for drawing if no method is specified in form, or bank if it's a bank account. We assume Cash here unless it's known to be bank.
-            $accountService->outgoing('spare_parts', (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'Cash', $v['drawing_date'], 'drawing');
+            $funding = app(OutgoingFundingService::class);
+            $funding->post($funding->plan($r->all(), (float) $v['amount'], $funding->defaultSource((int) $v['account_id'], 'Cash', 'spare_parts')), (float) $v['amount'], "Drawing by {$v['person_name']}", $d, 'Cash', $v['drawing_date'], 'drawing', transactionType: 'drawing');
         });
 
         return back()->with('success', 'Drawing recorded in the ledger.');

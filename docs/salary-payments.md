@@ -45,3 +45,16 @@ For a Rs. 75,000 main salary and Rs. 30,000 contribution basic, rates of 8%, 12%
 New paysheets snapshot the contribution basic and percentages. Contribution records, reports, salary details and payslips show the saved basis. Updating a profile does not rewrite existing sheets or contribution records. Use **Refresh Attendance & OT** to explicitly recalculate an unpaid draft from the new profile settings. Old drafts with contribution eligibility must be refreshed before finalization; finalized and paid sheets remain preserved.
 
 Deploy the migration before using the field. It was applied only to the guarded local development database. Local verification: 168 selected staff, payroll, commission and print cases passed (2,716 assertions); production build and Blade compilation passed. No live server changes or tests were performed.
+# Old balances and repair recovery
+
+**Old balance owed to shop** accepts an opening debt, description, note and the amount to recover this month. Enter existing debt once; do not enter advances or repair bills again. Available carried balances appear on later monthly previews with a separate recovery input; zero skips recovery for that month.
+
+Ordinary deductions are applied first. Recovery then uses available salary for old balances followed by repairs. Requests exceeding that capacity produce a highlighted negative requested balance, while actual salary payable remains non-negative. Unrecovered old debt stays on its original balance, and unrecovered repair debt stays on its original repair plan. Only applied repair recovery settles an invoice; no extra cash receipt is created.
+
+Previewing, saving/replacing and refreshing drafts never create debt or recoveries. Finalization records the opening debt and its actual recovery once, with staff-level locking and stale-balance checks. Reopening an unpaid sheet restores recovery. An originating sheet cannot be reopened while a later finalized sheet uses its debt. Saved debt snapshots remain historical; profile edits do not recalculate prior paysheets.
+
+Migration `2026_10_29_000010_add_salary_balance_recoveries` adds recovered amounts and per-paysheet recovery records. Run pending migrations when deploying. Existing salary-overpayment adjustments use the same optional partial-recovery flow, preserving earlier deducted amounts.
+
+Payslips show old balances, repair references/bikes, recovery and the combined remaining balance prominently. Month-boundary counters and the salary-cycle conditions panel are removed from the slip; actual salary period dates remain. Print spacing was compacted and a sample with old debt and a repair was visually verified as one A4 page. Long item lists may continue onto additional pages rather than clip.
+
+Latest local monetary regression run: 102 cases passed (2,552 assertions), plus five salary-preview JavaScript checks. A broader run also exposed an unrelated existing attendance expectation: an Absent row with punches is now normalized to Present in the current attendance code. This salary work does not alter that behavior. Live data was not changed.

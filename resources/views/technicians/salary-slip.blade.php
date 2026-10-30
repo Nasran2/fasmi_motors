@@ -59,6 +59,7 @@
             .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 4px !important; }
             .salary-payslip .salary-debt-summary { break-inside: avoid; border: 2px solid #b91c1c !important; }
             .salary-payslip .salary-debt-summary strong { color: #991b1b !important; }
+            .salary-payslip .text-slate-300 { color: #162337 !important; }
 
             @endif
         }
@@ -137,6 +138,7 @@
           'Employee EPF' => $sheet->epf_employee,
           'Other deduction' => $sheet->total_other_deduction,
           'Manual deduction' => $sheet->manual_deductions,
+          'Old balance recovery' => $sheet->old_balance_deduction,
       ], fn ($amt) => (float) $amt > 0);
 
       $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);

@@ -62,10 +62,30 @@ class CashierService
         $cashMovements = $independent ? app(CashPositionService::class)->accounts($date, null, $collections, true) : $cashAccounts;
         $cashOpening = $independent ? (float) $session->drawer_opening_balance : round(collect($cashAccounts)->sum('opening'), 2);
         $cashClosing = $independent ? round($cashOpening + collect($cashMovements)->sum('closing') + (float) $session->drawer_adjustment, 2) : round(collect($cashAccounts)->sum('closing'), 2);
+        $funding = app(OutgoingFundingService::class);
+        $cashierFunds = [
+            'opening' => (float) ($session?->drawer_opening_balance ?? $session?->opening_balance ?? 0),
+            'main' => $funding->cashierAmount($transactions->where('account_id', Account::systemAccount('main')->id), 'main'),
+            'spare_parts' => $funding->cashierAmount($transactions->where('account_id', Account::systemAccount('spare_parts')->id), 'spare_parts'),
+        ];
+        $cashierFunds['total'] = array_sum(array_map(fn ($amount) => (int) round($amount * 100), $cashierFunds)) / 100;
+        $allocationAccounts = [];
+        foreach (['main', 'spare_parts'] as $type) {
+            $priorAllocationRows = $transactions->where('account_id', Account::systemAccount($type)->id)->where('category', 'cashier_daily_allocation');
+            $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit'), 2);
+            $washingToMain = $type === 'main' ? $cashAccounts['washing']['closing'] : 0;
+            $allocationAccounts[$type] = [
+                'opening' => $accounts[$type]['opening'],
+                'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
+                'suggested_addition' => max(0, round($cashierFunds[$type] + $priorAllocation, 2)),
+                'prior_allocation' => $priorAllocation,
+            ];
+        }
 
         return [
             'separate_cash_balance' => $independent, 'drawer_adjustment' => (float) ($session?->drawer_adjustment ?? 0),
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
+            'cashier_funds' => $cashierFunds, 'allocation_accounts' => $allocationAccounts,
             'cash_opening' => $cashOpening,
             'cash_in_hand' => $cashClosing,
             'cash_paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']), 2),
@@ -411,22 +431,62 @@ class CashierService
             if (! hash_equals($this->fingerprint($summary), $values['balance_version'])) {
                 throw ValidationException::withMessages(['balance_version' => 'Transactions changed while this form was open. Review the refreshed balances and close again.']);
             }
+            if ($session->drawer_opening_balance === null && (! empty($values['separate_cash_balance']) || isset($values['account_additions']))) {
+                $moves = collect(app(CashPositionService::class)->accounts($date, null, null, true))->sum('closing');
+                $session->update(['drawer_opening_balance' => $summary['cash_opening'],
+                    'drawer_adjustment' => round($summary['cash_in_hand'] - $summary['cash_opening'] - $moves, 2)]);
+                $summary = $this->summary($date);
+            }
             $independent = $session->drawer_opening_balance !== null;
             $withdrawal = round((float) $values['owner_withdrawal'], 2);
             $expected = collect(CashPositionService::ACCOUNTS)->map(fn ($label, $type) => $summary[$independent ? 'accounts' : 'cash_accounts'][$type]['closing'])->all();
-            $expected['spare_parts'] = round($expected['spare_parts'] - $withdrawal, 2);
-            if ($withdrawal > 0 && ($expected['spare_parts'] < 0 || ($independent ? $summary['cash_in_hand'] - $withdrawal : array_sum($expected)) < 0)) {
+            $fundedWithdrawal = isset($values['funding']);
+            $withdrawalPlan = $withdrawal > 0 && $fundedWithdrawal ? app(OutgoingFundingService::class)->plan($values, $withdrawal, 'spare_parts') : [];
+            $withdrawalAccounts = ['main' => 0.0, 'spare_parts' => $fundedWithdrawal ? 0.0 : $withdrawal, 'bank' => 0.0];
+            $cashWithdrawal = $fundedWithdrawal ? 0.0 : $withdrawal;
+            foreach ($withdrawalPlan as $row) {
+                $type = app(OutgoingFundingService::class)->type($row['source']);
+                $withdrawalAccounts[$type] += (float) $row['amount'];
+                if (str_ends_with($row['source'], '_cashier')) {
+                    $cashWithdrawal += (float) $row['amount'];
+                }
+            }
+            foreach (['main', 'spare_parts'] as $type) {
+                $expected[$type] = round($expected[$type] - $withdrawalAccounts[$type], 2);
+            }
+            if (! $fundedWithdrawal && $withdrawal > 0 && ($expected['spare_parts'] < 0 || ($independent ? $summary['cash_in_hand'] - $withdrawal : array_sum($expected)) < 0)) {
                 throw ValidationException::withMessages(['owner_withdrawal' => 'The withdrawal exceeds the Spare Parts cash in hand.']);
             }
             $washingTransfer = round($independent ? $summary['cash_accounts']['washing']['closing'] : $expected['washing'], 2);
             $expected['main'] = round($expected['main'] + $washingTransfer, 2);
             $expected['washing'] = round($expected['washing'] - $washingTransfer, 2);
-            $bankExpected = $summary['accounts']['bank']['closing'];
+            $bankExpected = round($summary['accounts']['bank']['closing'] - $withdrawalAccounts['bank'], 2);
             $bankActual = round((float) ($values['balances']['bank'] ?? $bankExpected), 2);
             $bankDifference = round($bankActual - $bankExpected, 2);
             $counted = round((float) $values['closing_balance'], 2);
+            $dailyAdditions = $values['account_additions'] ?? null;
+            $allocationBases = [];
+            $allocatedToday = 0.0;
             $verified = $expected;
-            if (isset($values['balances'])) {
+            if ($dailyAdditions !== null) {
+                foreach (['main', 'spare_parts'] as $type) {
+                    $cashierWithdrawal = collect($withdrawalPlan)->where('source', $type.'_cashier')->sum('amount');
+                    if (! $fundedWithdrawal && $type === 'spare_parts') {
+                        $cashierWithdrawal = $withdrawal;
+                    }
+                    $allocationBases[$type] = round($summary['allocation_accounts'][$type]['base'] - $withdrawalAccounts[$type] + $cashierWithdrawal, 2);
+                    $addition = round((float) $dailyAdditions[$type], 2);
+                    $verified[$type] = round($allocationBases[$type] + $addition, 2);
+                    if (abs($verified[$type]) > 999999999999.99) {
+                        throw ValidationException::withMessages(['account_additions.'.$type => 'The resulting account balance is too large.']);
+                    }
+                    $allocatedToday += $addition;
+                }
+                $allocatedToday = round($allocatedToday, 2);
+                if ((int) round($allocatedToday * 100) > (int) round(($summary['cashier_funds']['total'] - $cashWithdrawal) * 100)) {
+                    throw ValidationException::withMessages(['account_additions' => 'Today’s account additions exceed the available cashier cash.']);
+                }
+            } elseif (isset($values['balances'])) {
                 $verified['main'] = round((float) $values['balances']['main'], 2);
                 $verified['spare_parts'] = round((float) $values['balances']['spare_parts'], 2);
                 if (! $independent && (int) round(array_sum($verified) * 100) !== (int) round($counted * 100)) {
@@ -440,21 +500,28 @@ class CashierService
             foreach (CashPositionService::ACCOUNTS as $type => $label) {
                 $differences[$type] = round($verified[$type] - $expected[$type], 2);
             }
-            $drawerExpected = $independent ? round($summary['cash_in_hand'] - $withdrawal, 2) : round(array_sum($expected), 2);
+            $drawerExpected = $dailyAdditions !== null
+                ? round($summary['cashier_funds']['total'] - $cashWithdrawal - $allocatedToday, 2)
+                : ($independent ? round($summary['cash_in_hand'] - $cashWithdrawal, 2) : round(array_sum($expected), 2));
             $drawerDifference = $independent ? round($counted - $drawerExpected, 2) : array_sum($differences);
+            $drawerAdjustmentDelta = $independent ? round($counted - ($summary['cash_in_hand'] - $cashWithdrawal), 2) : 0;
             $values['balances'] = $verified;
-            if (($drawerDifference != 0 || $bankDifference != 0 || collect($differences)->contains(fn ($difference) => $difference != 0)) && blank($values['difference_reason'] ?? null)) {
+            if (($drawerDifference != 0 || $bankDifference != 0 || ($dailyAdditions === null && collect($differences)->contains(fn ($difference) => $difference != 0))) && blank($values['difference_reason'] ?? null)) {
                 throw ValidationException::withMessages(['difference_reason' => 'Explain changed account balances or a difference in the counted cash.']);
             }
             $effectiveAt = $session->session_date->isToday() ? now() : $session->session_date->endOfDay();
             if ($withdrawal > 0) {
                 $drawing = Drawing::create([
                     'drawing_date' => $date, 'person_name' => ($values['owner_name'] ?? null) ?: 'Owner',
-                    'drawing_type' => 'Owner withdrawal', 'account_id' => Account::systemAccount('spare_parts')->id,
+                    'drawing_type' => 'Owner withdrawal', 'account_id' => Account::systemAccount($fundedWithdrawal ? app(OutgoingFundingService::class)->type($withdrawalPlan[0]['source']) : 'spare_parts')->id,
                     'amount' => $withdrawal, 'number' => 'DRW-CASHIER-'.$session->id.'-'.Str::upper(Str::random(6)),
                     'note' => 'Cashier closing #'.$session->id, 'created_by' => auth()->id(),
                 ]);
-                $this->accounts->recordTransaction('spare_parts', 'drawing', $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', transactionDate: $effectiveAt, category: 'owner_withdrawal');
+                if ($fundedWithdrawal) {
+                    app(OutgoingFundingService::class)->post($withdrawalPlan, $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', $effectiveAt, 'owner_withdrawal', transactionType: 'drawing');
+                } else {
+                    $this->accounts->recordTransaction('spare_parts', 'drawing', $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', transactionDate: $effectiveAt, category: 'owner_withdrawal');
+                }
             }
             if ($washingTransfer != 0) {
                 $fromType = $washingTransfer > 0 ? 'washing' : 'main';
@@ -472,7 +539,10 @@ class CashierService
             }
             foreach ($differences as $type => $difference) {
                 if ($difference != 0) {
-                    $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), 'Cashier cash count reconciliation', $session, $independent ? 'Adjustment' : 'Cash', $values['difference_reason'], transactionDate: $effectiveAt, category: $independent ? 'cashier_account_reconciliation' : 'cashier_cash_reconciliation');
+                    $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference),
+                        $dailyAdditions !== null ? 'Cashier daily account allocation' : 'Cashier cash count reconciliation', $session, $independent ? 'Adjustment' : 'Cash',
+                        $dailyAdditions !== null ? 'Today added: '.number_format((float) $dailyAdditions[$type], 2).'; account base: '.number_format($allocationBases[$type], 2) : ($values['difference_reason'] ?? null),
+                        transactionDate: $effectiveAt, category: $dailyAdditions !== null ? 'cashier_daily_allocation' : ($independent ? 'cashier_account_reconciliation' : 'cashier_cash_reconciliation'));
                 }
             }
             if ($bankDifference != 0) {
@@ -480,39 +550,52 @@ class CashierService
             }
             $operational = [];
             $closingData = ['closed_by' => auth()->id(), 'status' => 'closed', 'notes' => $independent ? 'Cashier cash is separate from account balances. Prior cash count adjustment: '.number_format($summary['drawer_adjustment'], 2) : 'Cash-only cashier session #'.$session->id,
-                'difference_reason' => $values['difference_reason'] ?? null, 'difference' => array_sum($differences) + $bankDifference + ($independent ? $drawerDifference : 0)];
+                'difference_reason' => $values['difference_reason'] ?? null, 'difference' => ($dailyAdditions !== null ? 0 : array_sum($differences)) + $bankDifference + ($independent ? $drawerDifference : 0)];
             foreach (self::ACCOUNTS as $type => $label) {
                 $account = $summary['accounts'][$type];
                 $sweepChange = match ($type) {
                     'main' => $washingTransfer, 'washing' => -$washingTransfer, default => 0
                 };
-                $logicalExpected = $account['closing'] - ($type === 'spare_parts' ? $withdrawal : 0) + $sweepChange;
+                $logicalExpected = $account['closing'] - ($withdrawalAccounts[$type] ?? 0) + $sweepChange;
                 $accountDifference = $type === 'bank' ? $bankDifference : ($differences[$type] ?? 0);
                 $operational[$type] = round($logicalExpected + $accountDifference, 2);
                 $closingData[$type.'_opening_balance'] = $account['opening'];
                 $closingData[$type.'_income'] = $account['income'] + max(0, $sweepChange);
-                $closingData[$type.'_expense'] = $account['outgoing'] + ($type === 'spare_parts' ? $withdrawal : 0) + max(0, -$sweepChange);
-                $closingData[$type.'_closing_balance'] = $logicalExpected;
+                $closingData[$type.'_expense'] = $account['outgoing'] + ($withdrawalAccounts[$type] ?? 0) + max(0, -$sweepChange);
+                $closingData[$type.'_closing_balance'] = $dailyAdditions !== null && $type !== 'bank' ? $operational[$type] : $logicalExpected;
                 $closingData[$type.'_actual_balance'] = $operational[$type];
-                $closingData[$type.'_difference'] = $accountDifference;
+                $closingData[$type.'_difference'] = $dailyAdditions !== null && $type !== 'bank' ? 0 : $accountDifference;
+                if ($dailyAdditions !== null && $type !== 'bank') {
+                    $closingData[$type.'_income'] += max(0, $accountDifference);
+                    $closingData[$type.'_expense'] += max(0, -$accountDifference);
+                }
             }
             $closingData += ['cash_opening_balance' => $summary['cash_opening'], 'cash_income' => $summary['cash_received'] + $summary['cash_other_in'] + ($independent ? max(0, $summary['drawer_adjustment']) : 0),
-                'cash_expense' => $summary['cash_paid'] + $withdrawal + ($independent ? max(0, -$summary['drawer_adjustment']) : 0), 'cash_closing_balance' => $drawerExpected,
+                'cash_expense' => $summary['cash_paid'] + $cashWithdrawal + ($independent ? max(0, -$summary['drawer_adjustment']) : 0), 'cash_closing_balance' => $drawerExpected,
                 'cash_actual_balance' => $counted, 'cash_difference' => $drawerDifference];
+            if ($dailyAdditions !== null) {
+                $closingData['cash_income'] = $summary['cash_received'] + $summary['cash_other_in'] + max(0, -$washingTransfer);
+                $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $allocatedToday + max(0, $washingTransfer);
+            }
             DailyClosing::updateOrCreate(['closing_date' => $date], $closingData);
             $summary['closing_withdrawal'] = $withdrawal;
+            $summary['closing_withdrawal_funding'] = $withdrawalPlan;
+            $summary['closing_cash_withdrawal'] = $cashWithdrawal;
             $summary['closing_washing_transfer'] = $washingTransfer;
             $summary['closing_bank_balance'] = $bankActual;
+            $summary['closing_account_additions'] = $dailyAdditions;
+            $summary['closing_allocation_bases'] = $allocationBases;
+            $summary['closing_allocated_today'] = $allocatedToday;
             unset($summary['transactions'], $summary['collections']);
             $session->events()->create(['action' => 'closed', 'cash_amount' => $counted,
                 'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
-                'details' => ['separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
+                'details' => ['separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'withdrawal_funding' => $withdrawalPlan, 'cash_withdrawal' => $cashWithdrawal, 'account_additions' => $dailyAdditions, 'allocation_bases' => $allocationBases, 'allocated_today' => $allocatedToday, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
             $session->update([
                 'status' => 'closed', 'closed_by' => auth()->id(), 'closed_at' => now(),
                 'owner_withdrawal' => (float) $session->owner_withdrawal + $withdrawal,
                 'closing_summary' => $summary, 'actual_balances' => $operational, 'cash_balances' => $independent ? null : $values['balances'],
                 'drawer_closing_balance' => $independent ? $counted : null,
-                'drawer_adjustment' => $independent ? round((float) $session->drawer_adjustment + $drawerDifference, 2) : (float) $session->drawer_adjustment,
+                'drawer_adjustment' => $independent ? round((float) $session->drawer_adjustment + $drawerAdjustmentDelta, 2) : (float) $session->drawer_adjustment,
                 'notes' => $values['difference_reason'] ?? null,
             ]);
         });

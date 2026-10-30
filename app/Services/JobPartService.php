@@ -60,7 +60,7 @@ class JobPartService
             'unit_price' => $data['unit_price'], 'selling_price' => $data['unit_price'], 'cost_price' => $data['cost_price'],
             'discount' => 0, 'total' => $total, 'profit' => round($total - $this->totalCost((float) $data['cost_price'], (float) $data['quantity']), 2), 'out_of_stock' => false,
         ]);
-        $this->syncOuterExpense($job, $part, (int) $data['account_id']);
+        $this->syncOuterExpense($job, $part, (int) $data['account_id'], $data['funding'] ?? null);
 
         return $part;
     }
@@ -83,7 +83,7 @@ class JobPartService
             if (! auth()->user()->canAccess('expense.add')) {
                 abort(403);
             }
-            $this->syncOuterExpense($job, $part, (int) ($data['account_id'] ?? $part->expense?->account_id));
+            $this->syncOuterExpense($job, $part, (int) ($data['account_id'] ?? $part->expense?->account_id), $data['funding'] ?? null);
         } elseif ($quantityChange != 0) {
             app(WorkshopService::class)->adjustStock($part->store_id, $part->product_id, -$quantityChange, 'job_issue', $part, "Qty adjusted for {$job->number}", $part->stock_batch_id, $cost, (float) $data['unit_price']);
             $available = (float) (StoreStock::where('product_id', $part->product_id)->where('store_id', $part->store_id)->value('quantity') ?? 0);
@@ -135,7 +135,7 @@ class JobPartService
         return $amount;
     }
 
-    private function syncOuterExpense(JobCard $job, JobCardPart $part, int $accountId): void
+    private function syncOuterExpense(JobCard $job, JobCardPart $part, int $accountId, ?array $fundingRows = null): void
     {
         $account = Account::where('active', true)->lockForUpdate()->find($accountId);
         if (! $account) {
@@ -147,11 +147,14 @@ class JobPartService
         $description = 'Outer product: '.$part->bill_name.' · '.$reference;
         $method = $account->code === Account::systemCode('bank') || $account->type === 'bank' ? 'Bank Transfer' : 'Cash';
         $expense = $part->expense()->lockForUpdate()->first();
-        $needsPosting = ! $expense || $expense->status !== 'Active' || (float) $expense->amount !== $amount || (int) $expense->account_id !== $accountId;
+        $funding = app(OutgoingFundingService::class);
+        $plan = $funding->plan(['funding' => $fundingRows ?? $expense?->funding_allocations ?? [['source' => $funding->defaultSource($accountId, $method, 'spare_parts'), 'amount' => $amount]]], $amount, 'spare_parts');
+
+        $needsPosting = ! $expense || $expense->status !== 'Active' || (float) $expense->amount !== $amount || (int) $expense->account_id !== $accountId || $expense->funding_allocations !== $plan;
         if ($expense && $needsPosting) {
             $this->reverseExpense($expense, "Outer product updated on {$job->number}");
         }
-        $values = ['job_card_id' => $job->id, 'category' => 'Outer Products', 'description' => $description, 'reference_number' => $reference, 'account_id' => $accountId, 'amount' => $amount, 'payment_method' => $method, 'note' => $part->note, 'status' => 'Active', 'cancel_reason' => null, 'cancelled_at' => null, 'cancelled_by' => null];
+        $values = ['funding_allocations' => $plan, 'job_card_id' => $job->id, 'category' => 'Outer Products', 'description' => $description, 'reference_number' => $reference, 'account_id' => $accountId, 'amount' => $amount, 'payment_method' => $method, 'note' => $part->note, 'status' => 'Active', 'cancel_reason' => null, 'cancelled_at' => null, 'cancelled_by' => null];
         if ($expense) {
             $expense->update($values);
         } else {
@@ -160,10 +163,7 @@ class JobPartService
             $part->update(['expense_id' => $expense->id]);
         }
         if ($needsPosting && $amount > 0) {
-            $type = match ($account->code) {
-                Account::systemCode('main') => 'main', Account::systemCode('spare_parts') => 'spare_parts', Account::systemCode('bank') => 'bank', default => 'cash',
-            };
-            app(AccountService::class)->recordTransaction($type, 'expense', $amount, $description, $expense, $method, $part->note, $accountId, now(), 'Outer Products');
+            $funding->post($plan, $amount, $description, $expense, 'Cash', now(), 'Outer Products', $part->note);
         }
     }
 

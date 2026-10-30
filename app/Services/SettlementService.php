@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\Cheque;
 use App\Models\Invoice;
+use App\Models\JobAdvance;
 use App\Models\Payment;
 use App\Models\Purchase;
 use App\Models\SupplierPayment;
@@ -13,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class SettlementService
@@ -40,6 +42,7 @@ class SettlementService
             'payments.*.method' => 'required|in:'.$methods,
             'payments.*.amount' => 'required|numeric|min:0|decimal:0,2',
             'payments.*.account_id' => 'nullable|integer',
+            'payments.*.source' => ['nullable', Rule::in(array_keys(OutgoingFundingService::SOURCES))],
             'payments.*.cheque_date' => 'nullable|date_format:Y-m-d',
             'payments.*.cheque_number' => 'nullable|string|max:80',
             'payments.*.bank_name' => 'nullable|string|max:120',
@@ -48,6 +51,15 @@ class SettlementService
             'payments.*.note' => 'nullable|string|max:1000',
         ])->validate();
         foreach ($v['payments'] as $i => $row) {
+            if ($purchase && $row['method'] !== 'Party Cheque') {
+                $row['source'] ??= $row['method'] === 'Cash' ? 'spare_parts' : 'bank';
+                if ($row['method'] !== 'Cash' && $row['source'] !== 'bank') {
+                    throw ValidationException::withMessages(["payments.$i.source" => 'Non-cash purchase payments must use Bank Account.']);
+                }
+                $row['account_id'] = Account::systemAccount(app(OutgoingFundingService::class)->type($row['source']))->id;
+                $v['payments'][$i] = $row;
+            }
+
             if ($row['method'] === 'Credit/Due' && (float) $row['amount'] > 0) {
                 throw ValidationException::withMessages(["payments.$i.amount" => 'Credit/Due must have zero payment.']);
             }
@@ -117,6 +129,7 @@ class SettlementService
     public function pay(Purchase $purchase, array $row, $date = null, ?Cheque $cheque = null): SupplierPayment
     {
         return DB::transaction(function () use ($purchase, $row, $date, $cheque) {
+            app(CashierService::class)->lock();
             $purchase = Purchase::lockForUpdate()->findOrFail($purchase->id);
             $this->checkAmount($row, (float) $purchase->due_amount);
             if ($row['method'] === 'Party Cheque' && ! $cheque) {
@@ -128,8 +141,11 @@ class SettlementService
             } elseif ($row['method'] === 'Cheque') {
                 $cheque ??= $this->newCheque($purchase, $row, 'Issued');
             }
+            if (($row['source'] ?? null) === 'bank' && $cheque && app(OutgoingFundingService::class)->balances(today()->toDateString(), true)['bank'] < (float) $row['amount']) {
+                throw ValidationException::withMessages(['payments' => 'Bank Account does not have enough unreserved funds for this cheque.']);
+            }
             $payment = $purchase->payments()->create([
-                'number' => 'SPY-'.Str::upper(Str::random(12)), 'supplier_id' => $purchase->supplier_id,
+                'number' => 'SPY-'.Str::upper(Str::random(12)), 'supplier_id' => $purchase->supplier_id, 'funding_source' => $row['method'] === 'Party Cheque' ? null : ($row['source'] ?? null),
                 'account_id' => $row['account_id'] ?? null, 'amount' => $row['amount'], 'payment_method' => $row['method'],
                 'cheque_id' => $cheque?->id, 'payment_date' => $date ?? today(), 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $purchase->due_amount - (float) $row['amount'], 2),
@@ -137,7 +153,7 @@ class SettlementService
             ]);
             $this->move($purchase, (float) $payment->amount, $cheque ? 'hold_amount' : 'paid_amount', 1);
             if (! $cheque) {
-                app(AccountService::class)->outgoing('spare_parts', (float) $payment->amount, "Payment for {$purchase->number}", $payment, $payment->payment_method, $payment->payment_date, 'purchase');
+                app(OutgoingFundingService::class)->post([['source' => $row['source'] ?? 'spare_parts', 'amount' => $payment->amount]], (float) $payment->amount, "Payment for {$purchase->number}", $payment, $payment->payment_method, $payment->payment_date, 'purchase');
             }
 
             return $payment;
@@ -220,7 +236,7 @@ class SettlementService
             $service = app(AccountService::class);
             $payments = $cheque->payments()->lockForUpdate()->get();
             $supplierPayments = $cheque->supplierPayments()->lockForUpdate()->get();
-            $advances = \App\Models\JobAdvance::where('cheque_id', $cheque->id)->whereNull('payment_id')->lockForUpdate()->get();
+            $advances = JobAdvance::where('cheque_id', $cheque->id)->whereNull('payment_id')->lockForUpdate()->get();
             foreach ($advances as $advance) {
                 if (! in_array($advance->status, ['Hold', 'Completed'], true)) {
                     continue;
@@ -251,7 +267,11 @@ class SettlementService
                     if ($payment instanceof Payment) {
                         $service->receiveInvoicePayment($document, $payment, ! $cheque->forwarded_supplier_id, $date ?? today());
                     } else {
-                        $service->outgoing('spare_parts', $amount, "Cheque {$cheque->cheque_number} passed", $payment, $payment->payment_method, $date ?? today(), 'purchase', ! $cheque->forwarded_supplier_id);
+                        if ($payment->funding_source) {
+                            app(OutgoingFundingService::class)->post([['source' => $payment->funding_source, 'amount' => $amount]], $amount, "Cheque {$cheque->cheque_number} passed", $payment, $payment->payment_method, $date ?? today(), 'purchase');
+                        } else {
+                            $service->outgoing('spare_parts', $amount, "Cheque {$cheque->cheque_number} passed", $payment, $payment->payment_method, $date ?? today(), 'purchase', ! $cheque->forwarded_supplier_id);
+                        }
                     }
                     $this->saveStatus($document);
                 } elseif (in_array($status, ['Returned', 'Cancelled'])) {

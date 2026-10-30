@@ -102,3 +102,24 @@ test('closing drawer cash does not need to match account balances', () => {
     form.closingBalance = '4900';
     assert.equal(form.cashDifference, 0);
 });
+
+test('cashier closing count fills once from Main plus Spare Parts, with washing folded into Main and Bank excluded', () => {
+    const form = cashierClosing({main:1000, washing:200, spare_parts:500, bank:90000}, '', 100, {}, 500, true);
+    assert.equal(form.closingBalance, '1600.00');
+    form.balances.main = '800';
+    form.updateWithdrawal(120);
+    assert.equal(form.closingBalance, '1600.00');
+    form.closingBalance = '350.25';
+    form.balances.spare_parts = '100';
+    form.updateWithdrawal(150);
+    assert.equal(form.closingBalance, '350.25');
+});
+
+test('an explicitly entered cashier count including zero wins over automatic fill', () => {
+    for (const count of ['0', '75.50']) {
+        const form = cashierClosing({main:1000, spare_parts:500, bank:9000}, count, 0, {}, 500, true);
+        assert.equal(form.closingBalance, count);
+    }
+    const form = cashierClosing({main:1000, spare_parts:500}, '', 0, {main:'0.10', spare_parts:'0.20'}, 500, true);
+    assert.equal(form.closingBalance, '0.30');
+});

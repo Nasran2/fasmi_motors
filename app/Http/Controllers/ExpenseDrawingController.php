@@ -8,13 +8,13 @@ use App\Models\Drawing;
 use App\Models\Expense;
 use App\Models\FinancialCategory;
 use App\Services\AccountService;
+use App\Services\OutgoingFundingService;
 use App\Support\PrintDocument;
 use App\Support\SpreadsheetSafeText;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 class ExpenseDrawingController extends Controller
 {
@@ -123,35 +123,20 @@ class ExpenseDrawingController extends Controller
         $base = ['account_id' => 'required|exists:accounts,id', 'amount' => 'required|numeric|gt:0', 'payment_method' => 'required|in:Cash,Bank Transfer,Card,Cheque,QR', 'reference_number' => 'nullable|max:100', 'cheque_number' => 'nullable|required_if:payment_method,Cheque|max:100', 'note' => 'nullable|max:1000'];
         $specific = $module === 'expense' ? ['expense_date' => 'required|date', 'category' => 'required|max:100', 'description' => 'required|max:1000', 'vendor' => 'nullable|max:150', 'attachment' => 'nullable|file|max:4096'] : ['drawing_date' => 'required|date', 'person_name' => 'required|max:150', 'drawing_type' => 'required|max:100'];
         $v = $r->validate($base + $specific);
-        $selectedAccount = Account::where('active', true)->findOrFail($v['account_id']);
-        $types = collect(['main', 'spare_parts', 'bank', 'washing'])->mapWithKeys(fn ($type) => [Account::systemAccount($type)->id => $type]);
-        $accountType = $module === 'expense' ? $types->get($selectedAccount->id) : 'spare_parts';
-        if (! $accountType) {
-            throw ValidationException::withMessages(['account_id' => 'Select a configured system account.']);
-        }
-        DB::transaction(function () use ($v, $module, $service, $accountType, $r) {
-            $account = Account::systemAccount($accountType);
-            Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
-            $v['account_id'] = $account->id;
-            if ($service->getRunningBalance($accountType) < (float) $v['amount']) {
-                throw ValidationException::withMessages(['amount' => 'Amount is higher than the operational account balance.']);
-            }
+        $fundingService = app(OutgoingFundingService::class);
+        $plan = $fundingService->plan($r->all(), (float) $v['amount'], $fundingService->defaultSource((int) $v['account_id'], $v['payment_method'], $module === 'expense' ? 'main' : 'spare_parts'));
+        DB::transaction(function () use ($v, $module, $fundingService, $plan, $r) {
+            $v['account_id'] = Account::systemAccount($fundingService->type($plan[0]['source']))->id;
             if ($module === 'expense') {
                 if ($r->hasFile('attachment')) {
                     $v['attachment'] = $r->file('attachment')->store('expense-receipts', 'public');
                 }
-
-                $record = Expense::create($v + ['number' => 'EXP-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'status' => 'Active', 'created_by' => auth()->id()]);
+                $record = Expense::create($v + ['funding_allocations' => $plan, 'number' => 'EXP-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'status' => 'Active', 'created_by' => auth()->id()]);
             } else {
                 $record = Drawing::create($v + ['number' => 'DRW-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'status' => 'Active', 'created_by' => auth()->id()]);
             }
-
-            $service->recordTransaction($accountType, $module, (float) $v['amount'], ($module === 'expense' ? $v['description'] : "Drawing by {$v['person_name']}"), $record, $v['payment_method'], $v['note'] ?? null, $v['account_id'], $v[$module.'_date'], $module === 'expense' ? $v['category'] : $v['drawing_type']);
-            if ($v['payment_method'] !== 'Cash' && $accountType !== 'bank') {
-                $service->recordTransaction('bank', $module, (float) $v['amount'], ucfirst($module)." {$record->number}", $record, $v['payment_method'], null, null, $v[$module.'_date']);
-            }
-
-            return $record;
+            $fundingService->post($plan, (float) $v['amount'], $module === 'expense' ? $v['description'] : "Drawing by {$v['person_name']}", $record,
+                $v['payment_method'], $v[$module.'_date'], $module === 'expense' ? $v['category'] : $v['drawing_type'], $v['note'] ?? null, $module);
         });
         $route = $r->input('action') === 'add_another' ? ($module === 'expense' ? 'expenses.create' : 'drawings.create') : ($module === 'expense' ? 'expenses.index' : 'drawings.index');
 

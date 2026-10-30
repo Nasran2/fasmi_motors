@@ -384,7 +384,7 @@
                 </div>
                 <label class="block"><span class="label">Discount · LKR for this line</span><input id="pe-discount" name="discount" type="number" min="0" max="99999999.99" step="0.01" required value="0" class="field" aria-describedby="pe-discount-note"><span id="pe-discount-note" class="mt-1 block text-xs text-slate-500">Deducted once from quantity × unit price. Enter 0 for no discount.</span></label>
                 <p class="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800" aria-live="polite">Line total after discount: <span id="pe-total">Rs. 0.00</span></p>
-                <label id="pe-account-field" class="block" hidden><span class="label">Payment Account</span><select name="account_id" id="pe-account" class="field" disabled>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
+                <fieldset id="pe-account-field" hidden disabled><x-outgoing-funding default="main_cashier" amount-name="cost_price" quantity-name="quantity" account-id="pe-account"/></fieldset>
                 <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                     <button type="button" id="btn-delete-part" class="btn-secondary text-xs text-red-600 border-red-200 bg-red-50 hover:bg-red-100" onclick="workshopConfirm('Are you sure you want to remove this part?').then(ok => { if (ok) document.getElementById('part-delete-form').requestSubmit(); })">🗑 Delete Part</button>
                     <div class="flex gap-2">
@@ -555,7 +555,7 @@ function confirmDeletePart(partId) {
 document.querySelectorAll('[data-edit-part]').forEach(button => button.addEventListener('click', () => openPartModal(JSON.parse(button.dataset.editPart))));
 
 function openPartModal(details) {
-    const {id: partId, name, cost, price, quantity: qty, discount, note, external, account_id} = details;
+    const {id: partId, name, cost, price, quantity: qty, discount, note, external, account_id, funding} = details;
     const modal = document.getElementById('part-edit-modal');
     const form = document.getElementById('part-edit-form');
     const delForm = document.getElementById('part-delete-form');
@@ -570,6 +570,7 @@ function openPartModal(details) {
     document.getElementById('pe-name').value = name;
     document.getElementById('pe-note').value = note || '';
     document.getElementById('pe-account-field').hidden = !external;
+    document.getElementById('pe-account-field').disabled = !external;
     document.getElementById('pe-account').disabled = !external;
     if (external) document.getElementById('pe-account').value = account_id;
     document.getElementById('pe-cost').value = parseFloat(cost).toFixed(2);
@@ -577,7 +578,7 @@ function openPartModal(details) {
     document.getElementById('pe-price').value = parseFloat(price);
     document.getElementById('pe-discount').value = Number(discount) || 0;
     updatePartEditTotal();
-    
+    if (external) form.querySelector('[data-outgoing-funding]').dispatchEvent(new CustomEvent('funding-reset', { detail: funding }));
     modal.showModal();
 }
 

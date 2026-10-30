@@ -13,6 +13,7 @@ use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
 use App\Services\AccountService;
+use App\Services\OutgoingFundingService;
 use App\Services\SettlementService;
 use App\Services\WorkshopService;
 use Illuminate\Database\Eloquent\Builder;
@@ -170,9 +171,13 @@ class PurchaseController extends Controller
             foreach ($purchase->payments->where('status', 'Completed') as $payment) {
                 $reversal = min((float) $payment->amount, max(0, (float) $payment->amount - $cashRefunds));
                 if ($reversal > 0) {
-                    $accountService->recordTransaction('spare_parts', 'income', $reversal, "Reversal of {$purchase->number}", $payment, $payment->payment_method);
-                    if ($payment->payment_method !== 'Cash') {
-                        $accountService->recordTransaction('bank', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
+                    if ($payment->funding_source) {
+                        $accountService->recordTransaction(app(OutgoingFundingService::class)->type($payment->funding_source), 'income', $reversal, "Reversal of {$purchase->number}", $payment, $payment->payment_method, fundingSource: $payment->funding_source);
+                    } else {
+                        $accountService->recordTransaction('spare_parts', 'income', $reversal, "Reversal of {$purchase->number}", $payment, $payment->payment_method);
+                        if ($payment->payment_method !== 'Cash') {
+                            $accountService->recordTransaction('bank', 'income', $reversal, "Reversal of {$purchase->number}", $purchase, $payment->payment_method, null, $payment->account_id);
+                        }
                     }
                 }
                 $cashRefunds = max(0, $cashRefunds - (float) $payment->amount);
@@ -363,8 +368,8 @@ class PurchaseController extends Controller
 
     private function recordSupplierPayment(array $data, Supplier $supplier, float $amount, ?int $purchaseId): void
     {
-        $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $purchaseId, 'account_id' => $data['account_id'], 'payment_date' => $data['payment_date'], 'amount' => $amount, 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-        app(AccountService::class)->outgoing('spare_parts', $amount, "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], $data['payment_date'], 'purchase');
+        $payment = SupplierPayment::create(['number' => 'SPY-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'supplier_id' => $supplier->id, 'purchase_id' => $purchaseId, 'account_id' => $data['account_id'], 'funding_source' => $data['source'] ?? 'spare_parts', 'payment_date' => $data['payment_date'], 'amount' => $amount, 'balance_after' => $supplier->fresh()->balance, 'payment_method' => $data['payment_method'], 'reference' => $data['reference'] ?? null, 'note' => $data['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
+        app(OutgoingFundingService::class)->post([['source' => $payment->funding_source, 'amount' => $amount]], $amount, "Supplier payment {$payment->number} to {$supplier->name}", $payment, $data['payment_method'], $data['payment_date'], 'purchase');
     }
 
     public function dues(Request $request)

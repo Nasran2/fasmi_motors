@@ -6,6 +6,8 @@ use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\AccountTransfer;
 use App\Services\AccountService;
+use App\Services\CashierService;
+use App\Services\OutgoingFundingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,20 +28,22 @@ class AccountTransferController extends BaseAccountController
 
     public function store(Request $request, AccountService $service)
     {
-        $v = $request->validate(['from_account' => 'required|in:main,spare_parts,bank,washing,cash', 'to_account' => 'required|in:main,spare_parts,bank,washing,cash|different:from_account', 'amount' => 'required|numeric|gt:0', 'transfer_date' => 'required|date', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000']);
+        $v = $request->validate(['from_account' => 'nullable|in:main,spare_parts,bank,washing,cash', 'to_account' => 'required|in:main,spare_parts,bank,washing,cash|different:from_account', 'amount' => 'required|numeric|gt:0', 'transfer_date' => 'required|date|before_or_equal:now', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000'] + OutgoingFundingService::rules());
         DB::transaction(function () use ($v, $service) {
-            $from = $this->account($v['from_account']);
+            $funding = app(OutgoingFundingService::class);
+            $plan = $funding->plan($v, (float) $v['amount'], $v['from_account'] ?? 'main');
+            $from = $this->account($funding->type($plan[0]['source']));
             $to = $this->account($v['to_account']);
-            if ($from->id === $to->id) {
-                throw ValidationException::withMessages(['to_account' => 'These selections refer to the same account. Cash Book is a reporting view, not a separate transfer destination.']);
+            foreach ($plan as $row) {
+                if ($this->account($funding->type($row['source']))->id === $to->id) {
+                    throw ValidationException::withMessages(['to_account' => 'Choose a destination different from every selected payment source.']);
+                }
             }
-            Account::whereIn('id', [$from->id, $to->id])->orderBy('id')->lockForUpdate()->get();
-            if ($this->balance($v['from_account']) < (float) $v['amount']) {
-                throw ValidationException::withMessages(['amount' => 'The source account does not have enough available balance.']);
-            }
+            app(CashierService::class)->lock();
             $transfer = AccountTransfer::create(['transfer_no' => 'AT-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'from_account_id' => $from->id, 'to_account_id' => $to->id, 'amount' => $v['amount'], 'transfer_date' => $v['transfer_date'], 'payment_method' => $v['payment_method'] ?? null, 'reference_number' => $v['reference'] ?? null, 'note' => $v['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-            $service->recordTransaction($v['from_account'], 'transfer_out', $v['amount'], "Transfer to {$to->name}", $transfer, $v['payment_method'] ?? null, $v['note'] ?? null, $from->id, $v['transfer_date'], 'transfer');
-            $service->recordTransaction($v['to_account'], 'transfer_in', $v['amount'], "Transfer from {$from->name}", $transfer, $v['payment_method'] ?? null, $v['note'] ?? null, $to->id, $v['transfer_date'], 'transfer');
+            $funding->post($plan, (float) $v['amount'], "Transfer to {$to->name}", $transfer, $v['payment_method'] ?? 'Cash', $v['transfer_date'], 'transfer', $v['note'] ?? null, 'transfer_out');
+            $destination = $v['to_account'] === 'cash' ? 'main' : $v['to_account'];
+            $service->recordTransaction($destination, 'transfer_in', (float) $v['amount'], "Transfer from {$from->name}", $transfer, $destination === 'bank' ? 'Bank Transfer' : 'Cash', $v['note'] ?? null, $to->id, $v['transfer_date'], 'transfer', in_array($destination, ['main', 'spare_parts', 'bank']) ? $destination : null);
         });
 
         return back()->with('success', 'Account transfer completed and both ledgers were updated.');

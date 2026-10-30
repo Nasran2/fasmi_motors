@@ -16,7 +16,7 @@ class Expense extends Model
 
     protected function casts(): array
     {
-        return ['expense_date' => 'date'];
+        return ['expense_date' => 'date', 'funding_allocations' => 'array'];
     }
 
     public function jobPart(): HasOne

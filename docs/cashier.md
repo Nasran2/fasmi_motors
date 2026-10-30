@@ -41,3 +41,34 @@ All work and verification for this change used the local development and isolate
 Verification: 132 selected backend tests passed (1,209 assertions), alongside nine JavaScript tests. Coverage includes independent opening/closing amounts, actual cash/bank receipt allocation, ledger-only corrections, cash-only edits with no ledger postings, owner withdrawal, washing sweeps, repeated opens/closes, historical edits, missing historical records, negative Main ledgers, cash count differences, stale forms, gaps between sessions, later legacy checkpoints and separate PDF/Excel rows. Production assets build, compiled cashier templates, PHP formatting and whitespace checks pass. Migration 000006 was applied only to the guarded local development database; tests used the isolated local testing database.
 
 Bank opening verification: 144 selected backend cases passed (1,314 assertions); after adding protection for an existing drawer count difference, all 30 Bank and separate-drawer cases passed (257 assertions). Nine cashier JavaScript tests, the production build, compiled cashier templates and formatting checks passed. All verification remained local.
+# Editable physical cashier counts
+
+The opening popup highlights **Opening cash in cashier**, prefilled from the carried physical count and editable independently of the accounts.
+
+The close form calculates **Closing balance in cashier** as the remainder after separating Main and Spare Parts balances. Its starting total is the automatic Main balance (including washing) plus the automatic Spare Parts balance after owner withdrawal. Subtract the Main and Spare Parts closing amounts entered by the user; Bank is excluded. Keeping both suggested account amounts leaves zero in the cashier. Changing either account recalculates the remainder, while the cashier count also remains directly editable. Explicit counts, including zero, are retained on validation errors and stale-version reloads until an account changes.
+
+Example: automatic Main 6,700 + Spare Parts 6,750 = 13,450. Enter Main 6,000 to leave 700; enter Spare Parts 6,000 to leave 1,450. Saving records Main 6,000 and Spare Parts 6,000 separately, with cashier closing cash 1,450 carried to the next opening.
+
+The remainder calculation is separate from expected physical cash (opening count plus cash receipts and cash movements). Changes from recorded cash or account balances still require a reason. The current form can close a legacy session with an independent drawer count without forcing account balances to add up to the drawer count. The owner withdrawal can select or split the same outgoing funding sources; only cashier-funded portions reduce physical drawer cash.
+
+Earlier count-entry verification: 70 cashier regression cases (648 assertions), 11 cashier JavaScript checks, production build and Blade compilation passed before the remainder calculation change. No additional schema migration is needed. The remainder calculation change was made without running tests, as requested. Frontend assets were rebuilt for manual checking locally. Live data was not changed.
+
+## Current cash in hand
+
+The cashier page highlights current cash in hand as **cashier opening cash + today's net Main Account Cashier cash + today's net Spare Parts Account Cashier cash**. The opening amount comes from the saved physical cashier opening; it is never calculated by adding the Main/Spare Parts opening account balances. Today's cashier amounts use the same cash-source classification as outgoing payments, before operational-ledger spending caps. Only actual cash receipts, cash-source outgoings and their reversals affect these two amounts. Bank/non-cash receipts and opening-account expenditure are excluded.
+
+The main cash-in-hand card and the highlighted breakdown use this formula. Unsaved owner withdrawals from either cashier source reduce that source and the highlighted total while editing. Withdrawals from opening funds or Bank do not reduce the displayed cashier total. The separate editable closing remainder and saved reconciliation counts retain their existing workflow.
+
+This display change was made locally without running tests, per the user's request; frontend assets were rebuilt.
+
+## Daily account additions in the close form
+
+The current close form accepts **Today's amount added to Main Account** and **Today's amount added to Spare Parts Account**, instead of complete closing account totals. Each field shows the saved account opening balance, any other account movements/expenses, the amount entered today, and the resulting account balance live. Bank continues to accept its complete balance independently.
+
+For example, Main opening Rs. 10,000 plus today's addition Rs. 1,700 gives a closing Main balance of Rs. 11,700 when there are no other movements. If opening funds paid an expense, that expense is shown separately in the breakdown and reduces the account base. Today's net cashier collections prefill the addition fields; both are editable, including zero. Pending cashier-funded owner withdrawals reduce the appropriate suggested daily addition, while opening-funded withdrawals reduce the account base.
+
+Cashier cash remaining is the highlighted cashier opening plus today's Main/Spare Parts cashier amounts, less only the daily additions. Account opening balances are not subtracted again. Over-allocation is blocked on the server; a changed physical count or Bank balance still requires a reason. Ordinary daily allocation choices are recorded as `cashier_daily_allocation` ledger adjustments with the entered amount and account base, rather than missing-cash discrepancies. The closing snapshot and history event keep the separate daily additions and final account balances.
+
+Earlier allocations on the same date are excluded from the account base and included when suggesting the next cumulative daily additions. Reopening and saving unchanged amounts does not apply the day's allocation twice. Saved account closing balances and the cashier's leftover count continue to carry separately. Legacy full-balance requests remain supported.
+
+No new migration is needed. This change was completed locally without running tests; frontend assets were rebuilt for manual testing by the user.

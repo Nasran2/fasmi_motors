@@ -12,6 +12,7 @@ use App\Services\AccountTransactionSourceService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
 use App\Services\DrawerCashierService;
+use App\Services\OutgoingFundingService;
 use App\Services\WashingCommissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -181,12 +182,16 @@ class CashierController extends Controller
             'owner_withdrawal' => 'required|numeric|decimal:0,2|min:0|max:999999999999.99',
             'owner_name' => 'nullable|string|max:100',
             'closing_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
+            'separate_cash_balance' => 'nullable|boolean',
+            'account_additions' => 'sometimes|array:main,spare_parts',
+            'account_additions.main' => 'required_with:account_additions|numeric|decimal:0,2|between:0,999999999999.99',
+            'account_additions.spare_parts' => 'required_with:account_additions|numeric|decimal:0,2|between:0,999999999999.99',
             'balances' => 'sometimes|array:main,spare_parts,bank',
             'balances.main' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'balances.spare_parts' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'balances.bank' => 'sometimes|required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'difference_reason' => 'nullable|string|max:1000', 'balance_version' => 'required|string|size:64',
-        ]);
+        ] + OutgoingFundingService::rules());
         $service->close($cashier, $values);
 
         return redirect()->route('cashier.index', ['date' => $cashier->session_date->toDateString()])->with('success', 'Cashier closed. Cash withdrawal and verified cash-in-hand balances have been saved.');

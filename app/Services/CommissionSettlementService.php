@@ -60,10 +60,9 @@ class CommissionSettlementService
             }
             $payout = null;
             if ($payment) {
-                $account = Account::whereKey($data['account_id'])->where('active', true)->lockForUpdate()->firstOrFail();
-                if ($account->code === Account::systemCode('bank') && $data['payment_method'] === 'Cash') {
-                    throw ValidationException::withMessages(['payment_method' => 'Choose Bank Transfer or another non-cash method for the Bank Account.']);
-                }
+                $funding = app(OutgoingFundingService::class);
+                $plan = $funding->plan($data, (float) $data['amount'], $funding->defaultSource((int) $data['account_id'], $data['payment_method']));
+                $account = Account::systemAccount($funding->type($plan[0]['source']));
                 $payout = CommissionPayment::create(['number' => 'COM-'.Str::upper(Str::random(12)), 'technician_id' => $technician->id,
                     'amount' => $remaining / 100, 'account_id' => $account->id, 'payment_method' => $data['payment_method'],
                     'payment_date' => $data['payment_date'], 'note' => $data['note'] ?? null, 'created_by' => auth()->id()]);
@@ -94,15 +93,7 @@ class CommissionSettlementService
                 $remaining -= (int) round($amount * 100);
             }
             if ($payout) {
-                $type = match ($account->code) {
-                    Account::systemCode('main') => 'main', Account::systemCode('bank') => 'bank',
-                    Account::systemCode('spare_parts') => 'spare_parts', Account::systemCode('washing') => 'washing', default => 'cash',
-                };
-                $ledger = app(AccountService::class);
-                $ledger->recordTransaction($type, 'expense', (float) $payout->amount, "Commission payment {$payout->number} · {$technician->name}", $payout, $payout->payment_method, $payout->note, $account->id, $payout->payment_date, 'commission');
-                if ($type !== 'bank' && $payout->payment_method !== 'Cash') {
-                    $ledger->recordTransaction('bank', 'expense', (float) $payout->amount, "Commission payment {$payout->number} · {$technician->name}", $payout, $payout->payment_method, null, null, $payout->payment_date, 'commission');
-                }
+                $funding->post($plan, (float) $payout->amount, "Commission payment {$payout->number} · {$technician->name}", $payout, $payout->payment_method, $payout->payment_date, 'commission', $payout->note);
             }
 
             return $payout;

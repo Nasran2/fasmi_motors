@@ -18,6 +18,7 @@ use App\Services\BikeRegistrationService;
 use App\Services\BillDetailsService;
 use App\Services\JobCommissionService;
 use App\Services\JobPartService;
+use App\Services\OutgoingFundingService;
 use App\Services\SettlementService;
 use App\Services\StaffBikeRepairService;
 use App\Services\WashingCommissionService;
@@ -340,7 +341,7 @@ class JobCardController extends Controller
             'cost_price' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
             'unit_price' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
             'quantity' => 'required|numeric|decimal:0,2|min:0.01|max:999999.99', 'account_id' => 'required|exists:accounts,id',
-        ]);
+        ] + OutgoingFundingService::rules());
         DB::transaction(function () use ($job, $data, $parts) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             $parts->addOuter($job, $data);
@@ -370,7 +371,7 @@ class JobCardController extends Controller
             'unit_price' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
             'discount' => 'sometimes|required|numeric|decimal:0,2|min:0|max:99999999.99',
             'quantity' => 'required|numeric|decimal:0,2|min:0.01|max:999999.99', 'account_id' => 'nullable|exists:accounts,id',
-        ]);
+        ] + OutgoingFundingService::rules());
         DB::transaction(function () use ($job, $partId, $data, $parts) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
             $part = $job->parts()->lockForUpdate()->findOrFail($partId);

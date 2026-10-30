@@ -16,11 +16,13 @@ class AccountTransaction extends Model
 
         $ids = collect(['main', 'spare_parts', 'washing'])->map(fn ($type) => Account::systemAccount($type)?->id)->filter();
 
-        return $query->whereIn('account_id', $ids)->where(function ($cash) {
-            $cash->where('account_type', 'cash')->orWhere(function ($logical) {
-                $logical->whereIn('account_type', ['main', 'spare_parts', 'washing'])->where('payment_method', 'Cash');
+        return $query->whereIn('account_id', $ids)
+            ->where(fn ($funding) => $funding->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
+            ->where(function ($cash) {
+                $cash->where('account_type', 'cash')->orWhere(function ($logical) {
+                    $logical->whereIn('account_type', ['main', 'spare_parts', 'washing'])->where('payment_method', 'Cash');
+                });
             });
-        });
     }
 
     public function scopePosted($query)
