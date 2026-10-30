@@ -63,19 +63,23 @@ class CashierService
         $cashOpening = $independent ? (float) $session->drawer_opening_balance : round(collect($cashAccounts)->sum('opening'), 2);
         $cashClosing = $independent ? round($cashOpening + collect($cashMovements)->sum('closing') + (float) $session->drawer_adjustment, 2) : round(collect($cashAccounts)->sum('closing'), 2);
         $funding = app(OutgoingFundingService::class);
+        $openingContext = app(DrawerCashierService::class)->cycleContext($session);
         $cashierFunds = [
-            'opening' => (float) ($session?->drawer_opening_balance ?? $session?->opening_balance ?? 0),
+            'opening' => (float) ($openingContext['cash'] ?? $session?->drawer_opening_balance ?? $session?->opening_balance ?? 0),
             'main' => $funding->cashierAmount($transactions->where('account_id', Account::systemAccount('main')->id), 'main'),
             'spare_parts' => $funding->cashierAmount($transactions->where('account_id', Account::systemAccount('spare_parts')->id), 'spare_parts'),
         ];
+        foreach (['main', 'spare_parts'] as $type) {
+            $cashierFunds[$type] = round($cashierFunds[$type] - ($openingContext['snapshot']['cashier'][$type] ?? 0), 2);
+        }
         $cashierFunds['total'] = array_sum(array_map(fn ($amount) => (int) round($amount * 100), $cashierFunds)) / 100;
         $allocationAccounts = [];
         foreach (['main', 'spare_parts'] as $type) {
             $priorAllocationRows = $transactions->where('account_id', Account::systemAccount($type)->id)->where('category', 'cashier_daily_allocation');
-            $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit'), 2);
+            $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit') - ($openingContext['snapshot']['daily_allocation'][$type] ?? 0), 2);
             $washingToMain = $type === 'main' ? $cashAccounts['washing']['closing'] : 0;
             $allocationAccounts[$type] = [
-                'opening' => $accounts[$type]['opening'],
+                'opening' => $openingContext['accounts'][$type] ?? $accounts[$type]['opening'],
                 'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
                 'suggested_addition' => max(0, round($cashierFunds[$type] + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
@@ -85,6 +89,9 @@ class CashierService
         return [
             'separate_cash_balance' => $independent, 'drawer_adjustment' => (float) ($session?->drawer_adjustment ?? 0),
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
+            'opening_context' => $openingContext, 'account_opening_balances' => $session?->account_opening_balances,
+            'cashier_cycle' => ['income' => round($collections->where('channel', 'cash')->sum('amount') + collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']) - ($openingContext['cash_movements']['income'] ?? 0), 2),
+                'paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) - ($openingContext['cash_movements']['paid'] ?? 0), 2)],
             'cashier_funds' => $cashierFunds, 'allocation_accounts' => $allocationAccounts,
             'cash_opening' => $cashOpening,
             'cash_in_hand' => $cashClosing,
@@ -576,6 +583,12 @@ class CashierService
             if ($dailyAdditions !== null) {
                 $closingData['cash_income'] = $summary['cash_received'] + $summary['cash_other_in'] + max(0, -$washingTransfer);
                 $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $allocatedToday + max(0, $washingTransfer);
+                if ($summary['opening_context'] !== null) {
+                    $cycleWashing = $washingTransfer - ($summary['opening_context']['cash_movements']['washing_cash'] ?? 0);
+                    $closingData['cash_opening_balance'] = $summary['cashier_funds']['opening'];
+                    $closingData['cash_income'] = $summary['cashier_cycle']['income'] + max(0, -$cycleWashing);
+                    $closingData['cash_expense'] = $summary['cashier_cycle']['paid'] + $cashWithdrawal + $allocatedToday + max(0, $cycleWashing);
+                }
             }
             DailyClosing::updateOrCreate(['closing_date' => $date], $closingData);
             $summary['closing_withdrawal'] = $withdrawal;
@@ -586,6 +599,8 @@ class CashierService
             $summary['closing_account_additions'] = $dailyAdditions;
             $summary['closing_allocation_bases'] = $allocationBases;
             $summary['closing_allocated_today'] = $allocatedToday;
+            $closingRows = AccountTransaction::posted()->whereIn('account_id', collect(self::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date)->get();
+            $summary['closing_ledger_snapshot'] = app(DrawerCashierService::class)->ledgerSnapshot($closingRows);
             unset($summary['transactions'], $summary['collections']);
             $session->events()->create(['action' => 'closed', 'cash_amount' => $counted,
                 'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,

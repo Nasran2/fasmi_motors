@@ -77,15 +77,16 @@ class CashierController extends Controller
         }
         $todaySession = CashierSession::whereDate('session_date', today())->first();
         $summary = $service->summary($openingDate);
-        $openingBalances = app(DrawerCashierService::class)->accountDefaults($summary, ! $editing && (bool) $todaySession);
-        $suggestedOpening = $editing ? (float) ($editingSession?->drawer_opening_balance ?? $editingSession?->opening_balance ?? $summary['cash_opening']) : ($todaySession ? $summary['cash_in_hand'] : (app(DrawerCashierService::class)->carriedOpening($openingDate, true) ?? 0));
+        $openingPlan = $editing ? null : app(DrawerCashierService::class)->openingPlan($openingDate, $summary, $todaySession);
+        $openingBalances = $editing ? app(DrawerCashierService::class)->accountDefaults($summary, false) : $openingPlan['accounts'];
+        $suggestedOpening = $editing ? (float) ($editingSession?->drawer_opening_balance ?? $editingSession?->opening_balance ?? $summary['cash_opening']) : $openingPlan['cash'];
         $balanceVersion = $service->fingerprint($summary);
         $canRecalculateToday = $editing && $editingSession?->status === 'open' && $editingSession->session_date->isToday();
         $washingPerson = $todaySession?->washing_person_id;
         $defaultAmount = $washing->defaultAmount();
         $technicians = Technician::where('active', true)->orderBy('name')->get();
 
-        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active', 'canRecalculateToday', 'summary'));
+        return view('cashier.opening-popup', compact('suggestedOpening', 'washingPerson', 'defaultAmount', 'technicians', 'openingBalances', 'balanceVersion', 'editing', 'recording', 'editingSession', 'openingDate', 'active', 'canRecalculateToday', 'summary', 'openingPlan'));
     }
 
     public function collections(Request $request)

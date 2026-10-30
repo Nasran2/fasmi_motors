@@ -151,6 +151,10 @@ export async function openCashierDialog(url) {
             reason.required = reason.dataset.alwaysRequired === '1' || state.changed;
             opening.setCustomValidity(state.valid ? '' : 'Enter valid cashier cash and account balances.');
             if (allocationTotal) allocationTotal.textContent = 'Cash in the cashier is separate from Main, Spare Parts and Bank balances.';
+            dialog.querySelectorAll('[data-opening-preview]').forEach(preview => {
+                const input = dialog.querySelector('form').elements.namedItem(preview.dataset.openingPreview);
+                preview.textContent = Number(input?.value || 0).toLocaleString('en-LK', {minimumFractionDigits:2, maximumFractionDigits:2});
+            });
         };
         [opening, ...accounts].forEach(input => input.addEventListener('input', updateAllocation));
         updateAllocation();

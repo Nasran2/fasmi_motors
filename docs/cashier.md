@@ -69,6 +69,16 @@ For example, Main opening Rs. 10,000 plus today's addition Rs. 1,700 gives a clo
 
 Cashier cash remaining is the highlighted cashier opening plus today's Main/Spare Parts cashier amounts, less only the daily additions. Account opening balances are not subtracted again. Over-allocation is blocked on the server; a changed physical count or Bank balance still requires a reason. Ordinary daily allocation choices are recorded as `cashier_daily_allocation` ledger adjustments with the entered amount and account base, rather than missing-cash discrepancies. The closing snapshot and history event keep the separate daily additions and final account balances.
 
-Earlier allocations on the same date are excluded from the account base and included when suggesting the next cumulative daily additions. Reopening and saving unchanged amounts does not apply the day's allocation twice. Saved account closing balances and the cashier's leftover count continue to carry separately. Legacy full-balance requests remain supported.
+Allocations already completed before reopening are part of the carried account balance. Only cash received and spent since the latest opening is suggested as the next addition. Saved account closing balances and the cashier's leftover count continue to carry separately. Legacy full-balance requests remain supported.
 
 No new migration is needed. This change was completed locally without running tests; frontend assets were rebuilt for manual testing by the user.
+
+## Opening after separating account cash
+
+The opening popup carries **cash left in the cashier**, **full Main balance**, **full Spare Parts balance**, and **full Bank balance** independently. For example, a saved close with cashier Rs. 1,350, Main Rs. 10,700, Spare Parts Rs. 8,500 and Bank Rs. 16,800 suggests those same four values at the next opening, adjusted for any intervening movements. Opening account fields accept full carried balances; the closing form accepts only the additions made during that opening. Every suggested amount remains editable, with a reason required for changes. Existing nonzero Washing balances are preserved under the advanced Washing field.
+
+An opening event stores the confirmed cash/account balances and snapshots of the ledger movements already recorded. Main Account Cashier and Spare Parts Account Cashier therefore start at zero for the new opening, including a same-day reopening. Earlier receipts, payouts and allocation events remain in history; they are not counted a second time in the current cashier pools or available opening funds. Calendar-day receipt and payout totals remain cumulative and are labelled accordingly.
+
+Cash received after the last saved close is included in the suggested physical opening and excluded from the suggested separate account balance. An allocation adjustment records that distinction when opening; it is not a customer receipt. Closing snapshots identify which ledger movements were already included in the last count. Opening corrections continue to retain reasons and earlier recorded count checkpoints.
+
+These changes use existing session/event snapshot fields and require no new migration. They were made locally without running tests or changing live data.

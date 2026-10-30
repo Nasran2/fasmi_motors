@@ -67,6 +67,9 @@ class OutgoingFundingService
         $all = ($lock ? $query->lockForUpdate() : $query)->get();
         $start = Carbon::parse($date)->startOfDay();
         $end = $start->copy()->endOfDay();
+        $sessionQuery = CashierSession::whereDate('session_date', $date);
+        $session = ($lock ? $sessionQuery->lockForUpdate() : $sessionQuery)->first();
+        $context = app(DrawerCashierService::class)->cycleContext($session, $lock);
         $result = [];
         foreach (['main', 'spare_parts', 'bank'] as $type) {
             $account = $accounts[$type];
@@ -82,7 +85,11 @@ class OutgoingFundingService
             $spent = $today->where('funding_source', $type)->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']);
             $result[$type] = round((float) $account->opening_balance + $prior->sum('credit') - $prior->sum('debit')
                 + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') + $spent->sum('credit') - $spent->sum('debit'), 2);
-            $result[$type.'_cashier'] = $this->cashierAmount($today, $type);
+            if ($context !== null) {
+                $result[$type] = round($context['accounts'][$type] + $spent->sum('credit') - $spent->sum('debit') - ($context['snapshot']['opening_funding'][$type] ?? 0)
+                    + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') - ($context['snapshot']['opening_corrections'][$type] ?? 0), 2);
+            }
+            $result[$type.'_cashier'] = round($this->cashierAmount($today, $type) - ($context['snapshot']['cashier'][$type] ?? 0), 2);
             $ledgerBalance = round((float) $account->opening_balance + $entries->sum('credit') - $entries->sum('debit'), 2);
             $result[$type] = min($result[$type], $ledgerBalance);
             $result[$type.'_cashier'] = min($result[$type.'_cashier'], $ledgerBalance);
