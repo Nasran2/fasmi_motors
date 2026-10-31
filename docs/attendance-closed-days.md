@@ -26,3 +26,11 @@ Not Worked retains the date's weekly/holiday metadata. It contributes no worked 
 Genuine work remains supported: choose Present and enter the actual times to restore worked-on-leave attendance. Editing and recalculating an existing Worked on Leave Day now retains its worked-on-leave flag. Finalized, partially paid and paid salary attendance remains locked under the existing rules. Existing salary drafts must be explicitly refreshed to reflect attendance corrections.
 
 No migration is needed for this attendance change. Local verification: 78 selected attendance, payroll and draft-detail cases passed (466 assertions), including weekly/special closures, correction reasons, recalculation persistence, restoring real work and salary locks. Live data was not changed.
+
+## Edit import rows before confirmation
+
+The import preview now offers **Add row**, **Delete row** on each row, and **Undo last delete**. Added rows require an existing staff member and a date, and support the same times, staff schedule filling, paid-leave and closed-day choices as uploaded rows. Newly added attendance is identified as a manual entry from the import review. The confirm button counts retained and added rows dynamically.
+
+Rows sort chronologically after the date field change is completed; a new row moves to its date after selection. Existing time edits are retained when moving between normal working dates. Delete excludes the preview row only and never removes saved attendance. Until confirmation, the changes remain in the current browser review; refreshing discards unsubmitted row changes.
+
+Confirmation validates explicit removal IDs against the owned preview, merges edited file rows with added rows, checks the form manifest for incomplete submissions, rejects duplicate staff/date entries within the preview and retains existing payroll locks. Existing saved attendance at a retained staff/date still follows the import's normal update behavior. The final review rows are processed in date order. No migration is needed. Assets were rebuilt locally; no tests or live-server actions were performed for this follow-up.

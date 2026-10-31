@@ -17,6 +17,42 @@
 
     <style>
         body { background: #f8fafc; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .salary-document { width: 100%; max-width: 210mm; margin-inline: auto; }
+        .salary-payslip { padding: 18px 24px; font-size: 12.5px; line-height: 1.3; }
+        .salary-payslip .mt-6 { margin-top: 12px; }
+        .salary-payslip .mt-5 { margin-top: 10px; }
+        .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 8px; }
+        .salary-payslip .mt-2 { margin-top: 4px; }
+        .salary-payslip .mt-1 { margin-top: 2px; }
+        .salary-payslip .p-6, .salary-payslip .p-4 { padding: 10px; }
+        .salary-payslip .p-3 { padding: 7px; }
+        .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 16px; }
+        .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 8px; }
+        .salary-payslip .text-sm { font-size: 12px; }
+        .salary-payslip .text-xs { font-size: 10px; }
+        .salary-payslip .text-xl { font-size: 16px; }
+        .salary-payslip .text-lg { font-size: 15px; }
+        .salary-payslip .text-4xl { font-size: 24px; }
+        .salary-payslip .salary-slip-header { padding-bottom: 10px; }
+        .salary-payslip .salary-person-details { padding: 10px 12px; }
+        .salary-payslip .salary-attendance-item { padding: 6px 4px; border-radius: 6px; }
+        .salary-payslip .salary-attendance-item small { font-size: 9px; line-height: 1.15; }
+        .salary-payslip .salary-attendance-item p { margin-top: 3px; }
+        .salary-payslip h2 { padding-bottom: 4px; }
+        .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 4px; }
+        .salary-payslip .py-2 { padding-block: 4px; }
+        .salary-payslip .salary-earnings-grid dl > div { gap: 8px; }
+        .salary-payslip .salary-earnings-grid dd { white-space: nowrap; }
+        .salary-payslip .salary-net-pay { padding: 10px 14px; }
+        .salary-payslip .salary-payment-summary { padding: 8px 12px; }
+        .salary-payslip .salary-signatures { margin-top: 20px; gap: 12px; }
+        .salary-payslip .salary-signatures .pt-3 { padding-top: 7px; }
+        .salary-payslip table { width: 100%; }
+        .salary-payslip td, .salary-payslip th { overflow-wrap: anywhere; }
+        @media screen and (min-width: 640px) {
+            .salary-payslip .salary-earnings-grid, .salary-payslip .salary-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .salary-payslip .salary-summary-grid { grid-template-columns: repeat(var(--salary-summary-columns), minmax(0, 1fr)); }
+        }
         @media print {
             article { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
             article [class*="bg-"] { background: #fff !important; color: #162337 !important; }
@@ -42,23 +78,42 @@
             .text-emerald-700, .text-red-700, .text-blue-700, .text-red-600 { color: black !important; }
             .rounded-2xl, .rounded-3xl, .rounded-xl { border-radius: 0 !important; }
             @else
-            @page { size: A4 portrait; margin: 1cm; }
+            @page { size: A4 portrait; margin: 12mm; }
+            .salary-document { width: auto; max-width: none; margin: 0; }
+            .salary-document > .salary-payslip { margin: 0 !important; }
             .print-border-0 { border: none !important; box-shadow: none !important; padding: 0 !important; }
-            body { font-size: 10.5px !important; line-height: 1.2 !important; }
-            .salary-payslip { font-size: 10.5px; }
-            .salary-payslip .mt-16 { margin-top: 14px !important; }
-            .salary-payslip .mt-6, .salary-payslip .mt-5 { margin-top: 8px !important; }
-            .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 6px !important; }
-            .salary-payslip .p-6, .salary-payslip .p-4, .salary-payslip .p-3 { padding: 6px !important; }
-            .salary-payslip .gap-8, .salary-payslip .gap-6, .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 7px !important; }
-            .salary-payslip .text-4xl { font-size: 22px !important; }
-            .salary-payslip .text-3xl, .salary-payslip .text-2xl { font-size: 16px !important; }
-            .salary-payslip .text-xl, .salary-payslip .text-lg { font-size: 13px !important; }
+            body, .salary-payslip { font-size: 10.5px !important; line-height: 1.22 !important; }
+            .salary-payslip .mt-6, .salary-payslip .mt-5 { margin-top: 7px !important; }
+            .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 5px !important; }
+            .salary-payslip .mt-2 { margin-top: 3px !important; }
+            .salary-payslip .mt-1 { margin-top: 2px !important; }
+            .salary-payslip .p-6, .salary-payslip .p-4 { padding: 6px 8px !important; }
+            .salary-payslip .p-3 { padding: 4px 5px !important; }
+            .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 12px !important; }
+            .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 5px !important; }
+            .salary-payslip .text-4xl, .salary-payslip .text-3xl { font-size: 17px !important; }
+            .salary-payslip .text-2xl { font-size: 18px !important; }
+            .salary-payslip .text-xl, .salary-payslip .text-lg { font-size: 12px !important; }
             .salary-payslip .text-sm, .salary-payslip .text-xs { font-size: 10.5px !important; }
             .salary-payslip .py-2 { padding-block: 3px !important; }
-            .salary-payslip header { padding-bottom: 7px !important; }
-            .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 4px !important; }
-            .salary-payslip .salary-debt-summary { break-inside: avoid; border: 2px solid #b91c1c !important; }
+            .salary-payslip .pt-2 { padding-top: 4px !important; }
+            .salary-payslip .salary-slip-header { padding-bottom: 6px !important; }
+            .salary-payslip h2 { padding-bottom: 3px !important; break-after: avoid-page; }
+            .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 3px !important; }
+            .salary-payslip .salary-person-details { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            .salary-payslip .salary-attendance-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+            .salary-payslip .salary-attendance-item small { font-size: 8.5px !important; }
+            .salary-payslip .salary-earnings-grid, .salary-payslip .salary-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            .salary-payslip .salary-summary-grid { grid-template-columns: repeat(var(--salary-summary-columns), minmax(0, 1fr)) !important; }
+            .salary-payslip .salary-net-pay { flex-direction: row !important; padding: 7px 10px !important; }
+            .salary-payslip .salary-net-pay strong { margin-top: 0 !important; }
+            .salary-payslip .salary-payment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            .salary-payslip .salary-signatures { margin-top: 14px !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; font-size: 9px !important; }
+            .salary-payslip .salary-signatures .pt-3 { padding-top: 5px !important; }
+            .salary-payslip .salary-attendance, .salary-payslip .salary-person-details,
+            .salary-payslip .salary-summary-grid, .salary-payslip .salary-net-pay,
+            .salary-payslip .salary-payment-summary { break-inside: avoid; page-break-inside: avoid; }
+            .salary-payslip .salary-debt-summary { border: 2px solid #b91c1c !important; }
             .salary-payslip .salary-debt-summary strong { color: #991b1b !important; }
             .salary-payslip .text-slate-300 { color: #162337 !important; }
 
@@ -68,7 +123,7 @@
 </head>
 <body class="text-slate-900 antialiased p-4 sm:p-8">
 
-<div class="mx-auto max-w-4xl space-y-5">
+<div class="salary-document mx-auto max-w-4xl space-y-5">
   <div class="flex items-center justify-between no-print mb-6">
       <a href="{{ route('technicians.salaries') }}" class="inline-flex items-center justify-center rounded-xl bg-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-300 transition">← Back to Salaries</a>
       <button onclick="window.print()" class="inline-flex items-center justify-center rounded-xl bg-[#0b2447] px-4 py-2 text-sm font-bold text-white shadow-lg hover:bg-[#123665] transition">🖨️ Print / Save PDF</button>
@@ -79,7 +134,7 @@
   @endif
 
   <article class="salary-payslip rounded-3xl border border-slate-200 bg-white p-8 shadow-sm print-border-0">
-    <header class="flex justify-between border-b-2 border-slate-900 pb-5">
+    <header class="salary-slip-header flex justify-between border-b-2 border-slate-900 pb-5">
         <div>
             <p class="text-2xl font-black italic"><span class="text-red-600">FASMIR</span> MOTORS</p>
             <p class="text-xs uppercase tracking-widest text-slate-500">Salary Slip</p>
@@ -90,7 +145,7 @@
         </div>
     </header>
     
-    <div class="mt-5 grid grid-cols-2 gap-4 rounded-2xl bg-slate-50 p-4">
+    <div class="salary-person-details mt-5 grid grid-cols-2 gap-4 rounded-2xl bg-slate-50 p-4">
         <div>
             <small class="text-slate-500 font-bold uppercase text-[10px]">Name</small>
             <p class="font-black text-lg">{{ $sheet->technician->name }}</p>
@@ -104,16 +159,14 @@
     </div>
 
 
-    @if((float) data_get($sheet->calculation_snapshot, 'contributions.basic_salary') > 0)
-        <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
-    @endif
+
 
     @if($showAttendance)
-    <section class="mt-6">
+    <section class="salary-attendance mt-6">
         <h2 class="border-b pb-2 font-black text-blue-700 uppercase tracking-wider text-xs">Attendance & Activity</h2>
-        <div class="mt-3 grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
+        <div class="salary-attendance-grid mt-3 grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
           @foreach(['Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent / unpaid'=>$sheet->total_absent_days,'Paid leave'=>$paidLeaveDays,'Shop closed days'=>$shopClosedDays,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
-          <div class="rounded-xl bg-blue-50 p-3 flex flex-col items-center justify-center text-center">
+          <div class="salary-attendance-item rounded-xl bg-blue-50 p-3 flex flex-col items-center justify-center text-center">
               <small class="text-slate-500 text-[10px] uppercase font-bold">{{ $label }}</small>
               <p class="font-black text-blue-900 mt-1">{{ $value }}</p>
           </div>
@@ -158,7 +211,7 @@
     @if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0) > 0)
         <p class="mt-3 text-xs text-emerald-800">Worked on shop-closed days: {{ data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_days') }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_rate', 0), 2) }} = Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0), 2) }} extra pay.@if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0) > 0) Manual supplement: Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0), 2) }}.@endif</p>
     @endif
-    <div class="mt-6 grid gap-8 md:grid-cols-2">
+    <div class="salary-earnings-grid mt-6 grid gap-8 md:grid-cols-2">
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>
           <dl class="mt-3 space-y-2 text-sm">
@@ -199,7 +252,7 @@
 
     @include('technicians.partials.salary-debt-summary')
     @if($sheet->advancesUsed->isNotEmpty() || $sheet->sourceDeductions->isNotEmpty())
-    <section class="mt-6 grid gap-6 md:grid-cols-2 text-sm bg-slate-50 p-4 rounded-2xl">
+    <section class="salary-reference-grid mt-6 grid gap-6 md:grid-cols-2 text-sm bg-slate-50 p-4 rounded-2xl">
         <div>
             <h3 class="font-black uppercase text-[10px] text-slate-500 tracking-wider">Advance Details</h3>
             @forelse($sheet->advancesUsed as $advance)
@@ -265,7 +318,7 @@
     @endphp
 
     @if($bCount > 0)
-    <div class="mt-6 grid gap-3 @if($bCount === 4) sm:grid-cols-4 @elseif($bCount === 3) sm:grid-cols-3 @elseif($bCount === 2) sm:grid-cols-2 @else sm:grid-cols-1 @endif">
+    <div style="--salary-summary-columns: {{ $bCount }}" class="salary-summary-grid mt-6 grid gap-3 @if($bCount === 4) sm:grid-cols-4 @elseif($bCount === 3) sm:grid-cols-3 @elseif($bCount === 2) sm:grid-cols-2 @else sm:grid-cols-1 @endif">
         @foreach($bottomCards as $card)
         <div class="rounded-2xl {{ $card['bg'] }} p-4 border {{ $card['border'] }}">
             <small class="{{ $card['title_color'] }} font-bold text-[10px] uppercase tracking-wider">{{ $card['label'] }}</small>
@@ -275,12 +328,12 @@
     </div>
     @endif
 
-    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between rounded-2xl bg-[#0b2447] p-6 text-white shadow-lg">
+    <div class="salary-net-pay mt-6 flex flex-col sm:flex-row items-center justify-between rounded-2xl bg-[#0b2447] p-6 text-white shadow-lg">
         <span class="text-sm font-bold uppercase tracking-widest text-slate-300">Net Salary Payable</span>
         <strong class="text-4xl tracking-tight mt-2 sm:mt-0 text-emerald-400">Rs. {{ number_format($sheet->net_payable,2) }}</strong>
     </div>
 
-    <div class="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-200 p-4 text-sm">
+    <div class="salary-payment-summary mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-200 p-4 text-sm">
         <p>Paid so far <strong class="block">Rs. {{ number_format($sheet->paid_amount, 2) }}</strong></p>
         <p>{{ $sheet->balance_amount < 0 ? 'Overpaid' : 'Remaining balance' }} <strong class="block">Rs. {{ number_format(abs($sheet->balance_amount), 2) }}</strong></p>
     </div>
@@ -293,7 +346,7 @@
         </p>
     @endif
 
-    <footer class="mt-16 grid grid-cols-3 gap-8 text-center text-xs text-slate-500">
+    <footer class="salary-signatures mt-16 grid grid-cols-3 gap-8 text-center text-xs text-slate-500">
         <div>
             <div class="border-t border-slate-300 pt-3">Prepared by: {{ $sheet->preparedBy?->name ?? '—' }}</div>
         </div>

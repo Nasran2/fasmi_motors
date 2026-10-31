@@ -514,11 +514,15 @@ class TechnicianController extends Controller
         $request->validate([
             'calendar_version' => ['nullable', 'string', 'size:64'],
             'schedule_version' => ['nullable', 'string', 'size:64'],
+            'review_manifest' => ['nullable', 'json', 'max:100000'],
+            'removed_rows' => ['nullable', 'array'],
+            'removed_rows.*' => ['required', 'integer', 'distinct', 'min:1'],
+            'rows.*.is_new' => ['nullable', 'boolean'],
             'rows.*.mark_worked' => ['nullable', 'boolean'],
             'rows.*.auto_filled_checkout' => ['nullable', 'boolean'],
             'rows.*.schedule_filled_in' => ['nullable', 'boolean'],
             'rows.*.mark_leave' => ['nullable', 'boolean'],
-            'rows' => ['nullable', 'array'], 'rows.*.row' => ['required', 'integer', 'distinct'],
+            'rows' => ['nullable', 'array'], 'rows.*.row' => ['required', 'integer', 'distinct', 'min:1'],
             'rows.*.date' => ['required', 'date_format:Y-m-d'],
             'rows.*.check_in' => ['nullable', 'date_format:H:i,H:i:s'], 'rows.*.check_out' => ['nullable', 'date_format:H:i,H:i:s'],
             'rows.*.technician_id' => ['nullable', 'integer', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
@@ -536,44 +540,8 @@ class TechnicianController extends Controller
                 throw ValidationException::withMessages(['schedule_version' => 'Staff working times changed. Reload the preview and review the scheduled times before importing.']);
             }
 
-            if ($request->has('rows') && is_array($request->input('rows'))) {
-                $submittedRows = collect($request->input('rows'))->keyBy('row');
-                $updatedPreviewData = [];
-                foreach ($batch->preview_data as $item) {
-                    $rowId = $item['row'];
-                    if ($submittedRows->has($rowId)) {
-                        $rowInput = $submittedRows->get($rowId);
-                        if (array_key_exists('mark_leave', $rowInput)) {
-                            $item['mark_leave'] = (bool) $rowInput['mark_leave'];
-                            $item['leave_choice_explicit'] = true;
-                        }
-                        if (array_key_exists('mark_worked', $rowInput)) {
-                            $item['mark_worked'] = (bool) $rowInput['mark_worked'];
-                            $item['work_choice_explicit'] = true;
-                        }
-                        $item['schedule_filled_in'] = (bool) ($rowInput['schedule_filled_in'] ?? false);
-                        $item['date'] = $rowInput['date'] ?? $item['date'];
-                        $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
-                        $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
-                        if ($checkout !== $item['check_out']) {
-                            $item['auto_filled_checkout'] = false;
-                        }
-                        if (array_key_exists('auto_filled_checkout', $rowInput)) {
-                            $item['auto_filled_checkout'] = (bool) $rowInput['auto_filled_checkout'];
-                        }
-                        $item['check_out'] = $checkout;
-                        if (! empty($rowInput['technician_id'])) {
-                            $item['technician_id'] = (int) $rowInput['technician_id'];
-                            $item['will_create_technician'] = false;
-                        } else {
-                            $item['technician_id'] = null;
-                            $item['will_create_technician'] = true;
-                        }
-                    }
-                    $updatedPreviewData[] = $item;
-                }
-                $batch->update(['preview_data' => $updatedPreviewData]);
-            }
+            $reviewedRows = $importer->mergePreviewRows($batch->preview_data ?? [], $request->input('rows', []), $request->input('removed_rows', []), $request->input('review_manifest'));
+            $batch->update(['preview_data' => $reviewedRows, 'total_rows' => count($reviewedRows)]);
 
             $batch = $importer->confirm($batch, $calculator, auth()->id());
             AuditLog::create(['user_id' => auth()->id(), 'event' => 'Attendance Import Completed', 'auditable_type' => $batch->getMorphClass(), 'auditable_id' => $batch->id, 'old_values' => null, 'new_values' => $batch->only(['file_name', 'total_rows', 'success_rows', 'skipped_rows', 'duplicate_rows', 'error_rows', 'status']), 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);

@@ -49,7 +49,11 @@
     </section>
 
     @if($previewBatch)
+    @php
+      $reviewManifest = ['active' => array_map(fn ($item) => (int) $item['row'], $previewRows), 'removed' => []];
+    @endphp
     <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" id="attendance-import-form" class="panel bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
+      <input type="hidden" name="review_manifest" value='@json($reviewManifest)'>
       @csrf<x-submission-token/><input type="hidden" name="calendar_version" value="{{ $calendarVersion }}"><input type="hidden" name="schedule_version" value="{{ $scheduleVersion }}">
       <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
         <div>
@@ -57,10 +61,15 @@
           <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing. Forgotten fingerprint? Check Worked / fill times to fill missing coming and out times from the staff schedule. Normal working days receive normal attendance; only shop-closed work earns extra daily pay. Existing actual punches are retained.</p>
         </div>
         <div class="flex-shrink-0">
-          <button class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm & Import {{ $previewBatch->total_rows }} Rows</button>
+          <button data-import-confirm class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm &amp; Import <span data-import-count>{{ count($previewRows) }}</span> Rows</button>
         </div>
       </div>
 
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <button type="button" data-import-add class="btn-secondary">＋ Add row</button>
+        <button type="button" data-import-undo class="btn-secondary" disabled>Undo last delete</button>
+        <span data-import-row-message class="text-sm text-yellow-800" aria-live="polite">Rows sort by date after you finish changing a date. Deleting here only excludes a row from this import.</span>
+      </div>
       <div class="mb-4"><x-attendance-colour-key /></div>
       <div class="overflow-x-auto border border-yellow-200 rounded-lg bg-white max-h-[600px] relative">
         <table class="w-full text-left text-xs whitespace-nowrap">
@@ -72,64 +81,26 @@
               <th class="px-4 py-2 font-bold">Paid leave</th><th class="px-4 py-2 font-bold">Worked / fill times</th><th class="px-4 py-2 font-bold">Date / shop day</th>
               <th class="px-4 py-2 font-bold">Check In</th>
               <th class="px-4 py-2 font-bold">Check Out</th>
-              <th class="px-4 py-2 font-bold">Duplicate?</th>
+              <th class="px-4 py-2 font-bold">Duplicate?</th><th class="px-4 py-2 font-bold">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-yellow-100">
+          <tbody data-import-body class="divide-y divide-yellow-100">
             @foreach($previewRows as $i => $row)
-            <tr data-import-row class="{{ $row['row_colour'] }} {{ $row['duplicate'] ? 'opacity-50' : '' }}">
-              <td class="px-4 py-2 font-mono text-slate-500">{{ $row['row'] }}
-                <input type="hidden" name="rows[{{ $row['row'] }}][row]" value="{{ $row['row'] }}">
-              </td>
-              <td class="px-4 py-2">
-                <b class="text-slate-800">{{ $row['name'] ?: 'Unknown Name' }}</b><br>
-                <small class="text-slate-400">ID: {{ $row['person_id'] ?: 'N/A' }}</small>
-              </td>
-              <td class="px-4 py-2">
-                <select data-import-technician name="rows[{{ $row['row'] }}][technician_id]" class="w-full max-w-[200px] py-1 px-2 border-slate-300 rounded text-xs bg-white {{ $row['will_create_technician'] ? 'border-red-300 text-red-700 font-bold' : '' }}">
-                  <option value="">-- Create New Technician --</option>
-                  @foreach($technicians as $t)
-                  <option value="{{ $t->id }}" @selected($row['technician_id'] == $t->id)>{{ $t->name }}</option>
-                  @endforeach
-                </select>
-                @if($row['identity_warning'] ?? null)<p class="mt-1 text-xs text-red-700">{{ $row['identity_warning'] }}</p>
-                @elseif($row['will_create_technician'])
-                <span class="block mt-1 text-[9px] text-red-600 font-bold uppercase tracking-wider">Will Auto-Create</span>
-                @endif
-              </td>
-              <td class="px-4 py-2 text-center whitespace-normal min-w-[150px]">
-                <input type="hidden" name="rows[{{ $row['row'] }}][mark_leave]" value="0">
-                <input type="checkbox" data-import-leave name="rows[{{ $row['row'] }}][mark_leave]" value="1" @checked($row['mark_leave']) @disabled($row['shop_day']['closed'] || $row['check_in'] || $row['check_out']) aria-label="Paid leave for {{ $row['name'] }} on {{ $row['date'] }}" class="size-4 rounded text-amber-600"><span data-leave-note class="mt-1 block text-[10px] leading-snug text-slate-600">{{ $row['leave_note'] }}</span>
-              </td>
-              <td class="px-4 py-2 text-center">
-                <input type="hidden" name="rows[{{ $row['row'] }}][mark_worked]" value="0">
-                <input type="checkbox" data-import-worked name="rows[{{ $row['row'] }}][mark_worked]" value="1" @checked($row['mark_worked']) @disabled($row['future_day']) aria-label="Mark worked and fill missing scheduled times for {{ $row['name'] }} on {{ $row['date'] }}" class="size-4 rounded text-emerald-600">
-                <span data-schedule-label class="mt-1 block text-[10px] text-slate-600">{{ $row['work_schedule']['mode'] === 'custom' ? 'Custom' : 'System' }}: {{ substr($row['work_schedule']['start'], 0, 5) }}–{{ substr($row['work_schedule']['end'], 0, 5) }}</span>
-                <input data-auto-checkout type="hidden" name="rows[{{ $row['row'] }}][auto_filled_checkout]" value="{{ (int) ($row['auto_filled_checkout'] ?? false) }}">
-                <input data-schedule-in type="hidden" name="rows[{{ $row['row'] }}][schedule_filled_in]" value="{{ (int) ($row['schedule_filled_in'] ?? false) }}">
-              </td>
-              <td class="px-4 py-2">
-                <input data-import-date type="date" name="rows[{{ $row['row'] }}][date]" value="{{ $row['date'] }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[120px]" required><span data-shop-day-label class="mt-1 block text-xs font-semibold">{{ $row['shop_day']['label'] }}{{ $row['future_day'] ? ' · Future date' : '' }}</span>
-              </td>
-              <td class="px-4 py-2">
-                <input data-import-in type="time" name="rows[{{ $row['row'] }}][check_in]" value="{{ $row['check_in'] ? substr($row['check_in'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px]">
-              </td>
-              <td class="px-4 py-2">
-                <input data-import-out type="time" name="rows[{{ $row['row'] }}][check_out]" value="{{ $row['check_out'] ? substr($row['check_out'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px] {{ ($row['auto_filled_checkout'] ?? false) ? 'border-blue-300 bg-blue-50 text-blue-700' : '' }}">
-                  <span data-auto-checkout-note @if(! ($row['auto_filled_checkout'] ?? false)) hidden @endif class="block mt-1 text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-tight">Auto (scheduled close)</span>
-              </td>
-              <td class="px-4 py-2">
-                @if($row['duplicate'])
-                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">Will Update</span>
-                @else
-                <span class="text-slate-300">—</span>
-                @endif
-              </td>
-            </tr>
+                @include('technicians.partials.attendance-import-row')
             @endforeach
           </tbody>
         </table>
       </div>
+      <template data-import-row-template>
+        @include('technicians.partials.attendance-import-row', ['row' => [
+          'row' => '__ROW__', 'is_new' => true, 'name' => 'Manual row', 'person_id' => null,
+          'technician_id' => null, 'will_create_technician' => false, 'identity_warning' => null,
+          'date' => '', 'check_in' => null, 'check_out' => null, 'mark_leave' => false, 'mark_worked' => false,
+          'auto_filled_checkout' => false, 'schedule_filled_in' => false, 'duplicate' => false,
+          'row_colour' => 'bg-white', 'future_day' => false, 'leave_note' => 'Choose staff and a date, then enter attendance or use Worked / fill times.',
+          'shop_day' => ['closed' => false, 'label' => 'Choose a date'], 'work_schedule' => $staffSchedules['default'],
+        ]])
+      </template>
     </form>
     @endif
 

@@ -70,3 +70,9 @@ For example, Basic Salary Rs. 65,000, one unpaid day at Rs. 2,600 and no other a
 Payslips and salary details label the saved full amount **Basic salary** and show the unpaid day count/rate. New snapshots record the salary basis and no-pay day/rate used. Existing saved calculations and paid/finalized sheets are not rewritten. An older Daily draft shows a notice linking to **View → Refresh draft salary calculation / Refresh Attendance & OT**, with a required reason; it must be refreshed before finalization under this rule. Draft regeneration also applies the new calculation.
 
 No migration or live data change is performed. No tests were run, as requested; frontend assets were rebuilt for the user's manual checking.
+
+## Compact A4 salary slip
+
+The salary slip uses a compact layout on screen and for printing, with A4 portrait paper and 12 mm margins on all sides. Attendance stays in six columns, earnings/deductions and payment references stay in two columns, and the contribution/payment cards remain side by side in print regardless of screen breakpoints. Section padding, heading spacing, the net-pay banner and signature area are reduced. Long adjustment/debt/reference content can continue to another page rather than being clipped; all financial details remain available. The EPF/ETF salary-basic explanatory line is omitted from this slip; contribution amounts and deductions remain visible.
+
+This presentation change was made locally without tests or PDF/browser verification, as requested. It does not alter payroll amounts or live data.

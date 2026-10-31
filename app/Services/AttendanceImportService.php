@@ -12,6 +12,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\Csv;
 
@@ -132,6 +133,77 @@ class AttendanceImportService
         ]);
     }
 
+    public function mergePreviewRows(array $originalRows, array $submittedRows, array $removedRows, ?string $manifest = null): array
+    {
+        if ($manifest !== null) {
+            $expected = json_decode($manifest, true, 512, JSON_THROW_ON_ERROR);
+            $ids = fn (array $values) => collect($values)->map(fn ($id) => (int) $id)->sort()->values()->all();
+            if (! is_array($expected) || ! is_array($expected['active'] ?? null) || ! is_array($expected['removed'] ?? null)
+                || $ids($expected['active']) !== $ids(array_column($submittedRows, 'row')) || $ids($expected['removed']) !== $ids($removedRows)) {
+                throw ValidationException::withMessages(['rows' => 'The full preview was not submitted. No attendance was imported. Reduce the number of rows or increase the server form-input limit before retrying.']);
+            }
+        }
+        $original = collect($originalRows)->keyBy('row');
+        $removed = array_fill_keys(array_map('intval', $removedRows), true);
+        foreach ($removedRows as $id) {
+            if (! $original->has((int) $id)) {
+                throw ValidationException::withMessages(['rows' => 'A deleted row does not belong to this preview. Reload the preview.']);
+            }
+        }
+        $result = $original->reject(fn ($item) => isset($removed[(int) $item['row']]))->all();
+        foreach ($submittedRows as $input) {
+            $id = (int) $input['row'];
+            if (isset($removed[$id])) {
+                throw ValidationException::withMessages(['rows' => 'A row cannot be retained and deleted together. Reload the preview.']);
+            }
+            $item = $original->get($id);
+            if (! $item) {
+                if (empty($input['is_new']) || empty($input['technician_id'])) {
+                    throw ValidationException::withMessages(['rows' => 'Select an existing staff member for every added row.']);
+                }
+                $staff = Technician::findOrFail($input['technician_id']);
+                $item = ['row' => $id, 'is_new' => true, 'name' => $staff->name,
+                    'person_id' => $staff->attendance_person_id ?: '', 'department' => $staff->department,
+                    'shift' => null, 'timetable' => null, 'source_status' => null, 'break_minutes' => 0,
+                    'leave_type' => null, 'check_out' => null, 'auto_filled_checkout' => false];
+            }
+            foreach (['mark_leave' => 'leave_choice_explicit', 'mark_worked' => 'work_choice_explicit'] as $field => $explicit) {
+                if (array_key_exists($field, $input)) {
+                    $item[$field] = (bool) $input[$field];
+                    $item[$explicit] = true;
+                }
+            }
+            $item['schedule_filled_in'] = (bool) ($input['schedule_filled_in'] ?? false);
+            $item['date'] = $input['date'];
+            $item['check_in'] = empty($input['check_in']) ? null : Carbon::parse($input['check_in'])->format('H:i:s');
+            $checkout = empty($input['check_out']) ? null : Carbon::parse($input['check_out'])->format('H:i:s');
+            $item['auto_filled_checkout'] = array_key_exists('auto_filled_checkout', $input)
+                ? (bool) $input['auto_filled_checkout'] : ($checkout === $item['check_out'] && ($item['auto_filled_checkout'] ?? false));
+            $item['check_out'] = $checkout;
+            $item['technician_id'] = empty($input['technician_id']) ? null : (int) $input['technician_id'];
+            if (! empty($item['is_new']) && ! $item['technician_id']) {
+                throw ValidationException::withMessages(['rows' => 'Select a staff member for every added row.']);
+            }
+            $item['will_create_technician'] = ! $item['technician_id'];
+            $result[$id] = $item;
+        }
+        if (! $result) {
+            throw ValidationException::withMessages(['rows' => 'Keep or add at least one row before confirming the import.']);
+        }
+        $seen = [];
+        foreach ($result as $item) {
+            $identity = ! empty($item['technician_id']) ? 'staff:'.$item['technician_id']
+                : (filled($item['person_id'] ?? null) ? 'person:'.$item['person_id'] : 'name:'.Str::lower($item['name']));
+            $key = $identity.'|'.$item['date'];
+            if (isset($seen[$key])) {
+                throw ValidationException::withMessages(['rows' => 'Two preview rows have the same staff and date ('.$item['date'].'). Delete one row or change its date before importing.']);
+            }
+            $seen[$key] = true;
+        }
+
+        return collect($result)->sortBy(fn ($item) => $item['date'].'|'.str_pad((string) $item['row'], 12, '0', STR_PAD_LEFT))->values()->all();
+    }
+
     public function reviewRow(array $row, array $calendar, ?array $schedules = null): array
     {
         $schedules ??= StaffWorkSchedule::importSchedules();
@@ -222,10 +294,10 @@ class AttendanceImportService
                                 'in_time' => $metrics['in_time'] ?? null,
                                 'out_time' => $metrics['out_time'] ?? null,
                                 'leave_type' => $row['mark_leave'] ? null : ($metrics['leave_type'] ?: $row['leave_type']),
-                                'is_manual_entry' => false,
+                                'is_manual_entry' => ! empty($row['is_new']),
                                 'is_manual_edit' => false,
                                 'import_batch_id' => $batch->id,
-                                'remarks' => 'Imported from '.$batch->file_name,
+                                'remarks' => (! empty($row['is_new']) ? 'Added during import of ' : 'Imported from ').$batch->file_name,
                                 'note' => $row['mark_worked'] && ! $row['shop_day']['closed'] ? 'Imported attendance · missing fingerprint reviewed, scheduled times used for missing punches' : 'Imported attendance',
                                 'created_by' => $createdBy,
                                 'edited_by' => $existing ? $userId : null,
