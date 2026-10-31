@@ -115,21 +115,21 @@ class SalaryCalculationService
         $baseWorkingDays = (float) $calendar['total_working_days'];
         $baseLeaveDays = (float) ($calendar['weekly_leave_days'] + $calendar['public_holiday_days'] + $calendar['poya_holiday_days'] + $calendar['custom_holiday_days'] + $approvedLeave);
         $halfDayAdjustment = $halfDays * 0.5;
-        $workingDays = max(0, $baseWorkingDays - $halfDayAdjustment);
         $leaveDays = $baseLeaveDays + $halfDayAdjustment;
+        $presentDays = $fullPresent + $halfDayAdjustment;
 
         return [
             'total_month_days' => $start->diffInDays($end) + 1,
             'salary_period_days' => $start->diffInDays($end) + 1,
             'calendar_working_days' => $calendar['total_working_days'],
-            'total_working_days' => $workingDays,
+            'total_working_days' => $calendar['total_working_days'],
             'weekly_leave_days' => $calendar['weekly_leave_days'],
             'public_holiday_days' => $calendar['public_holiday_days'],
             'poya_leave_days' => $calendar['poya_holiday_days'],
             'custom_holiday_days' => $calendar['custom_holiday_days'],
             'approved_leave_days' => $approvedLeave,
             'leave_days' => $leaveDays,
-            'present_days' => $fullPresent + $halfDays,
+            'present_days' => $presentDays,
             'worked_days' => $fullPresent + ($halfDays * .5),
             // Missing rows are not silently treated as absence: imports/manual attendance must
             // explicitly create an Absent row so an incomplete import cannot underpay staff.

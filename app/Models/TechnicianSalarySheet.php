@@ -64,6 +64,7 @@ class TechnicianSalarySheet extends Model
             'total_working_days' => 'float',
             'leave_days' => 'float',
             'half_days' => 'float',
+            'present_days' => 'float',
             'total_present_days' => 'float',
             'total_absent_days' => 'float',
             'worked_days' => 'float',

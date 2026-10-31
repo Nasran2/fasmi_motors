@@ -429,7 +429,7 @@ it('creates a staff member when hourly salary is omitted or null', function () {
         ->and($technician->salary_type)->toBe('Monthly');
 });
 
-it('adjusts working days and leave days when staff have half days', function () {
+it('keeps working days calendar-fixed and adjusts present days and leave days for half days', function () {
     $tech = Technician::create([
         'name' => 'HalfDay Tech',
         'phone' => '0771239999',
@@ -450,7 +450,8 @@ it('adjusts working days and leave days when staff have half days', function () 
 
     $preview1 = app(\App\Services\SalaryCalculationService::class)->generateSalaryPreview($tech->id, '2026-10');
     $calendarWorking = (float) $preview1['attendance_summary']['calendar_working_days'];
-    expect((float) $preview1['total_working_days'])->toBe($calendarWorking - 0.5)
+    expect((float) $preview1['total_working_days'])->toBe($calendarWorking)
+        ->and((float) $preview1['present_days'])->toBe(0.5)
         ->and((float) $preview1['half_days'])->toBe(1.0);
 
     TechnicianAttendance::create([
@@ -463,7 +464,8 @@ it('adjusts working days and leave days when staff have half days', function () 
     ]);
 
     $preview2 = app(\App\Services\SalaryCalculationService::class)->generateSalaryPreview($tech->id, '2026-10');
-    expect((float) $preview2['total_working_days'])->toBe($calendarWorking - 1.0)
+    expect((float) $preview2['total_working_days'])->toBe($calendarWorking)
+        ->and((float) $preview2['present_days'])->toBe(1.0)
         ->and((float) $preview2['half_days'])->toBe(2.0);
 
     $this->post(route('technicians.salaries.store'), [
@@ -472,7 +474,8 @@ it('adjusts working days and leave days when staff have half days', function () 
     ])->assertRedirect(route('technicians.salaries'));
 
     $sheet = TechnicianSalarySheet::where('technician_id', $tech->id)->firstOrFail();
-    expect((float) $sheet->total_working_days)->toBe($calendarWorking - 1.0)
+    expect((float) $sheet->total_working_days)->toBe($calendarWorking)
+        ->and((float) $sheet->total_present_days)->toBe(1.0)
         ->and((float) $sheet->half_days)->toBe(2.0);
 
     $slip = $this->get(route('technicians.salaries.slip', $sheet))->assertOk();
