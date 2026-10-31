@@ -129,6 +129,7 @@
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Leave days</span><strong id="preview-leave-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Present days</span><strong id="preview-present-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Absent days</span><strong id="preview-absent-days" class="text-slate-900">0</strong></div>
+          <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Half days</span><strong id="preview-half-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">OT hours</span><strong id="preview-ot-hours" class="text-slate-900">0</strong></div>
         </div>
         <div class="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" aria-live="polite" aria-atomic="true">
@@ -510,11 +511,12 @@
         document.getElementById('preview-cycle-label').textContent = 'Salary summary';
         document.getElementById('preview-cycle-badge').textContent = data.salary_month_label || 'Salary';
         document.getElementById('preview-cycle-period').textContent = `Salary Month: ${data.salary_month_label || ''} · Salary Period: ${fmtDate(data.salary_period_start)} to ${fmtDate(data.salary_period_end)}`;
-        document.getElementById('preview-working-days').textContent = attendance.total_working_days || data.total_working_days || 0;
-        document.getElementById('preview-leave-days').textContent = attendance.leave_days || data.leave_days || 0;
-        document.getElementById('preview-present-days').textContent = attendance.present_days || data.total_present_days || 0;
-        document.getElementById('preview-absent-days').textContent = attendance.absent_days || data.total_absent_days || 0;
-        document.getElementById('preview-ot-hours').textContent = attendance.total_ot_hours || data.total_ot_hours || 0;
+        document.getElementById('preview-working-days').textContent = parseFloat(attendance.total_working_days ?? data.total_working_days ?? 0);
+        document.getElementById('preview-leave-days').textContent = parseFloat(attendance.leave_days ?? data.leave_days ?? 0);
+        document.getElementById('preview-present-days').textContent = parseFloat(attendance.present_days ?? data.total_present_days ?? 0);
+        document.getElementById('preview-absent-days').textContent = parseFloat(attendance.absent_days ?? data.total_absent_days ?? 0);
+        document.getElementById('preview-half-days').textContent = parseFloat(attendance.half_days ?? data.half_days ?? 0);
+        document.getElementById('preview-ot-hours').textContent = parseFloat(attendance.total_ot_hours ?? data.total_ot_hours ?? 0);
         document.getElementById('preview-gross').textContent = money(data.gross_salary);
         document.getElementById('preview-deductions').textContent = money(data.total_deductions);
         document.getElementById('preview-net').textContent = money(data.net_payable);

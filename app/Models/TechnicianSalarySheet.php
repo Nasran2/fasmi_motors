@@ -60,6 +60,13 @@ class TechnicianSalarySheet extends Model
             'calculation_snapshot' => 'array',
             'leave_summary' => 'array',
             'excluded_dates' => 'array',
+            'working_days' => 'float',
+            'total_working_days' => 'float',
+            'leave_days' => 'float',
+            'half_days' => 'float',
+            'total_present_days' => 'float',
+            'total_absent_days' => 'float',
+            'worked_days' => 'float',
         ];
     }
 

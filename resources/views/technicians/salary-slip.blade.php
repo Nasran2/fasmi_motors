@@ -169,14 +169,33 @@
         </div>
     </div>
 
-
-
+    @if(data_get($sheet->calculation_snapshot, 'earnings.pay_basis'))
+        <p class="mt-3 text-xs text-slate-700">{{ data_get($sheet->calculation_snapshot, 'earnings.pay_basis') }}</p>
+    @endif
 
     @if($showAttendance)
     <section class="salary-attendance mt-6">
         <h2 class="border-b pb-2 font-black text-blue-700 uppercase tracking-wider text-xs">Attendance & Activity</h2>
         <div class="salary-attendance-grid mt-3 grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
-          @foreach(['Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent / unpaid'=>$sheet->total_absent_days,'Paid leave'=>$paidLeaveDays,'Shop closed days'=>$shopClosedDays,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
+          @php
+              $attendanceItems = [
+                  'Working days' => 0 + (float) $sheet->total_working_days,
+                  'Present' => 0 + (float) $sheet->total_present_days,
+                  'Absent / unpaid' => 0 + (float) $sheet->total_absent_days,
+                  'Leave days' => 0 + (float) $sheet->leave_days,
+                  'Half days' => 0 + (float) $sheet->half_days,
+                  'Late days' => (int) $sheet->late_days,
+                  'Early leave' => (int) $sheet->early_leave_days,
+                  'Worked on leave' => (int) $sheet->worked_on_leave_days,
+                  'Worked hours' => 0 + (float) $sheet->total_worked_hours,
+                  'OT hours' => 0 + (float) $sheet->total_ot_hours,
+                  'Auto checkout' => (int) $sheet->auto_checkout_days,
+              ];
+              if ($paidLeaveDays > 0) {
+                  $attendanceItems['Paid leave'] = 0 + (float) $paidLeaveDays;
+              }
+          @endphp
+          @foreach($attendanceItems as $label => $value)
           <div class="salary-attendance-item rounded-xl bg-blue-50 p-3 flex flex-col items-center justify-center text-center">
               <small class="text-slate-500 text-[10px] uppercase font-bold">{{ $label }}</small>
               <p class="font-black text-blue-900 mt-1">{{ $value }}</p>

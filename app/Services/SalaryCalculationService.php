@@ -112,16 +112,23 @@ class SalaryCalculationService
             return (float) $record->deduction_amount - $calculated;
         });
 
+        $baseWorkingDays = (float) $calendar['total_working_days'];
+        $baseLeaveDays = (float) ($calendar['weekly_leave_days'] + $calendar['public_holiday_days'] + $calendar['poya_holiday_days'] + $calendar['custom_holiday_days'] + $approvedLeave);
+        $halfDayAdjustment = $halfDays * 0.5;
+        $workingDays = max(0, $baseWorkingDays - $halfDayAdjustment);
+        $leaveDays = $baseLeaveDays + $halfDayAdjustment;
+
         return [
             'total_month_days' => $start->diffInDays($end) + 1,
             'salary_period_days' => $start->diffInDays($end) + 1,
-            'total_working_days' => $calendar['total_working_days'],
+            'calendar_working_days' => $calendar['total_working_days'],
+            'total_working_days' => $workingDays,
             'weekly_leave_days' => $calendar['weekly_leave_days'],
             'public_holiday_days' => $calendar['public_holiday_days'],
             'poya_leave_days' => $calendar['poya_holiday_days'],
             'custom_holiday_days' => $calendar['custom_holiday_days'],
             'approved_leave_days' => $approvedLeave,
-            'leave_days' => $calendar['weekly_leave_days'] + $calendar['public_holiday_days'] + $calendar['poya_holiday_days'] + $calendar['custom_holiday_days'] + $approvedLeave,
+            'leave_days' => $leaveDays,
             'present_days' => $fullPresent + $halfDays,
             'worked_days' => $fullPresent + ($halfDays * .5),
             // Missing rows are not silently treated as absence: imports/manual attendance must
