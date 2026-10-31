@@ -111,21 +111,35 @@ class TechnicianController extends Controller
     public function attendanceIndex(Request $request)
     {
         $request->validate([
+            'filter_type' => ['nullable', 'in:month,range,day'],
             'date' => ['nullable', 'date_format:Y-m-d'],
             'month' => ['nullable', 'date_format:Y-m'],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
         ]);
         $date = $request->date ? Carbon::parse($request->date) : today();
-        if ($request->filled('month')) {
+        $filterType = $request->input('filter_type');
+        if ($filterType === 'range') {
+            $from = $request->filled('from') ? Carbon::parse($request->from)->startOfDay() : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to)->startOfDay() : today()->endOfMonth();
+        } elseif ($filterType === 'day') {
+            $from = $request->filled('date') ? Carbon::parse($request->date)->startOfDay() : today()->startOfDay();
+            $to = $from->copy();
+        } elseif ($filterType === 'month') {
+            $from = $request->filled('month') ? Carbon::createFromFormat('Y-m', $request->month)->startOfMonth() : today()->startOfMonth();
+            $to = $from->copy()->endOfMonth();
+        } elseif ($request->filled('from') && $request->filled('to')) {
+            $from = Carbon::parse($request->from)->startOfDay();
+            $to = Carbon::parse($request->to)->startOfDay();
+        } elseif ($request->filled('month')) {
             $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
             $to = $from->copy()->endOfMonth();
         } elseif ($request->filled('date')) {
-            $from = Carbon::parse($request->date);
+            $from = Carbon::parse($request->date)->startOfDay();
             $to = $from->copy();
         } elseif ($request->filled('from') || $request->filled('to')) {
-            $from = $request->filled('from') ? Carbon::parse($request->from) : today()->startOfMonth();
-            $to = $request->filled('to') ? Carbon::parse($request->to) : today()->endOfMonth();
+            $from = $request->filled('from') ? Carbon::parse($request->from)->startOfDay() : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to)->startOfDay() : today()->endOfMonth();
         } else {
             $from = today()->startOfMonth();
             $to = today()->endOfMonth();
@@ -163,6 +177,7 @@ class TechnicianController extends Controller
     public function attendanceExport(Request $request)
     {
         $request->validate([
+            'filter_type' => ['nullable', 'in:month,range,day'],
             'date' => ['nullable', 'date_format:Y-m-d'],
             'month' => ['nullable', 'date_format:Y-m'],
             'from' => ['nullable', 'date_format:Y-m-d'],
@@ -170,17 +185,34 @@ class TechnicianController extends Controller
             'format' => ['nullable', 'in:excel,pdf,csv'],
         ]);
 
-        if ($request->filled('month')) {
+        $filterType = $request->input('filter_type');
+        if ($filterType === 'range') {
+            $from = $request->filled('from') ? Carbon::parse($request->from)->startOfDay() : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to)->startOfDay() : today()->endOfMonth();
+            $label = $from->format('Ymd').'-'.$to->format('Ymd');
+        } elseif ($filterType === 'day') {
+            $from = $request->filled('date') ? Carbon::parse($request->date)->startOfDay() : today()->startOfDay();
+            $to = $from->copy();
+            $label = $from->format('Y-m-d');
+        } elseif ($filterType === 'month') {
+            $from = $request->filled('month') ? Carbon::createFromFormat('Y-m', $request->month)->startOfMonth() : today()->startOfMonth();
+            $to = $from->copy()->endOfMonth();
+            $label = $from->format('Y-m');
+        } elseif ($request->filled('from') && $request->filled('to')) {
+            $from = Carbon::parse($request->from)->startOfDay();
+            $to = Carbon::parse($request->to)->startOfDay();
+            $label = $from->format('Ymd').'-'.$to->format('Ymd');
+        } elseif ($request->filled('month')) {
             $from = Carbon::createFromFormat('Y-m', $request->month)->startOfMonth();
             $to = $from->copy()->endOfMonth();
             $label = $from->format('Y-m');
         } elseif ($request->filled('date')) {
-            $from = Carbon::parse($request->date);
+            $from = Carbon::parse($request->date)->startOfDay();
             $to = $from->copy();
             $label = $from->format('Y-m-d');
         } elseif ($request->filled('from') || $request->filled('to')) {
-            $from = $request->filled('from') ? Carbon::parse($request->from) : today()->startOfMonth();
-            $to = $request->filled('to') ? Carbon::parse($request->to) : today()->endOfMonth();
+            $from = $request->filled('from') ? Carbon::parse($request->from)->startOfDay() : today()->startOfMonth();
+            $to = $request->filled('to') ? Carbon::parse($request->to)->startOfDay() : today()->endOfMonth();
             $label = $from->format('Ymd').'-'.$to->format('Ymd');
         } else {
             $from = today()->startOfMonth();

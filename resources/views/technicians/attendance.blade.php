@@ -225,17 +225,44 @@
     </form>
 
     {{-- Filter Search --}}
-    <form class="panel bg-white border border-slate-200 rounded-xl p-5 shadow-sm grid gap-3 md:grid-cols-4">
+    <form class="panel bg-white border border-slate-200 rounded-xl p-5 shadow-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 items-end"
+          x-data="{ filterType: @js(request('filter_type', (request()->filled('from') || request()->filled('to')) ? 'range' : (request()->filled('date') ? 'day' : 'month'))) }">
       @if($previewBatch)<input type="hidden" name="batch" value="{{ $previewBatch->id }}">@endif
+
       <div>
-        <label class="label">Month Filter</label>
+        <label class="label">Date Filter Mode</label>
+        <select name="filter_type" x-model="filterType" class="w-full">
+          <option value="month">Month</option>
+          <option value="range">Date Range (From - To)</option>
+          <option value="day">Single Day</option>
+        </select>
+      </div>
+
+      <div x-show="filterType === 'month'" x-cloak>
+        <label class="label">Month</label>
         <div class="relative">
-          <input type="month" name="month" value="{{ request('month', $from->format('Y-m')) }}" class="w-full">
+          <input type="month" name="month" :disabled="filterType !== 'month'" value="{{ request('month', $from->format('Y-m')) }}" class="w-full">
           <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             📅
           </span>
         </div>
       </div>
+
+      <div x-show="filterType === 'range'" x-cloak>
+        <label class="label">From Date</label>
+        <input type="date" name="from" :disabled="filterType !== 'range'" value="{{ request('from', $from->toDateString()) }}" class="w-full">
+      </div>
+
+      <div x-show="filterType === 'range'" x-cloak>
+        <label class="label">To Date</label>
+        <input type="date" name="to" :disabled="filterType !== 'range'" value="{{ request('to', $to->toDateString()) }}" class="w-full">
+      </div>
+
+      <div x-show="filterType === 'day'" x-cloak>
+        <label class="label">Date</label>
+        <input type="date" name="date" :disabled="filterType !== 'day'" value="{{ request('date', $date->toDateString()) }}" class="w-full">
+      </div>
+
       <div>
         <label class="label">Technician</label>
         <select name="technician" class="w-full">
@@ -245,6 +272,7 @@
           @endforeach
         </select>
       </div>
+
       <div>
         <label class="label">Status</label>
         <select name="status" class="w-full">
@@ -254,7 +282,8 @@
           @endforeach
         </select>
       </div>
-      <div class="pt-6 flex gap-2">
+
+      <div class="flex gap-2 w-full">
         <button type="submit" class="btn-secondary flex-1">Apply Filters</button>
         <a href="{{ route('technicians.attendance.export', request()->query()) }}" class="btn-secondary flex items-center justify-center px-3 text-emerald-700 hover:text-emerald-800 font-bold" title="Export filtered records to Excel (.xlsx)">
           📊 Excel

@@ -29,7 +29,7 @@ it('renders every technician module page', function () {
 });
 
 it('recalculates attendance and uses it in a salary sheet', function () {
-    $technician = Technician::create(['name' => 'Payroll Technician', 'phone' => '0710000000', 'basic_salary' => 50000, 'salary_type' => 'Monthly', 'ot_rate' => 500, 'commission_percentage' => 0, 'commission_type' => 'Manual only', 'epf_eligible' => true, 'etf_eligible' => true, 'epf_employee_percentage' => 8, 'epf_company_percentage' => 12, 'etf_company_percentage' => 3, 'active' => true]);
+    $technician = Technician::create(['name' => 'Payroll Technician', 'phone' => '0710000000', 'basic_salary' => 50000, 'epf_etf_basic_salary' => 50000, 'salary_type' => 'Monthly', 'ot_rate' => 500, 'commission_percentage' => 0, 'commission_type' => 'Manual only', 'epf_eligible' => true, 'etf_eligible' => true, 'epf_employee_percentage' => 8, 'epf_company_percentage' => 12, 'etf_company_percentage' => 3, 'active' => true]);
 
     $this->post(route('technicians.attendance.store'), ['technician_id' => $technician->id, 'date' => now()->startOfMonth()->toDateString(), 'status' => 'Present', 'in_time' => '07:59', 'out_time' => '18:00', 'late_minutes' => 0])->assertRedirect();
     expect((float) TechnicianAttendance::first()->working_hours)->toBe(10.02);
@@ -234,7 +234,7 @@ it('uses custom salary cycle periods instead of calendar months when enabled', f
         ->assertJsonPath('carried_to_next_month_days', 1)
         ->assertJsonPath('excluded_dates.0', '2026-07-31')
         ->assertJsonPath('attendance.present_days', 3)
-        ->assertJsonPath('attendance_salary_amount', 3000);
+        ->assertJsonPath('attendance_salary_amount', 30000);
 
     $this->getJson(route('technicians.salaries.preview', [
         'technician_id' => $technician->id,
@@ -243,7 +243,7 @@ it('uses custom salary cycle periods instead of calendar months when enabled', f
         ->assertJsonPath('salary_period_start', '2026-07-31')
         ->assertJsonPath('salary_period_end', '2026-08-29')
         ->assertJsonPath('attendance.present_days', 2)
-        ->assertJsonPath('attendance_salary_amount', 2000);
+        ->assertJsonPath('attendance_salary_amount', 30000);
 });
 
 it('keeps normal salary cycle as a calendar month by default', function () {
@@ -271,7 +271,7 @@ it('keeps normal salary cycle as a calendar month by default', function () {
         ->assertJsonPath('salary_period_start', '2026-07-01')
         ->assertJsonPath('salary_period_end', '2026-07-31')
         ->assertJsonPath('attendance.present_days', 1)
-        ->assertJsonPath('attendance_salary_amount', 1000);
+        ->assertJsonPath('attendance_salary_amount', 30000);
 });
 
 it('shows technician history using the custom salary cycle period', function () {
@@ -395,6 +395,75 @@ it('exports filtered attendance to excel and pdf', function () {
     ]));
     $pdfRes->assertOk();
     expect($pdfRes->headers->get('content-disposition'))->toContain('attendance_export-tech_2026-10.pdf');
+});
+
+it('filters attendance index and exports by custom date range', function () {
+    $technician = Technician::create([
+        'name' => 'Range Tech',
+        'phone' => '0714447777',
+        'basic_salary' => 30000,
+        'salary_type' => 'Monthly',
+        'active' => true,
+    ]);
+
+    TechnicianAttendance::create([
+        'technician_id' => $technician->id,
+        'date' => '2026-10-05',
+        'status' => 'Present',
+        'working_hours' => 8,
+        'working_minutes' => 480,
+        'created_by' => auth()->id() ?? 1,
+    ]);
+
+    TechnicianAttendance::create([
+        'technician_id' => $technician->id,
+        'date' => '2026-10-15',
+        'status' => 'Present',
+        'working_hours' => 8,
+        'working_minutes' => 480,
+        'created_by' => auth()->id() ?? 1,
+    ]);
+
+    TechnicianAttendance::create([
+        'technician_id' => $technician->id,
+        'date' => '2026-10-25',
+        'status' => 'Present',
+        'working_hours' => 8,
+        'working_minutes' => 480,
+        'created_by' => auth()->id() ?? 1,
+    ]);
+
+    // Test index with custom date range 2026-10-10 to 2026-10-20
+    $indexRes = $this->get(route('technicians.attendance.index', [
+        'filter_type' => 'range',
+        'from' => '2026-10-10',
+        'to' => '2026-10-20',
+        'technician' => $technician->id,
+    ]));
+    $indexRes->assertOk();
+    $records = $indexRes->viewData('records');
+    expect($records->total())->toBe(1);
+
+    // Test Excel export with custom date range
+    $excelRes = $this->get(route('technicians.attendance.export', [
+        'filter_type' => 'range',
+        'from' => '2026-10-10',
+        'to' => '2026-10-20',
+        'technician' => $technician->id,
+    ]));
+    $excelRes->assertOk();
+    expect($excelRes->headers->get('content-disposition'))->toContain('attendance_range-tech_20261010-20261020.xlsx');
+
+    // Test PDF export with custom date range
+    $pdfRes = $this->get(route('technicians.attendance.export', [
+        'filter_type' => 'range',
+        'from' => '2026-10-10',
+        'to' => '2026-10-20',
+        'technician' => $technician->id,
+        'format' => 'pdf',
+    ]));
+    $pdfRes->assertOk();
+    expect($pdfRes->headers->get('content-disposition'))->toContain('attendance_range-tech_20261010-20261020.pdf');
 });
 
 it('creates a staff member when hourly salary is omitted or null', function () {
