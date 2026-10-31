@@ -75,11 +75,11 @@ No new migration is needed. This change was completed locally without running te
 
 ## Opening after separating account cash
 
-The opening popup carries **cash left in the cashier**, **full Main balance**, **full Spare Parts balance**, and **full Bank balance** independently. For example, a saved close with cashier Rs. 1,350, Main Rs. 10,700, Spare Parts Rs. 8,500 and Bank Rs. 16,800 suggests those same four values at the next opening, adjusted for any intervening movements. Opening account fields accept full carried balances; the closing form accepts only the additions made during that opening. Every suggested amount remains editable, with a reason required for changes. Existing nonzero Washing balances are preserved under the advanced Washing field.
+The opening popup carries **cash left in the cashier** independently and shows the **current ledger totals for Main, Spare Parts and Bank**. For example, a saved close with cashier Rs. 1,350, Main Rs. 10,700, Spare Parts Rs. 8,500 and Bank Rs. 16,800 suggests those same four values at the next opening, adjusted for any intervening movements. Opening account fields accept full carried balances; the closing form accepts only the additions made during that opening. Every suggested amount remains editable, with a reason required for changes. Existing nonzero Washing balances are preserved under the advanced Washing field.
 
 An opening event stores the confirmed cash/account balances and snapshots of the ledger movements already recorded. Main Account Cashier and Spare Parts Account Cashier therefore start at zero for the new opening, including a same-day reopening. Earlier receipts, payouts and allocation events remain in history; they are not counted a second time in the current cashier pools or available opening funds. Calendar-day receipt and payout totals remain cumulative and are labelled accordingly.
 
-Cash received after the last saved close is included in the suggested physical opening and excluded from the suggested separate account balance. An allocation adjustment records that distinction when opening; it is not a customer receipt. Closing snapshots identify which ledger movements were already included in the last count. Opening corrections continue to retain reasons and earlier recorded count checkpoints.
+Cashier cash is suggested independently. Main and Spare Parts opening inputs use their full current ledger balances directly, with no deduction for cash held in the cashier and no automatic allocation adjustment on opening. Only a user-entered balance change posts an account correction, with its required reason. Closing snapshots remain available for audit history.
 
 These changes use existing session/event snapshot fields and require no new migration. They were made locally without running tests or changing live data.
 
@@ -107,12 +107,10 @@ For example, a displayed Main total of Rs. 30,598 corrected to Rs. 30,000 posts 
 
 No new migration is required. These changes were authored locally without running tests or changing live data; frontend assets were rebuilt.
 
-## Carry the full account total into opening
+## Current total account balances in opening
 
-Main and Spare Parts opening suggestions use the last saved **full closing account total**. Daily-allocation closes reconstruct that total as the saved account base (earlier funds plus account movements/expenses) + the amount added at that close. The last addition by itself is never used as the next account opening. For other saved closes, verified full balances or recorded account actuals provide the starting total; missing snapshots fall back to the existing ledger.
+Main and Spare Parts opening inputs show the current full balances calculated by the account ledger, as of the opening date. They are not populated from the previous daily addition, a last-close count, or a reconstructed cashier allocation. Physical opening cash is entered separately and is not deducted from either account total.
 
-For example, an account base of Rs. 10,000 and a closing addition of Rs. 2,000 carries Rs. 12,000. A later Rs. 500 expense makes the next suggested account opening Rs. 11,500. The popup shows the last full total and the last addition separately, with the addition labelled as already included. Physical cashier cash remains independent.
+Both totals are editable directly in the opening popup. The current ledger amount is shown beneath each input, and the entered total previews live. Changing a total requires a reason. Confirming opening records only the difference from the current ledger as an audited account correction; that correction affects future balances and opening suggestions. Confirming unchanged totals does not post an automatic account allocation or overwrite account totals from old closing figures. Original saved opening/closing count records remain in history.
 
-New closes and closing corrections store the complete ledger balances alongside verified account totals. Opening applies only subsequent ledger changes to the saved full total, including backdated corrections. Older snapshots use recorded transaction IDs, or the closing timestamp when IDs are unavailable, to identify later movements. Cash already retained in the cashier is kept separate. Confirming opening uses the same calculation as its popup and records any carry reconciliation in the opening event, without rewriting older counts.
-
-No migration or data repair is run. These changes were made locally without running tests or changing live data; frontend assets were rebuilt for manual checking.
+The popup and opening submission share the same current-ledger calculation and stale-balance validation. Historical opening edits continue to use their originally recorded opening totals. No migration or data repair is run. These changes were made locally without running tests or changing live data; frontend assets were rebuilt for manual checking.

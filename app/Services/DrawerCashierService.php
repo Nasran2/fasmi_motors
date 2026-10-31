@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Account;
-use App\Models\AccountTransaction;
 use App\Models\CashierSession;
 use App\Models\DailyClosing;
 use App\Models\Setting;
@@ -52,67 +51,6 @@ class DrawerCashierService
         return null;
     }
 
-    private function savedClosingTotals(?CashierSession $session): array
-    {
-        if (! $session) {
-            return [];
-        }
-        $saved = $session->closing_summary ?? [];
-        $totals = [];
-        foreach (['main', 'spare_parts'] as $type) {
-            // A daily addition is only one part of the saved full account total.
-            if (isset($saved['closing_allocation_bases'][$type], $saved['closing_account_additions'][$type])) {
-                $totals[$type] = round((float) $saved['closing_allocation_bases'][$type] + (float) $saved['closing_account_additions'][$type], 2);
-            } elseif (isset($saved['closing_verified_balances'][$type])) {
-                $totals[$type] = round((float) $saved['closing_verified_balances'][$type], 2);
-            } elseif (isset($session->actual_balances[$type])) {
-                $totals[$type] = round((float) $session->actual_balances[$type], 2);
-            }
-        }
-        if (count($totals) < 2) {
-            $closing = DailyClosing::whereDate('closing_date', $session->session_date)->first();
-            foreach (['main', 'spare_parts'] as $type) {
-                if (! isset($totals[$type]) && $closing?->{$type.'_actual_balance'} !== null) {
-                    $totals[$type] = round((float) $closing->{$type.'_actual_balance'}, 2);
-                }
-            }
-        }
-
-        return $totals;
-    }
-
-    private function accountMovementsAfterClosing(CashierSession $previous, string $date, string $type, float $currentLedger): float
-    {
-        $saved = $previous->closing_summary ?? [];
-        if (isset($saved['closing_ledger_balances'][$type])) {
-            return round($currentLedger - (float) $saved['closing_ledger_balances'][$type], 2);
-        }
-        $recordedAt = $previous->events()->whereIn('action', ['closed', 'closing_corrected'])->latest('id')->first()?->created_at ?? $previous->closed_at;
-        $previousDate = $previous->session_date->toDateString();
-        $end = Carbon::parse($date)->endOfDay();
-        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($type)->id)->where('transaction_date', '<=', $end);
-        if (isset($saved['closing_transaction_ids'])) {
-            $ids = $saved['closing_transaction_ids'];
-            $query->where(function ($query) use ($previousDate, $ids, $recordedAt) {
-                $query->where(fn ($query) => $query->where('transaction_date', '>=', Carbon::parse($previousDate)->startOfDay())->whereNotIn('id', $ids));
-                if ($recordedAt) {
-                    $query->orWhere(fn ($query) => $query->where('transaction_date', '<', Carbon::parse($previousDate)->startOfDay())->where('created_at', '>', $recordedAt));
-                }
-            });
-        } else {
-            $effectiveAt = $previous->closed_at?->toDateString() === $previousDate ? $previous->closed_at : $previous->session_date->copy()->endOfDay();
-            $query->where(function ($query) use ($effectiveAt, $recordedAt) {
-                $query->where('transaction_date', '>', $effectiveAt);
-                if ($recordedAt) {
-                    $query->orWhere('created_at', '>', $recordedAt);
-                }
-            });
-        }
-        $rows = $query->get();
-
-        return round($rows->sum('credit') - $rows->sum('debit'), 2);
-    }
-
     public function openingPlan(string $date, array $summary, ?CashierSession $session): array
     {
         $previous = $session ?: CashierSession::whereDate('session_date', '<', $date)->latest('session_date')->first();
@@ -121,39 +59,14 @@ class DrawerCashierService
             : ($previous?->cash_balances ? round(array_sum($previous->cash_balances), 2) : null);
         $cash = $session ? $summary['cash_in_hand'] : round(($this->carriedOpening($date, true) ?? 0)
             + $summary['cashier_funds']['main'] + $summary['cashier_funds']['spare_parts'], 2);
-        $accounts = $this->accountDefaults($summary, true);
-        $ids = collect(['main', 'spare_parts'])->map(fn ($type) => Account::systemAccount($type)->id);
-        $from = $previous?->session_date->toDateString() ?? $date;
-        $cashRows = AccountTransaction::posted()->whereIn('account_id', $ids)
-            ->whereBetween('transaction_date', [Carbon::parse($from)->startOfDay(), Carbon::parse($date)->endOfDay()])->get();
-        $savedSnapshot = $previous?->closing_summary['closing_ledger_snapshot']['cashier'] ?? null;
-        if ($previous && ! is_array($savedSnapshot)) {
-            $cutoff = $previous->closed_at?->toDateString() === $from ? $previous->closed_at : Carbon::parse($from)->endOfDay();
-            $cashRows = $cashRows->filter(fn ($entry) => $entry->transaction_date->gt($cutoff) || ($previous->closed_at && $entry->created_at?->gt($previous->closed_at)));
-        }
-        $unallocated = [];
-        $closingTotals = $this->savedClosingTotals($previous);
-        $accountCarry = [];
-        foreach (['main', 'spare_parts'] as $type) {
-            $amount = app(OutgoingFundingService::class)->cashierAmount($cashRows->where('account_id', Account::systemAccount($type)->id), $type);
-            $unallocated[$type] = round($amount - ($savedSnapshot[$type] ?? 0), 2);
-            // Carry the full saved total, then apply only movements since that closing.
-            $laterMovements = isset($closingTotals[$type])
-                ? $this->accountMovementsAfterClosing($previous, $date, $type, $accounts[$type]) : 0.0;
-            $accounts[$type] = round(($closingTotals[$type] ?? $accounts[$type]) + $laterMovements - $unallocated[$type], 2);
-            if (isset($closingTotals[$type])) {
-                $accountCarry[$type] = ['closing_total' => $closingTotals[$type],
-                    'last_addition' => $previous->closing_summary['closing_account_additions'][$type] ?? null,
-                    'later_movements' => $laterMovements, 'cash_held_in_cashier' => $unallocated[$type], 'total' => $accounts[$type]];
-            }
-        }
 
+        // Operational accounts use their current full ledger totals. The physical
+        // cashier opening is entered independently and never reduces these totals.
         return [
-            'cash' => $cash, 'accounts' => $accounts, 'unallocated_cash' => $unallocated,
+            'cash' => $cash, 'accounts' => $this->accountDefaults($summary, true),
             'reopening' => (bool) $session,
             'previous_date' => $previous?->session_date->toDateString(),
             'previous_cash' => $recordedCash,
-            'previous_accounts' => array_replace($previous?->actual_balances ?? [], $closingTotals), 'account_carry' => $accountCarry,
         ];
     }
 
@@ -252,14 +165,6 @@ class DrawerCashierService
         } else {
             $session = CashierSession::create($values + ['session_date' => today(), 'opened_at' => now(), 'opened_by' => auth()->id()]);
         }
-        foreach (['main', 'spare_parts'] as $type) {
-            $difference = round($source[$type] - $summary['accounts'][$type]['closing'], 2);
-            if ($difference != 0) {
-                $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference),
-                    'Full account balance carried into cashier opening', $session, 'Adjustment', 'Full saved closing total plus later account movements; cash retained in the cashier is excluded.',
-                    transactionDate: now(), category: 'cashier_opening_allocation');
-            }
-        }
         $this->postAccountChanges($session, $changes, $reason, $reopening, true);
         if ($saveDefault) {
             Setting::updateOrCreate(['key' => WashingCommissionService::settingKey()], ['value' => $washing['washing_commission_amount'], 'group' => 'technician', 'type' => 'number']);
@@ -267,7 +172,7 @@ class DrawerCashierService
         $session->events()->create(['action' => $reopening ? 'reopened' : 'opened', 'cash_amount' => $cash,
             'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
             'details' => ['reason' => $reason, 'separate_cash_balance' => true, 'cash_balances' => $confirmed, 'bank_balance' => $confirmed['bank'], 'drawer_adjustment' => $adjustment,
-                'opening_context' => $this->openingContext($cash, $confirmed, $summary), 'carried_cash' => $suggested, 'previous_close_date' => $plan['previous_date'], 'account_carry' => $plan['account_carry']], 'created_by' => auth()->id()]);
+                'opening_context' => $this->openingContext($cash, $confirmed, $summary), 'carried_cash' => $suggested, 'previous_close_date' => $plan['previous_date'], 'account_balance_source' => 'current_ledger', 'account_balances_before' => $source], 'created_by' => auth()->id()]);
 
         return $session;
     }
