@@ -396,3 +396,35 @@ it('exports filtered attendance to excel and pdf', function () {
     $pdfRes->assertOk();
     expect($pdfRes->headers->get('content-disposition'))->toContain('attendance_export-tech_2026-10.pdf');
 });
+
+it('creates a staff member when hourly salary is omitted or null', function () {
+    $response = $this->post(route('technicians.store'), [
+        'name' => 'Kavishka Staff',
+        'phone' => '0779998888',
+        'active' => 1,
+        'basic_salary' => 35000,
+        'salary_type' => 'Monthly',
+        'daily_salary' => 1400,
+        'hourly_salary' => null,
+        'ot_rate' => 150,
+        'late_deduction_rate' => 150,
+        'no_pay_deduction_rate' => 1400,
+        'commission_enabled' => 0,
+        'commission_percentage' => 0,
+        'parts_commission_percentage' => 0,
+        'commission_type' => 'Service / labor',
+        'epf_etf_basic_salary' => 30000,
+        'epf_employee_percentage' => 8,
+        'epf_company_percentage' => 12,
+        'etf_company_percentage' => 3,
+        'epf_eligible' => 0,
+        'etf_eligible' => 0,
+        'role' => 'staff',
+    ]);
+
+    $response->assertSessionHasNoErrors();
+    $technician = Technician::where('phone', '0779998888')->firstOrFail();
+    expect((float) $technician->hourly_salary)->toBe(0.0)
+        ->and((float) $technician->basic_salary)->toBe(35000.0)
+        ->and($technician->salary_type)->toBe('Monthly');
+});

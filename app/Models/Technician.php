@@ -15,7 +15,39 @@ class Technician extends Model
 
     protected $guarded = [];
 
-    protected $attributes = ['epf_etf_basic_salary' => 30000];
+    protected $attributes = [
+        'epf_etf_basic_salary' => 30000,
+        'hourly_salary' => 0,
+        'daily_salary' => 0,
+        'ot_rate' => 0,
+        'late_deduction_rate' => 0,
+        'no_pay_deduction_rate' => 0,
+    ];
+
+    public function setHourlySalaryAttribute($value): void
+    {
+        $this->attributes['hourly_salary'] = ($value !== null && $value !== '') ? (float) $value : 0;
+    }
+
+    public function setDailySalaryAttribute($value): void
+    {
+        $this->attributes['daily_salary'] = ($value !== null && $value !== '') ? (float) $value : 0;
+    }
+
+    public function setOtRateAttribute($value): void
+    {
+        $this->attributes['ot_rate'] = ($value !== null && $value !== '') ? (float) $value : 0;
+    }
+
+    public function setLateDeductionRateAttribute($value): void
+    {
+        $this->attributes['late_deduction_rate'] = ($value !== null && $value !== '') ? (float) $value : 0;
+    }
+
+    public function setNoPayDeductionRateAttribute($value): void
+    {
+        $this->attributes['no_pay_deduction_rate'] = ($value !== null && $value !== '') ? (float) $value : 0;
+    }
 
     protected function casts(): array
     {

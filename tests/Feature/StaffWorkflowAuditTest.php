@@ -200,14 +200,15 @@ it('reports impossible dates and invalid times as import row errors rather than 
     expect($batch->error_rows)->toBe(2)->and($batch->total_rows)->toBe(0)->and(TechnicianAttendance::count())->toBe(0);
 });
 
-it('validates hourly staff rates and allows non hourly profiles to keep a zero hourly rate and turn contributions off', function () {
+it('allows hourly staff rates to be optional and non hourly profiles to keep a zero hourly rate and turn contributions off', function () {
     $payload = ['name' => $this->staff->name, 'phone' => $this->staff->phone, 'active' => 1, 'basic_salary' => 26000, 'salary_type' => 'Hourly', 'hourly_salary' => 0, 'commission_percentage' => 0, 'commission_type' => 'Manual only', 'epf_employee_percentage' => 8, 'epf_company_percentage' => 12, 'etf_company_percentage' => 3, 'epf_eligible' => 0, 'etf_eligible' => 0];
-    $this->put(route('technicians.update', $this->staff), $payload)->assertSessionHasErrors('hourly_salary');
+    $this->put(route('technicians.update', $this->staff), $payload)->assertSessionHasNoErrors();
+    expect((float) $this->staff->fresh()->hourly_salary)->toBe(0.0)->and($this->staff->fresh()->salary_type)->toBe('Hourly');
     $this->put(route('technicians.update', $this->staff), array_replace($payload, ['hourly_salary' => 125.50]))->assertSessionHasNoErrors();
     expect((float) $this->staff->fresh()->hourly_salary)->toBe(125.5)->and($this->staff->fresh()->salary_type)->toBe('Hourly');
     $this->staff->update(['epf_eligible' => true, 'etf_eligible' => true]);
-    $this->put(route('technicians.update', $this->staff), array_replace($payload, ['salary_type' => 'Monthly']))->assertSessionHasNoErrors();
-    expect($this->staff->fresh()->epf_eligible)->toBeFalse()->and($this->staff->fresh()->etf_eligible)->toBeFalse();
+    $this->put(route('technicians.update', $this->staff), array_replace($payload, ['salary_type' => 'Monthly', 'hourly_salary' => null]))->assertSessionHasNoErrors();
+    expect($this->staff->fresh()->epf_eligible)->toBeFalse()->and($this->staff->fresh()->etf_eligible)->toBeFalse()->and((float) $this->staff->fresh()->hourly_salary)->toBe(0.0);
 });
 
 it('does not delete a draft with an existing disbursement', function () {

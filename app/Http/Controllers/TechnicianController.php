@@ -1397,7 +1397,7 @@ class TechnicianController extends Controller
             'salary_period_mode' => ['sometimes', 'required', Rule::in(['system_default', 'normal_calendar', 'custom_start'])],
             'salary_start_day' => ['exclude_unless:salary_period_mode,custom_start', 'required', 'integer', 'min:1', 'max:31'],
             'daily_salary' => ['nullable', 'numeric', 'min:0'],
-            'hourly_salary' => ['required_if:salary_type,Hourly', 'nullable', 'numeric', 'min:0', 'decimal:0,2', Rule::when($request->input('salary_type') === 'Hourly', 'gt:0')],
+            'hourly_salary' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'ot_rate' => ['nullable', 'numeric', 'min:0'],
             'late_deduction_rate' => ['nullable', 'numeric', 'min:0'],
             'no_pay_deduction_rate' => ['nullable', 'numeric', 'min:0'],
@@ -1419,6 +1419,12 @@ class TechnicianController extends Controller
         if (isset($data['salary_period_mode']) && $data['salary_period_mode'] !== 'custom_start') {
             $data['salary_start_day'] = null;
         }
+
+        $data['hourly_salary'] = (float) ($data['hourly_salary'] ?? 0);
+        $data['daily_salary'] = (float) ($data['daily_salary'] ?? 0);
+        $data['ot_rate'] = (float) ($data['ot_rate'] ?? 0);
+        $data['late_deduction_rate'] = (float) ($data['late_deduction_rate'] ?? 0);
+        $data['no_pay_deduction_rate'] = (float) ($data['no_pay_deduction_rate'] ?? 0);
 
         return $data;
     }
