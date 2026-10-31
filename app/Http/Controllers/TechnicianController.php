@@ -1256,7 +1256,11 @@ class TechnicianController extends Controller
         $data['daily_salary'] = (float) ($data['daily_salary'] ?? 0);
         $data['ot_rate'] = (float) ($data['ot_rate'] ?? 0);
         $data['late_deduction_rate'] = (float) ($data['late_deduction_rate'] ?? 0);
-        $data['no_pay_deduction_rate'] = (float) ($data['no_pay_deduction_rate'] ?? 0);
+        // Keep legacy stored rates when newer forms omit this superseded field.
+        // Automatic absence now uses Daily Salary directly.
+        if (array_key_exists('no_pay_deduction_rate', $data)) {
+            $data['no_pay_deduction_rate'] = (float) ($data['no_pay_deduction_rate'] ?? 0);
+        }
 
         return $data;
     }

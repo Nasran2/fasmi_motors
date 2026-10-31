@@ -46,7 +46,7 @@ class SalaryCalculationService
             'daily_salary' => $this->dailySalary($technician),
             'ot_rate' => (float) $technician->ot_rate,
             'late_deduction_rate' => (float) $technician->late_deduction_rate,
-            'no_pay_per_day' => (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $this->dailySalary($technician)),
+            'no_pay_per_day' => $this->dailySalary($technician),
             'epf_eligible' => (bool) $technician->epf_eligible,
             'etf_eligible' => (bool) $technician->etf_eligible,
             'employee_epf_percentage' => (float) $technician->epf_employee_percentage,
@@ -95,11 +95,19 @@ class SalaryCalculationService
         $fullPresent = $records->whereIn('status', $presentStatuses)->count();
         $halfDays = $records->whereIn('status', ['Half Day', 'Morning Half Day', 'Evening Half Day'])->count();
         $technician = Technician::findOrFail($technicianId);
-        $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $this->dailySalary($technician));
-        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate, $closedDates) {
-            $calculated = in_array($record->status, ['Absent', 'No Pay Leave'], true)
-                ? ($record->is_leave_day || isset($closedDates[$record->date->toDateString()]) ? 0 : $noPayRate)
-                : (float) $record->late_deduction_amount + (float) $record->early_leave_deduction_amount + (float) $record->half_day_deduction_amount;
+        $noPayRate = $this->dailySalary($technician);
+        $halfDayRate = round($noPayRate / 2, 2);
+        $halfDayRows = $records->whereIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)
+            ->filter(fn ($row) => ! $row->is_leave_day && ! isset($closedDates[$row->date->toDateString()]));
+        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate, $halfDayRate, $closedDates) {
+            $closed = $record->is_leave_day || isset($closedDates[$record->date->toDateString()]);
+            if (in_array($record->status, ['Absent', 'No Pay Leave'], true)) {
+                $calculated = $closed ? 0 : $noPayRate;
+            } elseif (in_array($record->status, AttendanceCalculationService::HALF_DAY_STATUSES, true)) {
+                $calculated = $closed ? 0 : $halfDayRate;
+            } else {
+                $calculated = (float) $record->late_deduction_amount + (float) $record->early_leave_deduction_amount + (float) $record->half_day_deduction_amount;
+            }
 
             return (float) $record->deduction_amount - $calculated;
         });
@@ -135,9 +143,11 @@ class SalaryCalculationService
             'hourly_ot_amount' => round((float) $records->sum(fn ($record) => $record->is_manual_edit
                 ? (float) $record->ot_amount
                 : round((float) $record->ot_minutes / 60 * (float) ((float) $technician->ot_rate > 0 ? $technician->ot_rate : $technician->hourly_salary), 2)), 2),
-            'late_deduction' => round((float) $records->sum('late_deduction_amount'), 2),
-            'early_leave_deduction' => round((float) $records->sum('early_leave_deduction_amount'), 2),
-            'half_day_deduction' => round((float) $records->sum('half_day_deduction_amount'), 2),
+            // Rebuild status-based deductions from current staff rates, including older rows
+            // saved with zero half-day amounts. Do not also deduct late/early fines on half days.
+            'late_deduction' => round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('late_deduction_amount'), 2),
+            'early_leave_deduction' => round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('early_leave_deduction_amount'), 2),
+            'half_day_deduction' => round($halfDayRows->count() * $halfDayRate, 2),
             'attendance_override_adjustment' => round((float) $overrideAdjustment, 2),
         ];
     }
@@ -276,7 +286,7 @@ class SalaryCalculationService
         $workedOnLeaveManual = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
         $workedOnLeavePay = round($workedOnLeaveAuto + $workedOnLeaveManual, 2);
         $paidAmount = max(0, (float) ($custom['paid_amount'] ?? 0));
-        $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
+        $noPayRate = $dailySalary;
         $noPay = $technician->salary_type === 'Hourly' ? 0 : round($attendance['absent_days'] * $noPayRate, 2);
         $contributions = $this->calculateEPFETF($technician);
         $gross = $this->calculateGrossSalary($attendanceSalary, $otAmount, $commission, $allowances, $manualAdditions, $workedOnLeavePay);

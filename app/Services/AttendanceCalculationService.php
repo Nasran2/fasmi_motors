@@ -17,6 +17,8 @@ class AttendanceCalculationService
 {
     public const NON_WORK_STATUSES = ['Absent', 'No Pay Leave', 'Leave', 'Paid Leave', 'Holiday', 'Holiday Leave', 'Weekly Leave', 'Poya Leave', 'No Shift', 'Not Worked'];
 
+    public const HALF_DAY_STATUSES = ['Half Day', 'Morning Half Day', 'Evening Half Day'];
+
     private HolidayService $holidayService;
 
     public function __construct(HolidayService $holidayService)
@@ -126,12 +128,19 @@ class AttendanceCalculationService
         if (in_array($status, ['Absent', 'No Pay Leave'], true)) {
             if (! $result['is_leave_day']) {
                 $result['absent_minutes'] = (int) round((float) $schedule['working_hours'] * 60);
-                $result['deduction_amount'] = $technician->salary_type === 'Hourly' ? 0 : (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
+                $result['deduction_amount'] = $technician->salary_type === 'Hourly' ? 0 : $dailySalary;
             } else {
                 $result['status'] = $result['leave_type'];
             }
 
             return $this->applyOverrides($result, $overrides);
+        }
+
+        // An explicitly selected half day still costs half a day when a fingerprint is missing.
+        // Punches determine hours and timing metrics, not whether this deduction exists.
+        if (in_array($status, self::HALF_DAY_STATUSES, true) && ! $result['is_leave_day'] && $technician->salary_type !== 'Hourly') {
+            $result['half_day_deduction_amount'] = round($dailySalary / 2, 2);
+            $result['deduction_amount'] = $result['half_day_deduction_amount'];
         }
 
         if (in_array($status, ['Leave', 'Paid Leave', 'Holiday', 'Holiday Leave', 'Weekly Leave', 'Poya Leave', 'No Shift'], true) || ! $in || ! $out || ! $open || ! $close) {
@@ -153,10 +162,8 @@ class AttendanceCalculationService
             $result['status'] = $in->gt($this->time($dateString, $schedule['morning_cutoff'])) ? 'Morning Half Day' : 'Evening Half Day';
         }
 
-        if (in_array($result['status'], ['Half Day', 'Morning Half Day', 'Evening Half Day'], true)) {
-            $result['half_day_deduction_amount'] = str_contains(strtolower((string) $settings->half_day_deduction_type), 'half')
-                ? $dailySalary / 2
-                : (float) $settings->half_day_deduction_amount;
+        if (in_array($result['status'], self::HALF_DAY_STATUSES, true)) {
+            $result['half_day_deduction_amount'] = round($dailySalary / 2, 2);
         } else {
             if ($settings->enable_late_deduction && $result['late_minutes'] > 0) {
                 $result['late_deduction_amount'] = $this->deduction((string) $settings->late_deduction_type, (float) $settings->late_deduction_amount, $result['late_minutes'], $dailySalary);

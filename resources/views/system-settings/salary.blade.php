@@ -354,14 +354,12 @@
             </div>
             <div>
               <label class="label">Half Day Salary Deduction Type</label>
-              <select name="half_day_deduction_type" class="w-full">
-                <option value="Half of daily salary" @selected($salarySetting->half_day_deduction_type === 'Half of daily salary')>Half of daily rate (50%)</option>
-                <option value="Fixed amount" @selected($salarySetting->half_day_deduction_type === 'Fixed amount')>Fixed amount</option>
-              </select>
+              <input type="hidden" name="half_day_deduction_type" value="Half of daily salary">
+              <input type="hidden" name="half_day_deduction_amount" value="0">
+              <p class="text-sm font-bold text-slate-700">Half of the staff Daily Salary (50%)</p>
             </div>
             <div>
-              <label class="label">Deduction Amount (Rs.)</label>
-              <input type="number" step="0.01" name="half_day_deduction_amount" value="{{ $salarySetting->half_day_deduction_amount }}" class="w-full">
+              <p class="text-sm text-slate-600">Daily Salary Rs. 1,200 → half-day deduction Rs. 600; absence deduction Rs. 1,200. Manual Half Day selections apply even when automatic classification is disabled.</p>
             </div>
           </div>
         </div>
