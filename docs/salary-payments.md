@@ -58,3 +58,15 @@ Migration `2026_10_29_000010_add_salary_balance_recoveries` adds recovered amoun
 Payslips show old balances, repair references/bikes, recovery and the combined remaining balance prominently. Month-boundary counters and the salary-cycle conditions panel are removed from the slip; actual salary period dates remain. Print spacing was compacted and a sample with old debt and a repair was visually verified as one A4 page. Long item lists may continue onto additional pages rather than clip.
 
 Latest local monetary regression run: 102 cases passed (2,552 assertions), plus five salary-preview JavaScript checks. A broader run also exposed an unrelated existing attendance expectation: an Absent row with punches is now normalized to Present in the current attendance code. This salary work does not alter that behavior. Live data was not changed.
+
+## Full basic salary and separate unpaid leave deductions
+
+New/refreshed Daily and Monthly paysheets show the saved staff-profile **Basic Salary** in earnings. Daily salary no longer multiplies attended days to reduce the earnings line. **Unpaid leave / absence** is a separate deduction: explicitly recorded Absent / No Pay Leave days on working dates × the configured No Pay / Day rate (falling back to the daily salary rate). Paid/approved leave and weekly/special shop-closed dates do not produce automatic no-pay deductions. Missing attendance rows are not silently counted as absences.
+
+Half-day deductions use the existing configured attendance amounts once, now that the Daily basic is no longer reduced by half-day attendance. Manual attendance amount overrides remain explicit adjustments in deductions, including waived amounts; they are not also added to Daily base earnings. Late/early leave, advances and other deductions retain their own lines. Hourly earnings continue to use actual regular hours, and Weekly earnings keep their prorated period basis. EPF/ETF still use their separate saved contribution basic.
+
+For example, Basic Salary Rs. 65,000, one unpaid day at Rs. 2,600 and no other amounts gives earnings Rs. 65,000, unpaid leave / absence deduction Rs. 2,600 and net Rs. 62,400. Six shop-closed days do not add another deduction. The actual result also includes the paysheet's OT, other earnings and deductions.
+
+Payslips and salary details label the saved full amount **Basic salary** and show the unpaid day count/rate. New snapshots record the salary basis and no-pay day/rate used. Existing saved calculations and paid/finalized sheets are not rewritten. An older Daily draft shows a notice linking to **View → Refresh draft salary calculation / Refresh Attendance & OT**, with a required reason; it must be refreshed before finalization under this rule. Draft regeneration also applies the new calculation.
+
+No migration or live data change is performed. No tests were run, as requested; frontend assets were rebuilt for the user's manual checking.

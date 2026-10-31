@@ -6,6 +6,9 @@
     </div>
     <x-flash />
     <p class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">You can print this payslip before payment, after a partial payment or after full payment. The slip shows its status, paid amount and remaining balance.</p>
+    @if($sheet->status === 'Draft' && $sheet->uses_legacy_daily_salary)
+        <p class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">This draft uses attendance-based daily earnings. Use <a href="#refresh-salary-calculation" class="font-bold underline">Refresh salary calculation</a> below to show the saved full Basic Salary and separate unpaid leave / absence deductions. A reason is required.</p>
+    @endif
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         @foreach(['Gross earnings' => $sheet->gross_salary, 'Total deductions' => $sheet->total_deductions, 'Net payable' => $sheet->net_payable, 'Paid so far' => $sheet->paid_amount, 'Remaining balance' => $sheet->balance_amount] as $label => $amount)
             <div class="panel p-4"><p class="text-xs font-bold text-slate-500">{{ $label }}</p><p class="mt-2 text-xl font-black">Rs. {{ number_format($amount, 2) }}</p></div>
@@ -13,7 +16,7 @@
     </div>
     @php
         $earningsList = array_filter([
-            'Base earnings' => $sheet->base_earnings,
+            $sheet->base_earnings_label => $sheet->base_earnings,
             'Overtime' => $sheet->ot_amount,
             'Allowances' => $sheet->allowances,
             'Manual additions' => $sheet->manual_additions,
@@ -24,7 +27,7 @@
             'Late' => $sheet->late_deduction,
             'Early leave' => $sheet->early_leave_deduction,
             'Half days' => $sheet->half_day_deduction,
-            'No pay' => $sheet->no_pay_deduction,
+            'Unpaid leave / absence' => $sheet->no_pay_deduction,
             'Advances' => $sheet->total_advance_deduction,
             'Job / bike repair' => $sheet->total_job_deduction,
             'Employee EPF' => $sheet->epf_employee,
@@ -34,6 +37,9 @@
 
         $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
     @endphp
+    @if(data_get($sheet->calculation_snapshot, 'earnings.salary_basis') === 'full_basic')
+        <p class="mt-3 text-xs text-slate-600">Paid leave and shop-closed days do not cause no-pay deductions.@if((float) $sheet->no_pay_deduction > 0) Unpaid leave / absence: {{ data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_days', $sheet->total_absent_days) }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_rate', 0), 2) }}.@endif</p>
+    @endif
     <section class="panel p-5">
         <div class="grid gap-6 sm:grid-cols-2">
             <div><h2 class="font-black text-emerald-700">Earnings</h2><dl class="mt-3 space-y-2 text-sm">
@@ -87,10 +93,10 @@
         </tbody></table></div>
     </section>
     @if($sheet->status === 'Draft')
-    <form method="POST" action="{{ route('technicians.salaries.refresh-attendance', $sheet) }}" class="panel space-y-3 p-5">
+    <form method="POST" action="{{ route('technicians.salaries.refresh-attendance', $sheet) }}" id="refresh-salary-calculation" class="panel space-y-3 p-5">
         @csrf<x-submission-token />
-        <h2 class="font-black">Refresh draft attendance &amp; OT</h2><p class="text-sm text-slate-500">Apply current OT rules to this period and refresh the salary calculation. Manual amount overrides and adjustment descriptions are retained. Finalized salary attendance stays locked.</p>
-        <label class="block"><span class="label">Reason for recalculation</span><input name="reason" required minlength="5" maxlength="500" class="field" placeholder="e.g. Apply the corrected 8:00 AM OT eligibility rule"></label>
+        <h2 class="font-black">Refresh draft salary calculation</h2><p class="text-sm text-slate-500">Apply current salary and OT rules, including full basic salary and separate unpaid leave deductions. Manual amount overrides and adjustment descriptions are retained. Finalized salary attendance stays locked.</p>
+        <label class="block"><span class="label">Reason for recalculation</span><input name="reason" required minlength="5" maxlength="500" class="field" placeholder="e.g. Apply full basic salary and separate unpaid leave deductions"></label>
         <button class="btn-secondary">Refresh Attendance &amp; OT</button>
     </form>
     @endif

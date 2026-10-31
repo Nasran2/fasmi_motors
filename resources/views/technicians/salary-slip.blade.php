@@ -119,9 +119,12 @@
     @endif
 
 
+    @if($sheet->status === 'Draft' && $sheet->uses_legacy_daily_salary)
+        <p class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 no-print">This draft uses the previous daily earnings calculation. Open <a href="{{ route('technicians.salaries.show', $sheet) }}#refresh-salary-calculation" class="font-bold underline">salary details → Refresh salary calculation</a> to use full Basic Salary with separate unpaid leave / absence deductions.</p>
+    @endif
     @php
       $earningsList = array_filter([
-          'Base earnings' => $sheet->base_earnings,
+          $sheet->base_earnings_label => $sheet->base_earnings,
           'OT amount' => $sheet->ot_amount,
           'Other allowances' => $sheet->allowances,
           'Manual additions' => $sheet->manual_additions,
@@ -131,7 +134,7 @@
       $deductionsList = array_filter([
           'Late deduction' => $sheet->late_deduction,
           'Early leave deduction' => $sheet->early_leave_deduction,
-          'No-pay deduction' => $sheet->no_pay_deduction,
+          'Unpaid leave / absence' => $sheet->no_pay_deduction,
           'Half-day deduction' => $sheet->half_day_deduction,
           'Salary advances' => $sheet->total_advance_deduction,
           'Job / bike repair' => $sheet->total_job_deduction,
@@ -143,6 +146,9 @@
 
       $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
     @endphp
+    @if(data_get($sheet->calculation_snapshot, 'earnings.salary_basis') === 'full_basic')
+        <p class="mt-3 text-xs text-slate-600">Paid leave and shop-closed days do not cause no-pay deductions.@if((float) $sheet->no_pay_deduction > 0) Unpaid leave / absence: {{ data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_days', $sheet->total_absent_days) }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_rate', 0), 2) }}.@endif</p>
+    @endif
 
     <div class="mt-6 grid gap-8 md:grid-cols-2">
       <section>

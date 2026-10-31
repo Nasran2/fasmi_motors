@@ -64,17 +64,20 @@ class SalaryCalculationService
             ->where('is_active', true)->where('is_leave_enabled', true)->get()
             ->keyBy(fn (HolidayDate $holiday) => $holiday->holiday_date->toDateString());
 
+        $closedDates = [];
         $calendar = ['weekly_leave_days' => 0, 'public_holiday_days' => 0, 'poya_holiday_days' => 0, 'custom_holiday_days' => 0, 'total_working_days' => 0];
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
             $key = $date->toDateString();
             $holiday = $holidayDates->get($key);
             if ($holiday) {
+                $closedDates[$key] = true;
                 $type = strtolower((string) $holiday->holiday_type);
                 $calendar[str_contains($type, 'poya') ? 'poya_holiday_days' : (str_contains($type, 'public') ? 'public_holiday_days' : 'custom_holiday_days')]++;
 
                 continue;
             }
             if ($this->holidays->isWeeklyLeave($date)) {
+                $closedDates[$key] = true;
                 $calendar['weekly_leave_days']++;
 
                 continue;
@@ -83,16 +86,18 @@ class SalaryCalculationService
         }
 
         $recordSummary = $this->attendance->summarize($records);
-        $explicitAbsent = (int) $recordSummary['absent_days'];
+        $unpaidRows = $records->filter(fn ($row) => in_array($row->status, ['Absent', 'No Pay Leave'], true)
+            && ! $row->is_leave_day && ! isset($closedDates[$row->date->toDateString()]));
+        $explicitAbsent = $unpaidRows->count();
         $approvedLeave = $records->whereIn('status', ['Leave', 'Paid Leave'])->where('is_leave_day', false)->count();
         $presentStatuses = ['Present', 'Late', 'Early Leave', 'Auto Closed', 'Worked on Leave Day'];
         $fullPresent = $records->whereIn('status', $presentStatuses)->count();
         $halfDays = $records->whereIn('status', ['Half Day', 'Morning Half Day', 'Evening Half Day'])->count();
         $technician = Technician::findOrFail($technicianId);
         $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $this->dailySalary($technician));
-        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate) {
+        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate, $closedDates) {
             $calculated = in_array($record->status, ['Absent', 'No Pay Leave'], true)
-                ? $noPayRate
+                ? ($record->is_leave_day || isset($closedDates[$record->date->toDateString()]) ? 0 : $noPayRate)
                 : (float) $record->late_deduction_amount + (float) $record->early_leave_deduction_amount + (float) $record->half_day_deduction_amount;
 
             return (float) $record->deduction_amount - $calculated;
@@ -251,18 +256,13 @@ class SalaryCalculationService
             throw ValidationException::withMessages(['hourly_salary' => 'Set this staff member’s hourly pay rate before generating salary.']);
         }
         $attendanceSalary = match ($technician->salary_type) {
-            'Daily' => $dailySalary * ($attendance['worked_days'] + $attendance['approved_leave_days']),
+            'Daily' => (float) $technician->basic_salary,
             'Weekly' => round((float) $technician->basic_salary * $attendance['salary_period_days'] / 7, 2),
             'Hourly' => round((float) $technician->hourly_salary * ($regularHours + $paidLeaveHours), 2),
             default => (float) $technician->basic_salary,
         };
         $otAmount = $technician->salary_type === 'Hourly' ? $attendance['hourly_ot_amount'] : $attendance['total_ot_amount'];
         $attendanceAdjustment = $attendance['attendance_override_adjustment'];
-        if ($technician->salary_type === 'Daily' && $attendanceAdjustment < 0) {
-            // A waived deduction restores daily earnings already reduced by absence/half days.
-            $attendanceSalary -= $attendanceAdjustment;
-            $attendanceAdjustment = 0;
-        }
         // Commission has its own deductions and payout ledger; it is never salary earnings.
         $commissions = collect();
         $commission = 0.0;
@@ -272,7 +272,8 @@ class SalaryCalculationService
         $manualDeductions = max(0, (float) ($custom['manual_deductions'] ?? $custom['manual_deduction'] ?? 0));
         $workedOnLeavePay = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
         $paidAmount = max(0, (float) ($custom['paid_amount'] ?? 0));
-        $noPay = in_array($technician->salary_type, ['Daily', 'Hourly'], true) ? 0 : $attendance['absent_days'] * (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
+        $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
+        $noPay = $technician->salary_type === 'Hourly' ? 0 : round($attendance['absent_days'] * $noPayRate, 2);
         $contributions = $this->calculateEPFETF($technician);
         $gross = $this->calculateGrossSalary($attendanceSalary, $otAmount, $commission, $allowances, $manualAdditions, $workedOnLeavePay);
         $deductionParts = [
@@ -282,10 +283,6 @@ class SalaryCalculationService
             'other' => $otherDeductions, 'manual' => $manualDeductions,
             'attendance_adjustment' => $attendanceAdjustment,
         ];
-        // Daily pay already counts half days as half a day's earnings.
-        if ($technician->salary_type === 'Daily') {
-            $deductionParts['half_day'] = 0;
-        }
         if ($technician->salary_type === 'Hourly') {
             // Actual hours already account for late arrivals, absence and half days.
             $deductionParts['late'] = $deductionParts['early_leave'] = $deductionParts['half_day'] = 0;
@@ -311,7 +308,7 @@ class SalaryCalculationService
         $payBasis = match ($technician->salary_type) {
             'Weekly' => 'Rs. '.number_format((float) $technician->basic_salary, 2).' per week × '.$attendance['salary_period_days'].' calendar days ÷ 7',
             'Hourly' => number_format($regularHours, 2).' regular hours + '.number_format($paidLeaveHours, 2).' paid leave hours × Rs. '.number_format((float) $technician->hourly_salary, 2).'/hour; OT Rs. '.number_format((float) ((float) $technician->ot_rate > 0 ? $technician->ot_rate : $technician->hourly_salary), 2).'/hour',
-            'Daily' => 'Rs. '.number_format($dailySalary, 2).' per day × '.($attendance['worked_days'] + $attendance['approved_leave_days']).' payable days',
+            'Daily' => 'Rs. '.number_format((float) $technician->basic_salary, 2).' full basic salary; unpaid leave / absence: '.$attendance['absent_days'].' day(s) × Rs. '.number_format($noPayRate, 2),
             default => 'Rs. '.number_format((float) $technician->basic_salary, 2).' monthly basic salary',
         };
 
@@ -362,7 +359,7 @@ class SalaryCalculationService
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'], 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'], 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'salary_basis' => in_array($technician->salary_type, ['Daily', 'Monthly'], true) ? 'full_basic' : 'period_earnings', 'unpaid_leave_days' => $attendance['absent_days'], 'unpaid_leave_rate' => $noPayRate, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 
@@ -432,6 +429,9 @@ class SalaryCalculationService
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless($sheet->status === 'Draft', 422);
             $snapshot = $sheet->calculation_snapshot ?? [];
+            if ($technician->salary_type === 'Daily' && data_get($snapshot, 'earnings.salary_basis') !== 'full_basic') {
+                throw ValidationException::withMessages(['month' => 'Refresh this draft to show full basic salary and separate unpaid leave/absence deductions before finalizing.']);
+            }
             if (isset($snapshot['technician']) && ! array_key_exists('epf_etf_basic_salary', $snapshot['technician']) && ($technician->epf_eligible || $technician->etf_eligible)) {
                 throw ValidationException::withMessages(['month' => 'Refresh this draft to calculate EPF and ETF from the separate salary basic before finalizing.']);
             }

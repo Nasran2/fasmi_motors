@@ -38,6 +38,17 @@ class TechnicianSalarySheet extends Model
             ? $this->attendance_salary_amount : $this->basic_salary);
     }
 
+    public function getBaseEarningsLabelAttribute(): string
+    {
+        return data_get($this->calculation_snapshot, 'earnings.salary_basis') === 'full_basic' ? 'Basic salary' : 'Base earnings';
+    }
+
+    public function getUsesLegacyDailySalaryAttribute(): bool
+    {
+        return data_get($this->calculation_snapshot, 'earnings.salary_type', data_get($this->calculation_snapshot, 'technician.salary_type')) === 'Daily'
+            && data_get($this->calculation_snapshot, 'earnings.salary_basis') !== 'full_basic';
+    }
+
     protected function casts(): array
     {
         return [
