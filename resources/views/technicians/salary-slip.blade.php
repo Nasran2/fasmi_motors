@@ -18,38 +18,40 @@
     <style>
         body { background: #f8fafc; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .salary-document { width: 100%; max-width: 210mm; margin-inline: auto; }
-        .salary-payslip { padding: 18px 24px; font-size: 12.5px; line-height: 1.3; }
-        .salary-payslip .mt-6 { margin-top: 12px; }
-        .salary-payslip .mt-5 { margin-top: 10px; }
-        .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 8px; }
+        .salary-payslip { display: flex; flex-direction: column; box-sizing: border-box; padding: 28px 30px; font-size: 14px; line-height: 1.45; }
+        .salary-slip-content { flex: 0 0 auto; min-width: 0; }
+        .salary-payslip .mt-6 { margin-top: 20px; }
+        .salary-payslip .mt-5 { margin-top: 18px; }
+        .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 12px; }
         .salary-payslip .mt-2 { margin-top: 4px; }
         .salary-payslip .mt-1 { margin-top: 2px; }
-        .salary-payslip .p-6, .salary-payslip .p-4 { padding: 10px; }
-        .salary-payslip .p-3 { padding: 7px; }
-        .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 16px; }
-        .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 8px; }
-        .salary-payslip .text-sm { font-size: 12px; }
-        .salary-payslip .text-xs { font-size: 10px; }
+        .salary-payslip .p-6, .salary-payslip .p-4 { padding: 14px; }
+        .salary-payslip .p-3 { padding: 10px; }
+        .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 24px; }
+        .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 12px; }
+        .salary-payslip .text-sm { font-size: 13px; }
+        .salary-payslip .text-xs { font-size: 11px; }
         .salary-payslip .text-xl { font-size: 16px; }
         .salary-payslip .text-lg { font-size: 15px; }
         .salary-payslip .text-4xl { font-size: 24px; }
-        .salary-payslip .salary-slip-header { padding-bottom: 10px; }
-        .salary-payslip .salary-person-details { padding: 10px 12px; }
-        .salary-payslip .salary-attendance-item { padding: 6px 4px; border-radius: 6px; }
-        .salary-payslip .salary-attendance-item small { font-size: 9px; line-height: 1.15; }
+        .salary-payslip .salary-slip-header { padding-bottom: 16px; }
+        .salary-payslip .salary-person-details { padding: 14px 16px; }
+        .salary-payslip .salary-attendance-item { padding: 10px 6px; border-radius: 8px; }
+        .salary-payslip .salary-attendance-item small { font-size: 10px; line-height: 1.3; }
         .salary-payslip .salary-attendance-item p { margin-top: 3px; }
         .salary-payslip h2 { padding-bottom: 4px; }
-        .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 4px; }
+        .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 7px; }
         .salary-payslip .py-2 { padding-block: 4px; }
         .salary-payslip .salary-earnings-grid dl > div { gap: 8px; }
         .salary-payslip .salary-earnings-grid dd { white-space: nowrap; }
-        .salary-payslip .salary-net-pay { padding: 10px 14px; }
-        .salary-payslip .salary-payment-summary { padding: 8px 12px; }
-        .salary-payslip .salary-signatures { margin-top: 20px; gap: 12px; }
+        .salary-payslip .salary-net-pay { padding: 16px 18px; box-shadow: none; }
+        .salary-payslip .salary-payment-summary { padding: 12px 16px; }
+        .salary-payslip .salary-signatures { flex: 0 0 auto; margin-top: auto; padding-top: 36px; gap: 20px; }
         .salary-payslip .salary-signatures .pt-3 { padding-top: 7px; }
         .salary-payslip table { width: 100%; }
         .salary-payslip td, .salary-payslip th { overflow-wrap: anywhere; }
         @media screen and (min-width: 640px) {
+            .salary-payslip { min-height: 297mm; }
             .salary-payslip .salary-earnings-grid, .salary-payslip .salary-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .salary-payslip .salary-summary-grid { grid-template-columns: repeat(var(--salary-summary-columns), minmax(0, 1fr)); }
         }
@@ -66,6 +68,8 @@
             .no-print { display: none !important; }
             @if($paperSize === '80mm')
             @page { size: 80mm auto; margin: 0; }
+            .salary-payslip { display: block; min-height: 0; }
+            .salary-payslip .salary-signatures { margin-top: 16px; padding-top: 12px; }
             body { font-size: 11px !important; width: 80mm !important; overflow: hidden !important; }
             .grid { grid-template-columns: 1fr !important; gap: 0.5rem !important; }
             .text-3xl { font-size: 1.25rem !important; }
@@ -82,33 +86,39 @@
             .salary-document { width: auto; max-width: none; margin: 0; }
             .salary-document > .salary-payslip { margin: 0 !important; }
             .print-border-0 { border: none !important; box-shadow: none !important; padding: 0 !important; }
-            body, .salary-payslip { font-size: 10.5px !important; line-height: 1.22 !important; }
-            .salary-payslip .mt-6, .salary-payslip .mt-5 { margin-top: 7px !important; }
-            .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 5px !important; }
+            body, .salary-payslip { font-size: 12px !important; line-height: 1.4 !important; }
+            .salary-payslip { min-height: 272mm; }
+            .salary-payslip .mt-6, .salary-payslip .mt-5 { margin-top: 14px !important; }
+            .salary-payslip .mt-4, .salary-payslip .mt-3 { margin-top: 9px !important; }
             .salary-payslip .mt-2 { margin-top: 3px !important; }
             .salary-payslip .mt-1 { margin-top: 2px !important; }
-            .salary-payslip .p-6, .salary-payslip .p-4 { padding: 6px 8px !important; }
-            .salary-payslip .p-3 { padding: 4px 5px !important; }
-            .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 12px !important; }
-            .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 5px !important; }
-            .salary-payslip .text-4xl, .salary-payslip .text-3xl { font-size: 17px !important; }
-            .salary-payslip .text-2xl { font-size: 18px !important; }
-            .salary-payslip .text-xl, .salary-payslip .text-lg { font-size: 12px !important; }
-            .salary-payslip .text-sm, .salary-payslip .text-xs { font-size: 10.5px !important; }
-            .salary-payslip .py-2 { padding-block: 3px !important; }
+            .salary-payslip .p-6, .salary-payslip .p-4 { padding: 10px 12px !important; }
+            .salary-payslip .p-3 { padding: 8px 6px !important; }
+            .salary-payslip .gap-8, .salary-payslip .gap-6 { gap: 18px !important; }
+            .salary-payslip .gap-4, .salary-payslip .gap-3 { gap: 8px !important; }
+            .salary-payslip .text-4xl, .salary-payslip .text-3xl { font-size: 22px !important; }
+            .salary-payslip .text-2xl { font-size: 22px !important; }
+            .salary-payslip .text-xl, .salary-payslip .text-lg { font-size: 15px !important; }
+            .salary-payslip .text-sm { font-size: 12px !important; }
+            .salary-payslip .text-xs { font-size: 10.5px !important; }
+            .salary-payslip .py-2 { padding-block: 5px !important; }
             .salary-payslip .pt-2 { padding-top: 4px !important; }
-            .salary-payslip .salary-slip-header { padding-bottom: 6px !important; }
+            .salary-payslip .salary-slip-header { padding-bottom: 12px !important; }
             .salary-payslip h2 { padding-bottom: 3px !important; break-after: avoid-page; }
-            .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 3px !important; }
+            .salary-payslip .space-y-2 > :not(:last-child) { margin-bottom: 6px !important; }
             .salary-payslip .salary-person-details { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
             .salary-payslip .salary-attendance-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
-            .salary-payslip .salary-attendance-item small { font-size: 8.5px !important; }
+            .salary-payslip .salary-attendance-item small { font-size: 9.5px !important; }
+            .salary-payslip .salary-attendance-item { background: #f1f5f9 !important; border: 1px solid #e2e8f0; }
+            .salary-payslip .salary-person-details { background: #f8fafc !important; }
             .salary-payslip .salary-earnings-grid, .salary-payslip .salary-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
             .salary-payslip .salary-summary-grid { grid-template-columns: repeat(var(--salary-summary-columns), minmax(0, 1fr)) !important; }
-            .salary-payslip .salary-net-pay { flex-direction: row !important; padding: 7px 10px !important; }
+            .salary-payslip .salary-net-pay { flex-direction: row !important; padding: 12px 14px !important; background: #0b2447 !important; color: #fff !important; box-shadow: none !important; }
+            .salary-payslip .salary-net-pay span { color: #dbeafe !important; }
+            .salary-payslip .salary-net-pay strong { color: #34d399 !important; }
             .salary-payslip .salary-net-pay strong { margin-top: 0 !important; }
             .salary-payslip .salary-payment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-            .salary-payslip .salary-signatures { margin-top: 14px !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; font-size: 9px !important; }
+            .salary-payslip .salary-signatures { margin-top: auto !important; padding-top: 12mm; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; font-size: 10.5px !important; }
             .salary-payslip .salary-signatures .pt-3 { padding-top: 5px !important; }
             .salary-payslip .salary-attendance, .salary-payslip .salary-person-details,
             .salary-payslip .salary-summary-grid, .salary-payslip .salary-net-pay,
@@ -134,6 +144,7 @@
   @endif
 
   <article class="salary-payslip rounded-3xl border border-slate-200 bg-white p-8 shadow-sm print-border-0">
+    <div class="salary-slip-content">
     <header class="salary-slip-header flex justify-between border-b-2 border-slate-900 pb-5">
         <div>
             <p class="text-2xl font-black italic"><span class="text-red-600">FASMIR</span> MOTORS</p>
@@ -345,6 +356,8 @@
             {{ $sheet->payment_note }}
         </p>
     @endif
+
+    </div>
 
     <footer class="salary-signatures mt-16 grid grid-cols-3 gap-8 text-center text-xs text-slate-500">
         <div>
