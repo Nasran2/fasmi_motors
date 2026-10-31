@@ -122,6 +122,9 @@ class CashierClosingHistoryService
             }
             $summary['closing_bank_balance'] = $balances['bank'];
             $summary['closing_verified_balances'] = $balances;
+            foreach (CashierService::ACCOUNTS as $type => $label) {
+                $summary['closing_ledger_balances'][$type] = app(AccountService::class)->ledgerOpeningBalance($type, Carbon::parse($date)->addDay()->startOfDay());
+            }
             $summary['closing_counted_cash'] = $cash;
             $summary['closing_expected_cash'] = $expectedCash;
             $summary['closing_cash_difference'] = round($cash - $expectedCash, 2);

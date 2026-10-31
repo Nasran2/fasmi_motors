@@ -106,3 +106,13 @@ The server recomputes the displayed total from the saved account base, entered a
 For example, a displayed Main total of Rs. 30,598 corrected to Rs. 30,000 posts a Rs. 598 decrease. The close form updates its account base and full total without resetting unsaved additions or counted cash. Completing the closing still posts its allocations and withdrawals separately. Future ledgers and opening suggestions include the saved correction; it is not a one-time display override, receipt or expense. Existing saved opening/closing count records are not rewritten.
 
 No new migration is required. These changes were authored locally without running tests or changing live data; frontend assets were rebuilt.
+
+## Carry the full account total into opening
+
+Main and Spare Parts opening suggestions use the last saved **full closing account total**. Daily-allocation closes reconstruct that total as the saved account base (earlier funds plus account movements/expenses) + the amount added at that close. The last addition by itself is never used as the next account opening. For other saved closes, verified full balances or recorded account actuals provide the starting total; missing snapshots fall back to the existing ledger.
+
+For example, an account base of Rs. 10,000 and a closing addition of Rs. 2,000 carries Rs. 12,000. A later Rs. 500 expense makes the next suggested account opening Rs. 11,500. The popup shows the last full total and the last addition separately, with the addition labelled as already included. Physical cashier cash remains independent.
+
+New closes and closing corrections store the complete ledger balances alongside verified account totals. Opening applies only subsequent ledger changes to the saved full total, including backdated corrections. Older snapshots use recorded transaction IDs, or the closing timestamp when IDs are unavailable, to identify later movements. Cash already retained in the cashier is kept separate. Confirming opening uses the same calculation as its popup and records any carry reconciliation in the opening event, without rewriting older counts.
+
+No migration or data repair is run. These changes were made locally without running tests or changing live data; frontend assets were rebuilt for manual checking.

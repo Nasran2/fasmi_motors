@@ -609,6 +609,9 @@ class CashierService
             }
             $summary['closing_transaction_ids'] = $closingRows->pluck('id')->all();
             $summary['closing_verified_balances'] = $operational;
+            foreach (self::ACCOUNTS as $type => $label) {
+                $summary['closing_ledger_balances'][$type] = $this->accounts->ledgerOpeningBalance($type, Carbon::parse($date)->addDay()->startOfDay());
+            }
             $summary['closing_counted_cash'] = $counted;
             $summary['closing_expected_cash'] = $drawerExpected;
             $summary['closing_cash_difference'] = $drawerDifference;
