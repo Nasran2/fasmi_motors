@@ -33,6 +33,7 @@ use App\Services\SalaryRepairCorrectionService;
 use App\Services\SalarySheetDetailService;
 use App\Services\StaffBikeRepairService;
 use App\Support\PrintDocument;
+use App\Support\StaffWorkSchedule;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -138,14 +139,16 @@ class TechnicianController extends Controller
         $batch = $request->filled('batch') ? AttendanceImportBatch::where('imported_by', auth()->id())->find($request->batch) : null;
         $calendarService = app(HolidayService::class);
         $shopCalendar = $calendarService->calendar();
-        $previewRows = collect($batch?->preview_data ?? [])->map(fn ($row) => $calendarService->importRow($row, $shopCalendar))->all();
+        $staffSchedules = StaffWorkSchedule::importSchedules();
+        $scheduleVersion = StaffWorkSchedule::version($staffSchedules);
+        $previewRows = collect($batch?->preview_data ?? [])->map(fn ($row) => app(AttendanceImportService::class)->reviewRow($row, $shopCalendar, $staffSchedules))->all();
         $calendarVersion = $calendarService->calendarVersion();
         $specialClosures = HolidayDate::whereBetween('holiday_date', [$from->copy()->startOfMonth(), $to->copy()->endOfMonth()])->where('is_active', true)->where('is_leave_enabled', true)->orderBy('holiday_date')->get();
         $recentBatches = AttendanceImportBatch::with('importer')->latest()->limit(8)->get();
 
         return view('technicians.attendance', [
             'records' => $records, 'technicians' => $this->technicians(), 'date' => $date, 'from' => $from, 'to' => $to,
-            'previewBatch' => $batch, 'previewRows' => $previewRows, 'shopCalendar' => $shopCalendar, 'calendarVersion' => $calendarVersion, 'specialClosures' => $specialClosures, 'recentBatches' => $recentBatches,
+            'staffSchedules' => $staffSchedules, 'scheduleVersion' => $scheduleVersion, 'previewBatch' => $batch, 'previewRows' => $previewRows, 'shopCalendar' => $shopCalendar, 'calendarVersion' => $calendarVersion, 'specialClosures' => $specialClosures, 'recentBatches' => $recentBatches,
             'salarySettings' => SalarySetting::firstOrCreate([])->refresh(), 'otSlabs' => OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get(),
             'stats' => [
                 'present' => (clone $query)->whereIn('status', $presentStatuses)->count(),
@@ -233,12 +236,14 @@ class TechnicianController extends Controller
             'technician_id' => ['required', 'integer', Rule::exists('technicians', 'id')->whereNull('deleted_at')],
             'date' => ['required', 'date_format:Y-m-d'],
             'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late', 'Worked on Leave Day', 'Not Worked'])],
+            'auto_filled_checkout' => ['nullable', 'boolean'],
             'in_time' => ['nullable', 'date_format:H:i'],
             'out_time' => ['nullable', 'date_format:H:i'],
         ]);
 
         return response()->json($calculator->calculateDailyAttendance(
             Technician::findOrFail($data['technician_id']), $data['date'], $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null,
+            ['auto_filled_checkout' => (bool) ($data['auto_filled_checkout'] ?? false)],
         ));
     }
 
@@ -250,6 +255,7 @@ class TechnicianController extends Controller
         $request->validate([
             'date' => ['required', 'date_format:Y-m-d'],
             'status' => ['required', Rule::in(['Present', 'Absent', 'Half Day', 'Morning Half Day', 'Evening Half Day', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday', 'Early Leave', 'Late', 'Worked on Leave Day', 'Not Worked'])],
+            'auto_filled_checkout' => ['nullable', 'boolean'],
             'in_time' => ['nullable', 'date_format:H:i'],
             'out_time' => ['nullable', 'date_format:H:i'],
             'ot_amount' => ['nullable', 'numeric', 'min:0'],
@@ -311,10 +317,10 @@ class TechnicianController extends Controller
                     $status,
                     $request->input('in_time'),
                     $request->input('out_time'),
-                    $isManual ? [
+                    ['auto_filled_checkout' => $request->boolean('auto_filled_checkout')] + ($isManual ? [
                         'ot_amount' => $request->filled('ot_amount') ? (float) $request->input('ot_amount') : null,
                         'deduction_amount' => $request->filled('deduction_amount') ? (float) $request->input('deduction_amount') : null,
-                    ] : []
+                    ] : [])
                 );
                 $status = $metrics['status'];
 
@@ -459,7 +465,7 @@ class TechnicianController extends Controller
                     $existing = TechnicianAttendance::where('technician_id', $technicianId)->whereDate('date', $date)->first();
                     $metrics = $calculator->calculateDailyAttendance($technician, $date, $data['status'], $data['in_time'] ?? null, $data['out_time'] ?? null);
                     TechnicianAttendance::updateOrCreate(['technician_id' => $technicianId, 'date' => $date->toDateString()], array_merge($metrics, [
-                        'in_time' => $data['in_time'] ?? null, 'out_time' => $data['out_time'] ?? ($metrics['out_time'] ?? null), 'note' => $data['note'] ?? 'Bulk attendance entry',
+                        'in_time' => $metrics['in_time'] ?? null, 'out_time' => $metrics['out_time'] ?? null, 'note' => $data['note'] ?? 'Bulk attendance entry',
                         'is_manual_entry' => true, 'is_manual_edit' => (bool) $existing, 'created_by' => $existing?->created_by ?? auth()->id(), 'edited_by' => $existing ? auth()->id() : null, 'updated_by' => auth()->id(),
                     ]));
                     $saved++;
@@ -507,6 +513,10 @@ class TechnicianController extends Controller
     {
         $request->validate([
             'calendar_version' => ['nullable', 'string', 'size:64'],
+            'schedule_version' => ['nullable', 'string', 'size:64'],
+            'rows.*.mark_worked' => ['nullable', 'boolean'],
+            'rows.*.auto_filled_checkout' => ['nullable', 'boolean'],
+            'rows.*.schedule_filled_in' => ['nullable', 'boolean'],
             'rows.*.mark_leave' => ['nullable', 'boolean'],
             'rows' => ['nullable', 'array'], 'rows.*.row' => ['required', 'integer', 'distinct'],
             'rows.*.date' => ['required', 'date_format:Y-m-d'],
@@ -522,6 +532,10 @@ class TechnicianController extends Controller
                 throw ValidationException::withMessages(['calendar_version' => 'The shop calendar changed or this preview is from an earlier day. Reload it and review the leave boxes before importing.']);
             }
 
+            if ($request->filled('schedule_version') && ! hash_equals(StaffWorkSchedule::version(), $request->input('schedule_version'))) {
+                throw ValidationException::withMessages(['schedule_version' => 'Staff working times changed. Reload the preview and review the scheduled times before importing.']);
+            }
+
             if ($request->has('rows') && is_array($request->input('rows'))) {
                 $submittedRows = collect($request->input('rows'))->keyBy('row');
                 $updatedPreviewData = [];
@@ -533,11 +547,19 @@ class TechnicianController extends Controller
                             $item['mark_leave'] = (bool) $rowInput['mark_leave'];
                             $item['leave_choice_explicit'] = true;
                         }
+                        if (array_key_exists('mark_worked', $rowInput)) {
+                            $item['mark_worked'] = (bool) $rowInput['mark_worked'];
+                            $item['work_choice_explicit'] = true;
+                        }
+                        $item['schedule_filled_in'] = (bool) ($rowInput['schedule_filled_in'] ?? false);
                         $item['date'] = $rowInput['date'] ?? $item['date'];
                         $item['check_in'] = empty($rowInput['check_in']) ? null : $rowInput['check_in'].(strlen($rowInput['check_in']) == 5 ? ':00' : '');
                         $checkout = empty($rowInput['check_out']) ? null : $rowInput['check_out'].(strlen($rowInput['check_out']) == 5 ? ':00' : '');
                         if ($checkout !== $item['check_out']) {
                             $item['auto_filled_checkout'] = false;
+                        }
+                        if (array_key_exists('auto_filled_checkout', $rowInput)) {
+                            $item['auto_filled_checkout'] = (bool) $rowInput['auto_filled_checkout'];
                         }
                         $item['check_out'] = $checkout;
                         if (! empty($rowInput['technician_id'])) {
@@ -559,173 +581,6 @@ class TechnicianController extends Controller
             return redirect()->route('technicians.attendance.index', ['month' => $batch->month?->format('Y-m')])
                 ->with('success', "Import complete: {$batch->success_rows} saved, {$batch->duplicate_rows} updated duplicates, {$batch->skipped_rows} skipped, {$batch->error_rows} errors.");
         }, 3);
-    }
-
-    private function calculateAttendance($technician, $date, &$status, $inTime, $outTime, $manualOtAmount = null, $manualDeductionAmount = null, $isManualEdit = false)
-    {
-        $salarySetting = SalarySetting::firstOrCreate([]);
-
-        $metrics = [
-            'working_minutes' => 0,
-            'working_hours' => 0,
-            'late_minutes' => 0,
-            'early_leave_minutes' => 0,
-            'ot_minutes' => 0,
-            'ot_hours' => 0,
-            'ot_amount' => 0,
-            'deduction_amount' => 0,
-            'late_deduction_amount' => 0,
-            'early_leave_deduction_amount' => 0,
-            'half_day_deduction_amount' => 0,
-        ];
-
-        // 1. If leave or non-work status, return empty metrics
-        $nonWorkStatuses = ['Absent', 'Leave', 'Paid Leave', 'No Pay Leave', 'Holiday'];
-        if (in_array($status, $nonWorkStatuses)) {
-            if ($status === 'Absent' || $status === 'No Pay Leave') {
-                $metrics['deduction_amount'] = (float) $technician->no_pay_deduction_rate;
-            }
-
-            return $metrics;
-        }
-
-        // 2. We need In/Out times for calculation
-        if (! $inTime || ! $outTime) {
-            return $metrics;
-        }
-
-        $in = Carbon::parse($inTime);
-        $out = Carbon::parse($outTime);
-
-        $working_minutes = max(0, $in->diffInMinutes($out, false));
-        $metrics['working_minutes'] = $working_minutes;
-        $metrics['working_hours'] = $working_minutes / 60;
-
-        // 3. Late coming calculation
-        $open = Carbon::parse($salarySetting->opening_time);
-        if ($salarySetting->enable_late_deduction && $in->gt($open)) {
-            $diff = $in->diffInMinutes($open);
-            if ($diff > $salarySetting->late_grace_minutes) {
-                $metrics['late_minutes'] = $diff;
-                if ($salarySetting->late_deduction_type === 'Fixed amount') {
-                    $metrics['late_deduction_amount'] = (float) $salarySetting->late_deduction_amount;
-                } elseif ($salarySetting->late_deduction_type === 'Per minute amount') {
-                    $metrics['late_deduction_amount'] = $diff * (float) $salarySetting->late_deduction_amount;
-                }
-            }
-        }
-
-        // 4. Early leave calculation
-        $close = Carbon::parse($salarySetting->closing_time);
-        if ($salarySetting->enable_early_leave_deduction && $out->lt($close)) {
-            $diff = $close->diffInMinutes($out);
-            if ($diff > $salarySetting->early_leave_grace_minutes) {
-                $metrics['early_leave_minutes'] = $diff;
-                if ($salarySetting->early_leave_deduction_type === 'Fixed amount') {
-                    $metrics['early_leave_deduction_amount'] = (float) $salarySetting->early_leave_deduction_amount;
-                } elseif ($salarySetting->early_leave_deduction_type === 'Per minute amount') {
-                    $metrics['early_leave_deduction_amount'] = $diff * (float) $salarySetting->early_leave_deduction_amount;
-                }
-            }
-        }
-
-        // 5. Half Day cutoffs check
-        if ($salarySetting->enable_half_day) {
-            $morningCutoff = Carbon::parse($salarySetting->morning_half_day_cutoff);
-            $eveningCutoff = Carbon::parse($salarySetting->evening_half_day_cutoff);
-
-            $isHalfDay = false;
-            if ($in->gt($morningCutoff)) {
-                $status = 'Morning Half Day';
-                $isHalfDay = true;
-            } elseif ($out->lt($eveningCutoff)) {
-                $status = 'Evening Half Day';
-                $isHalfDay = true;
-            }
-
-            if ($isHalfDay || $status === 'Half Day') {
-                $dailyRate = $technician->salary_type === 'Daily' ? (float) $technician->daily_salary : ((float) $technician->basic_salary / 26);
-
-                if ($salarySetting->half_day_deduction_type === 'Half of daily salary') {
-                    $metrics['half_day_deduction_amount'] = $dailyRate / 2;
-                } elseif ($salarySetting->half_day_deduction_type === 'Fixed amount') {
-                    $metrics['half_day_deduction_amount'] = (float) $salarySetting->half_day_deduction_amount;
-                }
-
-                // If it is half day, we nullify late and early deductions since half day deduction covers it
-                $metrics['late_deduction_amount'] = 0;
-                $metrics['early_leave_deduction_amount'] = 0;
-            }
-        }
-
-        // 6. Overtime (OT) calculation
-        if ($salarySetting->enable_ot && $out->gt($close)) {
-            $diff = $out->diffInMinutes($close);
-            if ($diff > $salarySetting->ot_grace_minutes_after_closing) {
-                $metrics['ot_minutes'] = $diff;
-                $metrics['ot_hours'] = $diff / 60;
-
-                // Slab matching logic
-                $slabRules = OtSlabRule::where('status', 'Active')->orderBy('from_minutes')->get();
-                if ($slabRules->isNotEmpty()) {
-                    $matchedSlab = null;
-
-                    if ($salarySetting->ot_round_method === 'Ceiling slab') {
-                        $matchedSlab = $slabRules->first(fn ($s) => $diff <= $s->to_minutes);
-                        if (! $matchedSlab) {
-                            $matchedSlab = $slabRules->last();
-                        }
-                    } elseif ($salarySetting->ot_round_method === 'Floor slab') {
-                        $matchedSlab = $slabRules->last(fn ($s) => $diff >= $s->from_minutes);
-                        if (! $matchedSlab) {
-                            $matchedSlab = $slabRules->first();
-                        }
-                    } elseif ($salarySetting->ot_round_method === 'Nearest slab') {
-                        $matchedSlab = $slabRules->sortBy(fn ($s) => abs(($s->from_minutes + $s->to_minutes) / 2 - $diff))->first();
-                    } else { // Exact minutes
-                        $matchedSlab = $slabRules->first(fn ($s) => $diff >= $s->from_minutes && $diff <= $s->to_minutes);
-                    }
-
-                    if ($matchedSlab) {
-                        if ($matchedSlab->calculation_rule === 'Fixed for this range') {
-                            $metrics['ot_amount'] = (float) $matchedSlab->amount;
-                        } else { // Add previous slab amount
-                            $metrics['ot_amount'] = $slabRules->where('from_minutes', '<=', $matchedSlab->from_minutes)->sum('amount');
-                        }
-                    }
-                } else {
-                    // Fallback to settings: "Every X minutes = Y Rs"
-                    $slabMinutes = max(1, $salarySetting->ot_slab_minutes);
-                    $amountPerSlab = (float) $salarySetting->ot_amount_per_slab;
-
-                    if ($salarySetting->ot_round_method === 'Ceiling slab') {
-                        $slabCount = ceil($diff / $slabMinutes);
-                    } elseif ($salarySetting->ot_round_method === 'Floor slab') {
-                        $slabCount = floor($diff / $slabMinutes);
-                    } elseif ($salarySetting->ot_round_method === 'Nearest slab') {
-                        $slabCount = round($diff / $slabMinutes);
-                    } else {
-                        $slabCount = $diff / $slabMinutes;
-                    }
-                    $metrics['ot_amount'] = $slabCount * $amountPerSlab;
-                }
-            }
-        }
-
-        // 7. Sum up deductions
-        $metrics['deduction_amount'] = $metrics['late_deduction_amount'] + $metrics['early_leave_deduction_amount'] + $metrics['half_day_deduction_amount'];
-
-        // Respect Manual Overrides
-        if ($isManualEdit) {
-            if ($manualOtAmount !== null) {
-                $metrics['ot_amount'] = $manualOtAmount;
-            }
-            if ($manualDeductionAmount !== null) {
-                $metrics['deduction_amount'] = $manualDeductionAmount;
-            }
-        }
-
-        return $metrics;
     }
 
     public function attendance(Request $request, Technician $technician, AttendanceCalculationService $calculator)
@@ -1025,7 +880,8 @@ class TechnicianController extends Controller
     public function salaryShow(TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
     {
         return view('technicians.salary-show', ['sheet' => $sheet->load(['technician', 'additions', 'paymentDeductions']),
-            'attendanceRows' => collect($details->attendanceRows($sheet))->keyBy('date')]);
+            'attendanceRows' => collect($details->attendanceRows($sheet))->keyBy('date'),
+            'attendanceChanged' => $details->draftAttendanceChanged($sheet)]);
     }
 
     public function salaryAdjustment(Request $request, TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
@@ -1046,9 +902,10 @@ class TechnicianController extends Controller
         return back()->with('success', 'Draft attendance and OT refreshed. Manual amounts and descriptions were retained.');
     }
 
-    public function salarySlip(TechnicianSalarySheet $sheet)
+    public function salarySlip(TechnicianSalarySheet $sheet, SalarySheetDetailService $details)
     {
-        return view('technicians.salary-slip', ['sheet' => $sheet->load(['technician', 'preparedBy', 'additions', 'paymentDeductions', 'sourceDeductions', 'advancesUsed', 'repairPayments'])]);
+        return view('technicians.salary-slip', ['sheet' => $sheet->load(['technician', 'preparedBy', 'additions', 'paymentDeductions', 'sourceDeductions', 'advancesUsed', 'repairPayments']),
+            'attendanceChanged' => $details->draftAttendanceChanged($sheet)]);
     }
 
     public function advances(Request $request)
@@ -1394,6 +1251,9 @@ class TechnicianController extends Controller
             'active' => ['required', 'boolean'],
             'basic_salary' => ['required', 'numeric', 'min:0'],
             'salary_type' => ['required', Rule::in(['Monthly', 'Daily', 'Weekly', 'Hourly'])],
+            'work_schedule_mode' => ['sometimes', 'required', Rule::in(['system_default', 'custom'])],
+            'work_start_time' => ['exclude_unless:work_schedule_mode,custom', 'required', 'date_format:H:i'],
+            'work_end_time' => ['exclude_unless:work_schedule_mode,custom', 'required', 'date_format:H:i', 'after:work_start_time'],
             'salary_period_mode' => ['sometimes', 'required', Rule::in(['system_default', 'normal_calendar', 'custom_start'])],
             'salary_start_day' => ['exclude_unless:salary_period_mode,custom_start', 'required', 'integer', 'min:1', 'max:31'],
             'daily_salary' => ['nullable', 'numeric', 'min:0'],
@@ -1418,6 +1278,10 @@ class TechnicianController extends Controller
         ]);
         if (isset($data['salary_period_mode']) && $data['salary_period_mode'] !== 'custom_start') {
             $data['salary_start_day'] = null;
+        }
+
+        if (($data['work_schedule_mode'] ?? null) === 'system_default') {
+            $data['work_start_time'] = $data['work_end_time'] = null;
         }
 
         $data['hourly_salary'] = (float) ($data['hourly_salary'] ?? 0);

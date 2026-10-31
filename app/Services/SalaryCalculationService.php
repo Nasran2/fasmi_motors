@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\HolidayDate;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAdvance;
 use App\Models\TechnicianAttendance;
@@ -14,6 +13,7 @@ use App\Models\TechnicianCommission;
 use App\Models\TechnicianDeduction;
 use App\Models\TechnicianSalarySheet;
 use App\Support\StaffPayRate;
+use App\Support\StaffWorkSchedule;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Arr;
@@ -42,6 +42,7 @@ class SalaryCalculationService
             'hourly_salary' => (float) $technician->hourly_salary,
             'salary_period_mode' => $technician->salary_period_mode ?? 'system_default',
             'salary_start_day' => $technician->salary_start_day,
+            'work_schedule' => StaffWorkSchedule::resolve($technician),
             'daily_salary' => $this->dailySalary($technician),
             'ot_rate' => (float) $technician->ot_rate,
             'late_deduction_rate' => (float) $technician->late_deduction_rate,
@@ -126,6 +127,7 @@ class SalaryCalculationService
             'total_worked_hours' => round((float) $records->sum('working_minutes') / 60, 2),
             'total_ot_hours' => round((float) $records->sum('ot_minutes') / 60, 2),
             'total_ot_amount' => round((float) $records->sum('ot_amount'), 2),
+            'leave_work_regular_minutes' => (int) $records->where('worked_on_leave_day', true)->sum(fn ($row) => max(0, (int) $row->working_minutes - (int) ($row->actual_ot_minutes ?? $row->ot_minutes))),
             'total_worked_minutes' => (int) $records->sum('working_minutes'),
             'total_ot_minutes' => (int) $records->sum('ot_minutes'),
             'total_actual_ot_minutes' => $recordSummary['actual_ot_minutes'],
@@ -250,8 +252,8 @@ class SalaryCalculationService
         $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $dailySalary = $this->dailySalary($technician);
-        $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_actual_ot_minutes']) / 60;
-        $paidLeaveHours = $attendance['approved_leave_days'] * (float) (SalarySetting::value('working_hours_per_day') ?? 8);
+        $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_actual_ot_minutes'] - ($technician->salary_type === 'Hourly' ? $attendance['leave_work_regular_minutes'] : 0)) / 60;
+        $paidLeaveHours = $attendance['approved_leave_days'] * (float) StaffWorkSchedule::resolve($technician)['working_hours'];
         if ($technician->salary_type === 'Hourly' && (float) $technician->hourly_salary <= 0) {
             throw ValidationException::withMessages(['hourly_salary' => 'Set this staff member’s hourly pay rate before generating salary.']);
         }
@@ -270,7 +272,9 @@ class SalaryCalculationService
         $manualAdditions = max(0, (float) ($custom['manual_additions'] ?? $custom['manual_addition'] ?? 0));
         $otherDeductions = max(0, (float) ($custom['other_deductions'] ?? 0));
         $manualDeductions = max(0, (float) ($custom['manual_deductions'] ?? $custom['manual_deduction'] ?? 0));
-        $workedOnLeavePay = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
+        $workedOnLeaveAuto = round($attendance['worked_on_leave_days'] * $dailySalary, 2);
+        $workedOnLeaveManual = max(0, (float) ($custom['worked_on_leave_pay'] ?? 0));
+        $workedOnLeavePay = round($workedOnLeaveAuto + $workedOnLeaveManual, 2);
         $paidAmount = max(0, (float) ($custom['paid_amount'] ?? 0));
         $noPayRate = (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
         $noPay = $technician->salary_type === 'Hourly' ? 0 : round($attendance['absent_days'] * $noPayRate, 2);
@@ -359,7 +363,7 @@ class SalaryCalculationService
             'employee_epf' => $contributions['employee_epf_amount'],
             'company_epf' => $contributions['company_epf_amount'],
             'company_etf' => $contributions['company_etf_amount'],
-            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'], 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'salary_basis' => in_array($technician->salary_type, ['Daily', 'Monthly'], true) ? 'full_basic' : 'period_earnings', 'unpaid_leave_days' => $attendance['absent_days'], 'unpaid_leave_rate' => $noPayRate, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
+            'calculation_snapshot' => ['attendance_records' => app(SalarySheetDetailService::class)->captureAttendance($technician->id, $start->toDateString(), $end->toDateString()), 'old_balances' => $debt['items'], 'debt_summary' => $debt['summary'], 'generated_at' => now()->toIso8601String(), 'salary_cycle' => $cycle, 'technician' => $technicianData, 'attendance_summary' => $attendance, 'advance_summary' => $advance, 'pending_deductions' => $pendingDeductions, 'commissions' => $commissions->map(fn ($row) => ['id' => $row->id, 'amount' => round((float) $row->amount, 2)])->all(), 'inputs' => $custom, 'earnings' => ['worked_on_leave_auto' => $workedOnLeaveAuto, 'worked_on_leave_manual' => $workedOnLeaveManual, 'worked_on_leave_days' => $attendance['worked_on_leave_days'], 'worked_on_leave_rate' => $dailySalary, 'pay_basis' => $payBasis, 'gross' => $gross, 'salary_type' => $technician->salary_type, 'salary_basis' => in_array($technician->salary_type, ['Daily', 'Monthly'], true) ? 'full_basic' : 'period_earnings', 'unpaid_leave_days' => $attendance['absent_days'], 'unpaid_leave_rate' => $noPayRate, 'regular_hours' => round($regularHours, 4), 'paid_leave_hours' => $paidLeaveHours, 'hourly_rate' => (float) $technician->hourly_salary, 'weekly_rate' => $technician->salary_type === 'Weekly' ? (float) $technician->basic_salary : null], 'deductions' => $deductionParts, 'contributions' => $contributions],
         ];
     }
 

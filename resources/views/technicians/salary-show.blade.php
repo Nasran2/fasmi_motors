@@ -5,9 +5,16 @@
         <div class="flex flex-wrap gap-2"><a class="btn-secondary" href="{{ route('technicians.salaries') }}">Back to salaries</a><a class="btn-primary" target="_blank" href="{{ route('technicians.salaries.slip', $sheet) }}">View / Print Payslip</a></div>
     </div>
     <x-flash />
+    @if($attendanceChanged ?? false)
+        <p class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Attendance changed after this draft was saved. <a class="font-bold underline" href="#refresh-salary-calculation">Refresh draft salary calculation</a> to update its attendance totals, deductions and earnings together.</p>
+    @endif
     <p class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">You can print this payslip before payment, after a partial payment or after full payment. The slip shows its status, paid amount and remaining balance.</p>
     @if($sheet->status === 'Draft' && $sheet->uses_legacy_daily_salary)
         <p class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">This draft uses attendance-based daily earnings. Use <a href="#refresh-salary-calculation" class="font-bold underline">Refresh salary calculation</a> below to show the saved full Basic Salary and separate unpaid leave / absence deductions. A reason is required.</p>
+    @endif
+
+    @if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0) > 0)
+        <p class="mt-3 text-xs text-emerald-800">Worked on shop-closed days: {{ data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_days') }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_rate', 0), 2) }} = Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0), 2) }} extra pay.@if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0) > 0) Manual supplement: Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0), 2) }}.@endif</p>
     @endif
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         @foreach(['Gross earnings' => $sheet->gross_salary, 'Total deductions' => $sheet->total_deductions, 'Net payable' => $sheet->net_payable, 'Paid so far' => $sheet->paid_amount, 'Remaining balance' => $sheet->balance_amount] as $label => $amount)
@@ -83,7 +90,7 @@
     </form>
     @endif
     <section class="panel overflow-hidden p-0">
-        <div class="space-y-2 p-5"><h2 class="font-black">Daily attendance · Check-in &amp; check-out</h2><p class="text-sm text-slate-500">OT requires check-in at or before workshop opening time and an actual check-out after the closing grace period. With an 8:00 AM opening, 8:00 is eligible; 8:01 is not. Payable OT rounds to the nearest 30 minutes; 15-minute ties round up.</p>
+        <div class="space-y-2 p-5"><h2 class="font-black">Daily attendance · Check-in &amp; check-out</h2><p class="text-sm text-slate-500">OT requires check-in at or before the staff’s scheduled start and an actual check-out after the scheduled closing grace period. For a 9:00 AM start, 9:00 is eligible; 9:01 is not. Payable OT rounds to the nearest 30 minutes; 15-minute ties round up.</p>
         <p class="text-xs text-slate-500">{{ data_get($sheet->calculation_snapshot, 'attendance_records') !== null ? 'Attendance captured when this paysheet was calculated.' : 'Legacy paysheet: attendance times below are from current records; the saved salary amounts are unchanged.' }}</p></div>
         <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr><th class="p-3">Date</th><th class="p-3">Check-in</th><th class="p-3">Check-out</th><th class="p-3">Status</th><th class="p-3">Worked hours</th><th class="p-3">Payable OT minutes</th><th class="p-3">OT (LKR)</th><th class="p-3">Attendance deduction (LKR)</th></tr></thead><tbody>
         @foreach(\Carbon\CarbonPeriod::create($sheet->period_start, $sheet->period_end) as $day)
@@ -95,7 +102,7 @@
     @if($sheet->status === 'Draft')
     <form method="POST" action="{{ route('technicians.salaries.refresh-attendance', $sheet) }}" id="refresh-salary-calculation" class="panel space-y-3 p-5">
         @csrf<x-submission-token />
-        <h2 class="font-black">Refresh draft salary calculation</h2><p class="text-sm text-slate-500">Apply current salary and OT rules, including full basic salary and separate unpaid leave deductions. Manual amount overrides and adjustment descriptions are retained. Finalized salary attendance stays locked.</p>
+        <h2 class="font-black">Refresh draft salary calculation</h2><p class="text-sm text-slate-500">Apply the staff working times, current salary and OT rules, extra daily pay for shop-closed work, and separate unpaid leave deductions. Manual amount overrides and adjustment descriptions are retained. Finalized salary attendance stays locked.</p>
         <label class="block"><span class="label">Reason for recalculation</span><input name="reason" required minlength="5" maxlength="500" class="field" placeholder="e.g. Apply full basic salary and separate unpaid leave deductions"></label>
         <button class="btn-secondary">Refresh Attendance &amp; OT</button>
     </form>

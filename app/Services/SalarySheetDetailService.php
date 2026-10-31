@@ -19,6 +19,14 @@ class SalarySheetDetailService
             ?? $this->captureAttendance($sheet->technician_id, $sheet->period_start->toDateString(), $sheet->period_end->toDateString());
     }
 
+    public function draftAttendanceChanged(TechnicianSalarySheet $sheet): bool
+    {
+        $saved = data_get($sheet->calculation_snapshot, 'attendance_records');
+
+        return $sheet->status === 'Draft' && is_array($saved)
+            && $saved != $this->captureAttendance($sheet->technician_id, $sheet->period_start->toDateString(), $sheet->period_end->toDateString());
+    }
+
     public function captureAttendance(int $technicianId, string $start, string $end): array
     {
         return TechnicianAttendance::where('technician_id', $technicianId)->whereBetween('date', [$start, $end])->orderBy('date')->get()
@@ -95,7 +103,9 @@ class SalarySheetDetailService
                     'old_values' => $old, 'new_values' => $row->getAttributes(), 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
             }
             $inputs = data_get($sheet->calculation_snapshot, 'inputs', []);
-            $inputs = array_replace($inputs, Arr::only($sheet->getAttributes(), ['allowances', 'manual_additions', 'other_deductions', 'manual_deductions', 'worked_on_leave_pay']));
+            $inputs = array_replace($inputs, Arr::only($sheet->getAttributes(), ['allowances', 'manual_additions', 'other_deductions', 'manual_deductions']));
+            // Only the manual supplement is an input; automatic closed-day pay is recomputed.
+            $inputs['worked_on_leave_pay'] = data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', $inputs['worked_on_leave_pay'] ?? 0);
             $inputs['paid_amount'] = 0; // A draft refresh cannot create a payment.
             $month = data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_end);
             $values = app(SalaryCalculationService::class)->generateMonthlySalary($staff, $month, $inputs);

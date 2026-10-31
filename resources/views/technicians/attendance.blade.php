@@ -30,6 +30,7 @@
     <x-flash />
 
     <script type="application/json" id="attendance-shop-calendar">@json($shopCalendar)</script>
+    <script type="application/json" id="attendance-staff-schedules">@json($staffSchedules)</script>
     <section class="panel space-y-4 border border-slate-200 bg-white p-5">
       <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-lg font-black">Shop closed days</h2>@if(auth()->user()->canAccess('settings.salary'))<a class="text-sm font-semibold text-blue-700 underline" href="{{ route('system-settings.salary-settings') }}">Weekly work-day settings</a>@endif</div>
       <x-attendance-colour-key />
@@ -49,11 +50,11 @@
 
     @if($previewBatch)
     <form method="POST" action="{{ route('technicians.attendance.import.confirm', $previewBatch) }}" id="attendance-import-form" class="panel bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
-      @csrf<x-submission-token/><input type="hidden" name="calendar_version" value="{{ $calendarVersion }}">
+      @csrf<x-submission-token/><input type="hidden" name="calendar_version" value="{{ $calendarVersion }}"><input type="hidden" name="schedule_version" value="{{ $scheduleVersion }}">
       <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
         <div>
           <h2 class="text-lg font-black text-yellow-800">Review & Confirm Import</h2>
-          <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing.</p>
+          <p class="text-sm text-yellow-700">Please review the parsed data from <b>{{ $previewBatch->file_name }}</b>. You can modify times and dates before finalizing. Forgotten fingerprint? Check Worked / fill times to fill missing coming and out times from the staff schedule. Normal working days receive normal attendance; only shop-closed work earns extra daily pay. Existing actual punches are retained.</p>
         </div>
         <div class="flex-shrink-0">
           <button class="btn-primary !bg-yellow-600 hover:!bg-yellow-700 border-yellow-700 text-white">Confirm & Import {{ $previewBatch->total_rows }} Rows</button>
@@ -68,7 +69,7 @@
               <th class="px-4 py-2 font-bold">Row</th>
               <th class="px-4 py-2 font-bold">Employee in File</th>
               <th class="px-4 py-2 font-bold">Map to Technician</th>
-              <th class="px-4 py-2 font-bold">Paid leave</th><th class="px-4 py-2 font-bold">Date / shop day</th>
+              <th class="px-4 py-2 font-bold">Paid leave</th><th class="px-4 py-2 font-bold">Worked / fill times</th><th class="px-4 py-2 font-bold">Date / shop day</th>
               <th class="px-4 py-2 font-bold">Check In</th>
               <th class="px-4 py-2 font-bold">Check Out</th>
               <th class="px-4 py-2 font-bold">Duplicate?</th>
@@ -85,7 +86,7 @@
                 <small class="text-slate-400">ID: {{ $row['person_id'] ?: 'N/A' }}</small>
               </td>
               <td class="px-4 py-2">
-                <select name="rows[{{ $row['row'] }}][technician_id]" class="w-full max-w-[200px] py-1 px-2 border-slate-300 rounded text-xs bg-white {{ $row['will_create_technician'] ? 'border-red-300 text-red-700 font-bold' : '' }}">
+                <select data-import-technician name="rows[{{ $row['row'] }}][technician_id]" class="w-full max-w-[200px] py-1 px-2 border-slate-300 rounded text-xs bg-white {{ $row['will_create_technician'] ? 'border-red-300 text-red-700 font-bold' : '' }}">
                   <option value="">-- Create New Technician --</option>
                   @foreach($technicians as $t)
                   <option value="{{ $t->id }}" @selected($row['technician_id'] == $t->id)>{{ $t->name }}</option>
@@ -100,6 +101,13 @@
                 <input type="hidden" name="rows[{{ $row['row'] }}][mark_leave]" value="0">
                 <input type="checkbox" data-import-leave name="rows[{{ $row['row'] }}][mark_leave]" value="1" @checked($row['mark_leave']) @disabled($row['shop_day']['closed'] || $row['check_in'] || $row['check_out']) aria-label="Paid leave for {{ $row['name'] }} on {{ $row['date'] }}" class="size-4 rounded text-amber-600"><span data-leave-note class="mt-1 block text-[10px] leading-snug text-slate-600">{{ $row['leave_note'] }}</span>
               </td>
+              <td class="px-4 py-2 text-center">
+                <input type="hidden" name="rows[{{ $row['row'] }}][mark_worked]" value="0">
+                <input type="checkbox" data-import-worked name="rows[{{ $row['row'] }}][mark_worked]" value="1" @checked($row['mark_worked']) @disabled($row['future_day']) aria-label="Mark worked and fill missing scheduled times for {{ $row['name'] }} on {{ $row['date'] }}" class="size-4 rounded text-emerald-600">
+                <span data-schedule-label class="mt-1 block text-[10px] text-slate-600">{{ $row['work_schedule']['mode'] === 'custom' ? 'Custom' : 'System' }}: {{ substr($row['work_schedule']['start'], 0, 5) }}–{{ substr($row['work_schedule']['end'], 0, 5) }}</span>
+                <input data-auto-checkout type="hidden" name="rows[{{ $row['row'] }}][auto_filled_checkout]" value="{{ (int) ($row['auto_filled_checkout'] ?? false) }}">
+                <input data-schedule-in type="hidden" name="rows[{{ $row['row'] }}][schedule_filled_in]" value="{{ (int) ($row['schedule_filled_in'] ?? false) }}">
+              </td>
               <td class="px-4 py-2">
                 <input data-import-date type="date" name="rows[{{ $row['row'] }}][date]" value="{{ $row['date'] }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[120px]" required><span data-shop-day-label class="mt-1 block text-xs font-semibold">{{ $row['shop_day']['label'] }}{{ $row['future_day'] ? ' · Future date' : '' }}</span>
               </td>
@@ -108,9 +116,7 @@
               </td>
               <td class="px-4 py-2">
                 <input data-import-out type="time" name="rows[{{ $row['row'] }}][check_out]" value="{{ $row['check_out'] ? substr($row['check_out'], 0, 5) : '' }}" class="py-1 px-2 border-slate-300 rounded text-xs w-[100px] {{ ($row['auto_filled_checkout'] ?? false) ? 'border-blue-300 bg-blue-50 text-blue-700' : '' }}">
-                @if($row['auto_filled_checkout'] ?? false)
-                  <span class="block mt-1 text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-tight">Auto (Shop Close)</span>
-                @endif
+                  <span data-auto-checkout-note @if(! ($row['auto_filled_checkout'] ?? false)) hidden @endif class="block mt-1 text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-tight">Auto (scheduled close)</span>
               </td>
               <td class="px-4 py-2">
                 @if($row['duplicate'])
@@ -130,11 +136,11 @@
     {{-- Stats Summary --}}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       @foreach([
-        ['Present Today', $stats['present'], 'text-green-600'],
-        ['Absent Today', $stats['absent'], 'text-red-600'],
-        ['Late Today', $stats['late'], 'text-orange-500'],
-        ['On Leave Today', $stats['leave'], 'text-blue-600'],
-        ['OT Hours (Month)', number_format($stats['ot'], 2), 'text-slate-800']
+        ['Present (filtered)', $stats['present'], 'text-green-600'],
+        ['Absent / unpaid (filtered)', $stats['absent'], 'text-red-600'],
+        ['Late (filtered)', $stats['late'], 'text-orange-500'],
+        ['Paid leave (filtered)', $stats['leave'], 'text-blue-600'],
+        ['OT hours (filtered)', number_format($stats['ot'], 2), 'text-slate-800']
       ] as [$label, $value, $colorClass])
       <article class="panel bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
         <p class="text-xs font-bold text-slate-500">{{ $label }}</p>
@@ -146,6 +152,7 @@
     {{-- Mark/Edit Attendance Form --}}
     <form id="attendance-form" method="POST" action="{{ route('technicians.attendance.store') }}" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
       @csrf<x-submission-token/>
+      <input type="hidden" name="auto_filled_checkout" id="attendanceAutoCheckout" value="0">
       <h2 id="formHeader" class="text-sm font-extrabold uppercase tracking-wider text-slate-500">Mark or Edit Attendance</h2>
       
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -167,12 +174,12 @@
 
         <div>
           <label class="label">Attendance Status <span class="required-star">*</span></label>
-          <select name="status" id="statusSelect" onchange="calculateAttendanceFrontend()" class="w-full">
+          <select name="status" id="statusSelect" onchange="attendanceStatusChanged()" class="w-full">
             @foreach(['Present','Absent','Late','Half Day','Morning Half Day','Evening Half Day','Leave','Paid Leave','No Pay Leave','Holiday','Early Leave','Worked on Leave Day','Not Worked'] as $status)
             <option value="{{ $status }}">{{ $status === 'Not Worked' ? 'Not worked · shop closed / holiday' : $status }}</option>
             @endforeach
           </select>
-          <p class="mt-2 text-xs text-slate-500">Use Not worked to correct accidental punches on a shop-closed or holiday date. It clears hours, OT and deductions. For genuine work, choose Present and enter the actual times.</p>
+          <p class="mt-2 text-xs text-slate-500">Absent, unpaid leave, paid leave and holiday statuses clear coming/out times, hours and OT. Not worked is for a shop-closed day. Choose Present or Worked on Leave Day to fill missing scheduled times; adjust actual times if needed.</p>
         </div>
 
         <div>
@@ -182,7 +189,7 @@
 
         <div>
           <label class="label">Out Time</label>
-          <input type="time" name="out_time" id="outTimeInput" oninput="calculateAttendanceFrontend()" class="w-full">
+          <input type="time" name="out_time" id="outTimeInput" oninput="document.getElementById('attendanceAutoCheckout').value = '0'; calculateAttendanceFrontend()" class="w-full">
         </div>
 
         <div>
@@ -350,8 +357,8 @@
                 default => 'bg-slate-50 text-slate-700 border border-slate-200'
               };
               $shopDay = app(\App\Services\HolidayService::class)->dayInfo($row->date->toDateString(), $shopCalendar);
-              $editData = [$row->technician_id, $row->date->toDateString(), $row->status, $row->in_time ? substr($row->in_time, 0, 5) : "", $row->out_time ? substr($row->out_time, 0, 5) : "", $row->ot_amount, $row->deduction_amount, (int) $row->is_manual_edit, $row->note];
-              $notWorkedData = [$row->technician_id, $row->date->toDateString(), "Not Worked", "", "", 0, 0, 0, $row->note];
+              $editData = [$row->technician_id, $row->date->toDateString(), $row->status, $row->in_time ? substr($row->in_time, 0, 5) : "", $row->out_time ? substr($row->out_time, 0, 5) : "", $row->ot_amount, $row->deduction_amount, (int) $row->is_manual_edit, $row->note, (int) $row->is_auto_checkout];
+              $notWorkedData = [$row->technician_id, $row->date->toDateString(), "Not Worked", "", "", 0, 0, 0, $row->note, 0];
             @endphp
             <tr class="{{ $shopDay['kind'] === 'special' ? 'bg-violet-50' : ($shopDay['kind'] === 'weekly' ? 'bg-sky-50' : (in_array($row->status, ['Absent', 'No Pay Leave']) ? 'bg-rose-50' : (in_array($row->status, ['Leave', 'Paid Leave']) ? 'bg-amber-50' : 'bg-white'))) }} transition">
               <td class="px-4 py-3 font-mono">{{ $row->date->format('d M Y') }}@if($shopDay['closed'])<span class="mt-1 block text-xs font-semibold">{{ $shopDay['label'] }}</span>@endif</td>
@@ -360,7 +367,7 @@
               <td class="px-4 py-3 font-mono text-slate-500">
                 {{ $row->out_time ? Carbon\Carbon::parse($row->out_time)->format('h:i A') : '—' }}
                 @if($row->is_auto_checkout)
-                  <span class="block text-[10px] text-blue-600 font-semibold">Auto (Shop Close)</span>
+                  <span class="block text-[10px] text-blue-600 font-semibold">Auto (scheduled close)</span>
                 @endif
               </td>
               <td class="px-4 py-3">{{ number_format($row->working_hours, 2) }}</td>
@@ -524,18 +531,48 @@
 
     function checkFinalizedStatus() {}
 
+    const nonWorkAttendanceStatuses = @json(\App\Services\AttendanceCalculationService::NON_WORK_STATUSES);
+
+    function attendanceStatusChanged() {
+      const status = document.getElementById('statusSelect').value;
+      document.getElementById('isManualEdit').checked = false;
+      if (['Present', 'Worked on Leave Day'].includes(status)) {
+        const schedules = JSON.parse(document.getElementById('attendance-staff-schedules').textContent);
+        const staffId = document.getElementById('techSelect').value;
+        const schedule = schedules.staff[staffId] || schedules.default;
+        if (staffId && schedule) {
+          const coming = document.getElementById('inTimeInput');
+          const leaving = document.getElementById('outTimeInput');
+          coming.value ||= schedule.start.slice(0, 5);
+          if (!leaving.value) {
+            leaving.value = schedule.end.slice(0, 5);
+            document.getElementById('attendanceAutoCheckout').value = '1';
+          }
+        }
+      }
+      calculateAttendanceFrontend();
+    }
+
     function calculateAttendanceFrontend() {
       clearTimeout(attendancePreviewTimer);
       attendancePreviewAbort?.abort();
       const version = ++attendancePreviewVersion;
-      const notWorked = document.getElementById('statusSelect').value === 'Not Worked';
+      const selectedStatus = document.getElementById('statusSelect').value;
+      const notWorked = selectedStatus === 'Not Worked';
+      const nonWorking = nonWorkAttendanceStatuses.includes(selectedStatus);
       const manualInput = document.getElementById('isManualEdit');
       manualInput.disabled = notWorked;
       if (notWorked) manualInput.checked = false;
       for (const id of ['inTimeInput', 'outTimeInput']) {
         const input = document.getElementById(id);
-        input.disabled = notWorked;
-        if (notWorked) input.value = '';
+        input.disabled = nonWorking;
+        if (nonWorking) input.value = '';
+      }
+      if (nonWorking) {
+        document.getElementById('attendanceAutoCheckout').value = '0';
+        for (const id of ['workingHoursInput', 'lateMinutesInput', 'earlyLeaveMinutesInput', 'otMinutesInput', 'otAmountInput']) {
+          document.getElementById(id).value = '0';
+        }
       }
       const manual = manualInput.checked;
       const save = document.getElementById('saveAttendanceBtn');
@@ -543,7 +580,7 @@
       const fields = {workingHoursInput: 'working_hours', lateMinutesInput: 'late_minutes', earlyLeaveMinutesInput: 'early_leave_minutes', otMinutesInput: 'ot_minutes', otAmountInput: 'ot_amount', deductionAmountInput: 'deduction_amount'};
       for (const id of ['otAmountInput', 'deductionAmountInput']) {
         const input = document.getElementById(id);
-        input.readOnly = !manual;
+        input.readOnly = !manual || (nonWorking && id === 'otAmountInput');
         input.classList.toggle('bg-slate-50', !manual);
         input.classList.toggle('cursor-not-allowed', !manual);
       }
@@ -558,6 +595,7 @@
         status: document.getElementById('statusSelect').value,
         in_time: document.getElementById('inTimeInput').value,
         out_time: document.getElementById('outTimeInput').value,
+        auto_filled_checkout: document.getElementById('attendanceAutoCheckout').value,
       });
       Object.keys(fields).forEach(id => document.getElementById(id).value = '');
       if (!params.get('technician_id') || !params.get('date')) {
@@ -579,7 +617,7 @@
             document.getElementById(id).value = ['working_hours', 'ot_amount', 'deduction_amount'].includes(key) ? Number(data[key]).toFixed(2) : data[key];
           });
           if (data.is_auto_checkout) {
-            message.textContent = 'Auto-filled workshop closing time (5:00 PM). Status: ' + data.status;
+            message.textContent = 'Auto-filled scheduled closing time (' + (data.out_time || '—').slice(0, 5) + '). Status: ' + data.status;
           } else {
             message.textContent = 'Calculated from the saved attendance rules. Status: ' + data.status;
           }
@@ -592,11 +630,12 @@
       }, 200);
     }
 
-    function editAttendance(techId, date, status, inTime, outTime, otAmount, deductionAmount, manual, note) {
+    function editAttendance(techId, date, status, inTime, outTime, otAmount, deductionAmount, manual, note, autoCheckout = 0) {
       document.getElementById('formHeader').textContent = 'Edit Attendance Record';
       document.getElementById('techSelect').value = techId;
       document.getElementById('dateInput').value = date;
-      document.getElementById('statusSelect').value = status;
+      document.getElementById('statusSelect').value = status === 'Auto Closed' ? 'Present' : status;
+      document.getElementById('attendanceAutoCheckout').value = autoCheckout ? '1' : '0';
       document.getElementById('inTimeInput').value = inTime;
       document.getElementById('outTimeInput').value = outTime;
       document.getElementById('isManualEdit').checked = manual == '1';

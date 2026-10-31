@@ -7,6 +7,7 @@ use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAttendance;
 use App\Support\StaffPayRate;
+use App\Support\StaffWorkSchedule;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -14,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class AttendanceCalculationService
 {
+    public const NON_WORK_STATUSES = ['Absent', 'No Pay Leave', 'Leave', 'Paid Leave', 'Holiday', 'Holiday Leave', 'Weekly Leave', 'Poya Leave', 'No Shift', 'Not Worked'];
+
     private HolidayService $holidayService;
 
     public function __construct(HolidayService $holidayService)
@@ -25,14 +28,18 @@ class AttendanceCalculationService
     {
         $settings = SalarySetting::firstOrCreate([])->refresh();
         $dateString = Carbon::parse($date)->toDateString();
-        $notWorked = strtolower(trim((string) $status)) === 'not worked';
-        $in = $notWorked ? null : $this->time($dateString, $checkIn);
-        $out = $notWorked ? null : $this->time($dateString, $checkOut);
+        $statusKey = strtolower(trim((string) $status));
+        $notWorked = $statusKey === 'not worked';
+        $nonWorking = in_array($statusKey, array_map('strtolower', self::NON_WORK_STATUSES), true);
+        // An explicit non-working status takes precedence over stale punches.
+        $in = $nonWorking ? null : $this->time($dateString, $checkIn);
+        $out = $nonWorking ? null : $this->time($dateString, $checkOut);
         if ($in && $out && $out->lt($in)) {
             throw ValidationException::withMessages(['out_time' => 'Checkout must be after check-in.']);
         }
-        $open = $this->time($dateString, $settings->opening_time ?: '08:00 AM') ?: Carbon::parse($dateString.' 08:00:00');
-        $close = $this->time($dateString, $settings->closing_time ?: '05:00 PM') ?: Carbon::parse($dateString.' 17:00:00');
+        $schedule = StaffWorkSchedule::resolve($technician, $settings);
+        $open = $this->time($dateString, $schedule['start']);
+        $close = $this->time($dateString, $schedule['end']);
         $dailySalary = $this->dailySalary($technician);
 
         $result = [
@@ -85,11 +92,25 @@ class AttendanceCalculationService
             return array_replace($result, ['status' => 'Not Worked', 'in_time' => null, 'out_time' => null, 'break_minutes' => 0, 'is_manual_edit' => false]);
         }
 
+        if ($nonWorking) {
+            $result['break_minutes'] = 0;
+            $overrides['ot_amount'] = null;
+            $overrides['auto_filled_checkout'] = false;
+        }
+
+        if ($result['is_leave_day'] && strtolower(trim((string) $status)) === 'worked on leave day') {
+            $in ??= $open->copy();
+            if (! $out) {
+                $out = $close->copy();
+                $overrides['auto_filled_checkout'] = true;
+            }
+        }
+
         // Apply auto checkout logic: if starting time is given, but outer time is missing
         if ($in && (! $out || ! empty($overrides['auto_filled_checkout']))) {
             $out = $close;
             $result['is_auto_checkout'] = true;
-            $result['auto_checkout_reason'] = 'Missing checkout time, used workshop closing time';
+            $result['auto_checkout_reason'] = 'Missing checkout time, used '.($schedule['mode'] === 'custom' ? 'staff scheduled' : 'system').' closing time';
         }
 
         $result['in_time'] = $in ? $in->format('H:i:s') : null;
@@ -104,7 +125,7 @@ class AttendanceCalculationService
 
         if (in_array($status, ['Absent', 'No Pay Leave'], true)) {
             if (! $result['is_leave_day']) {
-                $result['absent_minutes'] = (int) round((float) $settings->working_hours_per_day * 60);
+                $result['absent_minutes'] = (int) round((float) $schedule['working_hours'] * 60);
                 $result['deduction_amount'] = $technician->salary_type === 'Hourly' ? 0 : (float) ((float) $technician->no_pay_deduction_rate > 0 ? $technician->no_pay_deduction_rate : $dailySalary);
             } else {
                 $result['status'] = $result['leave_type'];
@@ -128,8 +149,8 @@ class AttendanceCalculationService
         $result['late_minutes'] = $this->calculateLateMinutes($in, $open, (int) $settings->late_grace_minutes);
         $result['early_leave_minutes'] = $this->calculateEarlyLeaveMinutes($out, $close, (int) $settings->early_leave_grace_minutes);
 
-        if ($settings->enable_half_day && ($in->gt($this->time($dateString, $settings->morning_half_day_cutoff)) || $out->lt($this->time($dateString, $settings->evening_half_day_cutoff)))) {
-            $result['status'] = $in->gt($this->time($dateString, $settings->morning_half_day_cutoff)) ? 'Morning Half Day' : 'Evening Half Day';
+        if ($settings->enable_half_day && ($in->gt($this->time($dateString, $schedule['morning_cutoff'])) || $out->lt($this->time($dateString, $schedule['evening_cutoff'])))) {
+            $result['status'] = $in->gt($this->time($dateString, $schedule['morning_cutoff'])) ? 'Morning Half Day' : 'Evening Half Day';
         }
 
         if (in_array($result['status'], ['Half Day', 'Morning Half Day', 'Evening Half Day'], true)) {
@@ -167,6 +188,10 @@ class AttendanceCalculationService
             $result['early_leave_deduction_amount'] = 0;
             $result['half_day_deduction_amount'] = 0;
             $result['deduction_amount'] = 0;
+        }
+
+        if ($result['worked_on_leave_day']) {
+            $result['status'] = 'Worked on Leave Day';
         }
 
         return $this->applyOverrides($result, $overrides);
@@ -300,8 +325,9 @@ class AttendanceCalculationService
     private function normalizeStatus(?string $status, ?CarbonInterface $in, ?CarbonInterface $out, bool $isLeaveDay = false, ?string $leaveType = null, bool $isAutoCheckout = false): string
     {
         $status = strtolower(trim((string) $status));
-        // If employee has a check-in time, they cannot be absent
-        if ($in && ($status === 'absent' || $status === 'no pay leave' || $status === 'normal' || empty($status))) {
+        // File/default statuses with a punch normalize to worked attendance.
+        // Explicit absence and leave were already cleared before reaching this step.
+        if ($in && ($status === 'normal' || empty($status))) {
             $status = $isAutoCheckout ? 'auto closed' : 'present';
         }
 

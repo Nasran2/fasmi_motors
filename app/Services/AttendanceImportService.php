@@ -3,10 +3,10 @@
 namespace App\Services;
 
 use App\Models\AttendanceImportBatch;
-use App\Models\SalarySetting;
 use App\Models\Technician;
 use App\Models\TechnicianAttendance;
 use App\Models\TechnicianSalarySheet;
+use App\Support\StaffWorkSchedule;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -40,10 +40,8 @@ class AttendanceImportService
         $columns = array_flip($header);
         $preview = [];
         $errors = [];
-        $settings = SalarySetting::first();
         $calendarService = app(HolidayService::class);
         $calendar = $calendarService->calendar();
-        $closingTime = $settings && $settings->closing_time ? Carbon::parse($settings->closing_time)->format('H:i:s') : '17:00:00';
 
         foreach (array_slice($rows, 1) as $offset => $row) {
             $rowNumber = $offset + 2;
@@ -93,7 +91,7 @@ class AttendanceImportService
             $autoFilledCheckout = false;
 
             if ($checkIn && ! $checkOut) {
-                $checkOut = $closingTime;
+                $checkOut = StaffWorkSchedule::resolve($technician)['end'];
                 $autoFilledCheckout = true;
             }
 
@@ -134,6 +132,31 @@ class AttendanceImportService
         ]);
     }
 
+    public function reviewRow(array $row, array $calendar, ?array $schedules = null): array
+    {
+        $schedules ??= StaffWorkSchedule::importSchedules();
+        $schedule = $schedules['staff'][$row['technician_id'] ?? ''] ?? $schedules['default'];
+        $row = app(HolidayService::class)->importRow($row, $calendar);
+        if ($row['shop_day']['closed'] && ! $row['mark_worked']) {
+            $row['check_in'] = null;
+            $row['check_out'] = null;
+            $row['auto_filled_checkout'] = false;
+            $row['schedule_filled_in'] = false;
+        } else {
+            if ($row['mark_worked'] && (empty($row['check_in']) || ! empty($row['schedule_filled_in']))) {
+                $row['check_in'] = $schedule['start'];
+                $row['schedule_filled_in'] = true;
+            }
+            if (! empty($row['check_in']) && (empty($row['check_out']) || ! empty($row['auto_filled_checkout']))) {
+                $row['check_out'] = $schedule['end'];
+                $row['auto_filled_checkout'] = true;
+            }
+        }
+        $row['work_schedule'] = $schedule;
+
+        return app(HolidayService::class)->importRow($row, $calendar);
+    }
+
     public function confirm(AttendanceImportBatch $batch, AttendanceCalculationService $calculator, int $userId): AttendanceImportBatch
     {
         return DB::transaction(function () use ($batch, $calculator, $userId) {
@@ -147,8 +170,9 @@ class AttendanceImportService
 
             $calendarService = app(HolidayService::class);
             $calendar = $calendarService->calendar();
+            $schedules = StaffWorkSchedule::importSchedules();
             foreach ($batch->preview_data ?? [] as $row) {
-                $row = $calendarService->importRow($row, $calendar);
+                $row = $this->reviewRow($row, $calendar, $schedules);
                 if ($row['future_day'] && ! $row['check_in'] && ! $row['check_out'] && ! $row['mark_leave'] && ! $row['shop_day']['closed']) {
                     $skipped++;
 
@@ -170,9 +194,13 @@ class AttendanceImportService
                             $duplicates++;
                         }
                         $createdBy = $existing ? $existing->created_by : $userId;
+                        // Resolve generated times again from the locked, final staff mapping.
+                        $row = $this->reviewRow($row, app(HolidayService::class)->calendar(), ['default' => StaffWorkSchedule::resolve($technician), 'staff' => []]);
                         $status = $row['mark_leave'] ? 'Paid Leave' : $row['source_status'];
                         if ($row['shop_day']['closed']) {
-                            $status = null;
+                            $status = $row['mark_worked'] ? 'Worked on Leave Day' : 'Not Worked';
+                        } elseif ($row['mark_worked'] || ($row['check_in'] && in_array(strtolower(trim((string) $status)), ['absent', 'no pay leave'], true))) {
+                            $status = 'Present';
                         } elseif (array_key_exists('mark_leave', $row) && ! $row['check_in'] && ! $row['check_out']) {
                             $status = $row['mark_leave'] ? 'Paid Leave' : 'Absent';
                         }
@@ -191,14 +219,14 @@ class AttendanceImportService
                                 'department' => $row['department'] ?: null,
                                 'shift_name' => $row['shift'] ?: null,
                                 'timetable' => $row['timetable'] ?: null,
-                                'in_time' => $row['check_in'] ?: ($metrics['in_time'] ?? null),
-                                'out_time' => $row['check_out'] ?: ($metrics['out_time'] ?? null),
+                                'in_time' => $metrics['in_time'] ?? null,
+                                'out_time' => $metrics['out_time'] ?? null,
                                 'leave_type' => $row['mark_leave'] ? null : ($metrics['leave_type'] ?: $row['leave_type']),
                                 'is_manual_entry' => false,
                                 'is_manual_edit' => false,
                                 'import_batch_id' => $batch->id,
                                 'remarks' => 'Imported from '.$batch->file_name,
-                                'note' => 'Imported attendance',
+                                'note' => $row['mark_worked'] && ! $row['shop_day']['closed'] ? 'Imported attendance · missing fingerprint reviewed, scheduled times used for missing punches' : 'Imported attendance',
                                 'created_by' => $createdBy,
                                 'edited_by' => $existing ? $userId : null,
                                 'updated_by' => $userId,

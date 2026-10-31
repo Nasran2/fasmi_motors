@@ -64,12 +64,15 @@ class HolidayService
         $info = $this->dayInfo($row['date'], $calendar);
         $hasPunch = filled($row['check_in'] ?? null) || filled($row['check_out'] ?? null);
         $future = $row['date'] > $calendar['today'];
+        $workExplicit = $row['work_choice_explicit'] ?? array_key_exists('mark_worked', $row);
+        $markWorked = ! $future && ($workExplicit ? (bool) ($row['mark_worked'] ?? false) : ($info['closed'] && $hasPunch));
         $explicit = $row['leave_choice_explicit'] ?? array_key_exists('mark_leave', $row);
-        $markLeave = ! $info['closed'] && ! $hasPunch
+        $markLeave = ! $info['closed'] && ! $hasPunch && ! $markWorked
             && ($explicit ? (bool) $row['mark_leave'] : ! $future);
 
-        $absence = ! $info['closed'] && ! $hasPunch && ! $future && ! $markLeave;
+        $absence = ! $info['closed'] && ! $hasPunch && ! $future && ! $markLeave && ! $markWorked;
         $colour = match (true) {
+            $markWorked && $info['closed'] => 'bg-emerald-50',
             $info['kind'] === 'special' => 'bg-violet-50',
             $info['kind'] === 'weekly' => 'bg-sky-50',
             $markLeave => 'bg-amber-50',
@@ -77,13 +80,15 @@ class HolidayService
             default => 'bg-white',
         };
         $note = match (true) {
-            $info['closed'] => $hasPunch ? 'Shop closed · punches retained' : 'Shop closed · not personal leave',
+            $markWorked && $info['closed'] => 'Worked on shop-closed day · extra daily pay',
+            $markWorked => 'Worked · missing punches filled from staff schedule',
+            $info['closed'] => 'Shop closed · not worked, no extra daily pay',
             $hasPunch => 'Attendance from punches',
             $markLeave => 'Paid leave · no absence deduction',
             $future => 'Future empty day · skipped',
             default => 'Absent · normal deduction',
         };
 
-        return array_merge($row, ['shop_day' => $info, 'mark_leave' => $markLeave, 'future_day' => $future, 'leave_choice_explicit' => $explicit, 'row_colour' => $colour, 'leave_note' => $note]);
+        return array_merge($row, ['shop_day' => $info, 'mark_worked' => $markWorked, 'work_choice_explicit' => $workExplicit, 'mark_leave' => $markLeave, 'future_day' => $future, 'leave_choice_explicit' => $explicit, 'row_colour' => $colour, 'leave_note' => $note]);
     }
 }

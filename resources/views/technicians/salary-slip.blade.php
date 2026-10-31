@@ -11,7 +11,8 @@
       $showAttendance = $salarySetting->slip_show_attendance ?? true;
       $paperSize = $salarySetting->slip_paper_size ?? 'A4';
       $salaryMonthLabel = \Carbon\Carbon::parse(data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_start))->format('F Y');
-      $cycleLabel = data_get($sheet->calculation_snapshot, 'salary_cycle.salary_cycle_label') ?? match ($sheet->salary_cycle_mode) { 'custom_cutoff' => 'Custom Cut-Off Salary Cycle', 'custom_start' => 'Custom Start Day Salary Cycle', default => 'Calendar Month Salary' };
+      $paidLeaveDays = (float) data_get($sheet->calculation_snapshot, 'attendance_summary.approved_leave_days', $sheet->approved_leave_days ?? 0);
+      $shopClosedDays = max(0, (float) $sheet->leave_days - $paidLeaveDays);
     @endphp
 
     <style>
@@ -73,11 +74,15 @@
       <button onclick="window.print()" class="inline-flex items-center justify-center rounded-xl bg-[#0b2447] px-4 py-2 text-sm font-bold text-white shadow-lg hover:bg-[#123665] transition">🖨️ Print / Save PDF</button>
   </div>
 
+  @if($attendanceChanged ?? false)
+      <p class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 no-print">Attendance changed after this draft was saved. <a class="font-bold underline" href="{{ route('technicians.salaries.show', $sheet) }}#refresh-salary-calculation">Refresh the draft calculation</a> to update attendance totals and salary together before printing.</p>
+  @endif
+
   <article class="salary-payslip rounded-3xl border border-slate-200 bg-white p-8 shadow-sm print-border-0">
     <header class="flex justify-between border-b-2 border-slate-900 pb-5">
         <div>
             <p class="text-2xl font-black italic"><span class="text-red-600">FASMIR</span> MOTORS</p>
-            <p class="text-xs uppercase tracking-widest text-slate-500">Technician Salary Slip</p>
+            <p class="text-xs uppercase tracking-widest text-slate-500">Salary Slip</p>
         </div>
         <div class="text-right">
             <p class="font-black">{{ $sheet->number }}</p>
@@ -87,7 +92,7 @@
     
     <div class="mt-5 grid grid-cols-2 gap-4 rounded-2xl bg-slate-50 p-4">
         <div>
-            <small class="text-slate-500 font-bold uppercase text-[10px]">Technician</small>
+            <small class="text-slate-500 font-bold uppercase text-[10px]">Name</small>
             <p class="font-black text-lg">{{ $sheet->technician->name }}</p>
             <p class="text-xs text-slate-500">{{ data_get($sheet->calculation_snapshot, 'technician.salary_type', $sheet->technician->salary_type) }} salary</p>
         </div>
@@ -98,7 +103,6 @@
         </div>
     </div>
 
-    <p class="mt-3 text-xs text-slate-600">Salary period: {{ $sheet->period_start->format('d M Y') }} – {{ $sheet->period_end->format('d M Y') }}</p>
 
     @if((float) data_get($sheet->calculation_snapshot, 'contributions.basic_salary') > 0)
         <p class="mt-3 text-sm text-slate-600">EPF / ETF salary basic: <strong>Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'contributions.basic_salary'), 2) }}</strong>. Used only for EPF and ETF contributions.</p>
@@ -108,7 +112,7 @@
     <section class="mt-6">
         <h2 class="border-b pb-2 font-black text-blue-700 uppercase tracking-wider text-xs">Attendance & Activity</h2>
         <div class="mt-3 grid grid-cols-3 gap-3 text-sm sm:grid-cols-6">
-          @foreach(['Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent'=>$sheet->total_absent_days,'Leave days'=>$sheet->leave_days,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
+          @foreach(['Working days'=>$sheet->total_working_days,'Present'=>$sheet->total_present_days,'Absent / unpaid'=>$sheet->total_absent_days,'Paid leave'=>$paidLeaveDays,'Shop closed days'=>$shopClosedDays,'Half days'=>$sheet->half_days,'Late days'=>$sheet->late_days,'Early leave'=>$sheet->early_leave_days,'Worked on leave'=>$sheet->worked_on_leave_days,'Worked hours'=>$sheet->total_worked_hours,'OT hours'=>$sheet->total_ot_hours,'Auto checkout'=>$sheet->auto_checkout_days] as $label=>$value)
           <div class="rounded-xl bg-blue-50 p-3 flex flex-col items-center justify-center text-center">
               <small class="text-slate-500 text-[10px] uppercase font-bold">{{ $label }}</small>
               <p class="font-black text-blue-900 mt-1">{{ $value }}</p>
@@ -146,10 +150,14 @@
 
       $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
     @endphp
-    @if(data_get($sheet->calculation_snapshot, 'earnings.salary_basis') === 'full_basic')
-        <p class="mt-3 text-xs text-slate-600">Paid leave and shop-closed days do not cause no-pay deductions.@if((float) $sheet->no_pay_deduction > 0) Unpaid leave / absence: {{ data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_days', $sheet->total_absent_days) }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_rate', 0), 2) }}.@endif</p>
+    @if(data_get($sheet->calculation_snapshot, 'earnings.salary_basis') === 'full_basic' && (float) $sheet->no_pay_deduction > 0)
+        <p class="mt-3 text-xs text-slate-600">Unpaid leave / absence: {{ data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_days', $sheet->total_absent_days) }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_rate', 0), 2) }}.</p>
     @endif
 
+
+    @if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0) > 0)
+        <p class="mt-3 text-xs text-emerald-800">Worked on shop-closed days: {{ data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_days') }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_rate', 0), 2) }} = Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_auto', 0), 2) }} extra pay.@if((float) data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0) > 0) Manual supplement: Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', 0), 2) }}.@endif</p>
+    @endif
     <div class="mt-6 grid gap-8 md:grid-cols-2">
       <section>
           <h2 class="border-b pb-2 font-black text-emerald-700 uppercase tracking-wider text-xs">Earnings</h2>

@@ -16,6 +16,7 @@ class Technician extends Model
     protected $guarded = [];
 
     protected $attributes = [
+        'work_schedule_mode' => 'system_default',
         'epf_etf_basic_salary' => 30000,
         'hourly_salary' => 0,
         'daily_salary' => 0,

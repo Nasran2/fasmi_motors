@@ -1,0 +1,27 @@
+# Staff working times and closed-day work
+
+Staff → Add/Edit Staff → **Staff Working Times** defaults to **Use system default**. Select **Custom staff times** to save a same-day coming and closing time. Existing staff continue using system settings. The shared attendance calculator resolves the staff schedule for manual entry, import, single/bulk recalculation and unpaid draft refresh. Late/early minutes, OT eligibility and automatic checkout use those times. System grace periods and nearest-half-hour OT rounding remain in effect. Custom half-day cutoffs retain their offset from system start/end and are limited to the staff shift; custom hourly daily rates use the scheduled span minus the configured break.
+
+In the import preview, **Worked on closed day** is available for weekly/special closures dated today or earlier. Existing closed-day punches initially mark it checked. Checking it fills missing coming/checkout times from the selected staff schedule (system times for a new/default staff member). The mapped schedule appears below the checkbox. Remapping staff updates generated times, while retaining actual punches. Unchecking clears punches and imports **Not Worked**, which remains non-working through recalculation. Editing a checkout explicitly changes it to an actual punch. Generated checkout retains its automatic flag and cannot create OT. Future closed days cannot be marked worked from this preview.
+
+The backend resolves the final staff mapping again, applies closure rules and schedule defaults, and rejects a stale calendar or schedule review. Existing payroll locks still prevent changes to attendance included in finalized, partially paid or paid periods.
+
+Salary adds one daily salary per **Worked on Leave Day** as **Worked-on-leave pay**, separately from basic salary and OT. Daily/monthly staff use their configured Daily Salary, falling back to Basic Salary / 26; weekly staff use weekly rate / 7; hourly staff use hourly pay × scheduled daily hours. Hourly closed-day regular minutes are excluded from ordinary hourly earnings so the day is not counted twice; eligible actual OT remains separate. The payslip and salary details show the day count, rate and automatic total. Refreshing a draft recalculates automatic pay without treating the previously calculated total as another manual supplement. Not Worked and ordinary paid leave receive no extra closed-day earnings.
+
+Changing a staff schedule does not rewrite existing attendance or paid paysheets. Use Attendance → Recalculate for existing unlocked rows, or Salary Details → Refresh draft salary calculation with a reason. Draft refresh recalculates attendance too. No historical punches, payments or salaries are automatically rewritten by the migration.
+
+Deployment requires `php artisan migrate` for `2026_10_31_000012_add_staff_work_schedules.php`, followed by the normal asset build. The migration only adds the schedule mode and optional start/end fields. This change was made locally; no live server access or tests were run at the user's request.
+
+## Forgotten fingerprints on a working day
+
+The import checkbox is now **Worked / fill times**, enabled on both normal and shop-closed dates up to today. On a working date, checking it fills only missing punches from the mapped staff schedule, clears paid-leave selection, and imports normal Present attendance through the shared calculator (so applicable late/early rules still apply to actual punches). Original actual punches are retained. Unchecking removes generated times on a normal date while retaining actual punches; ordinary paid-leave/absence review then applies if no punches remain. On a closed date, unchecking still clears all punches and marks Not Worked. Generated checkout cannot earn OT. Extra daily pay remains limited to genuine shop-closed work; checking this option on a working date does not award it.
+
+No tests or live-server actions were performed for this follow-up. Frontend assets were rebuilt locally.
+
+## Status changes and payslip attendance labels
+
+Explicit non-working statuses (Absent, No Pay Leave, paid/approved leave, Holiday and Not Worked) discard coming/out times before calculation, preventing stale punches from converting a chosen absence to Present. Their worked hours, OT and late/early minutes are zero. Normal working-day absence deductions and existing manual deduction overrides remain available; Not Worked remains restricted to shop-closed dates. The manual attendance form clears and disables punch fields immediately, resets money overrides when the status changes, and fills missing staff schedule times when Present or Worked on Leave Day is selected. Import files still prioritize actual check-in punches over an inconsistent source Absent/No Pay label; explicit import review choices remain authoritative.
+
+The payslip separates Absent / unpaid, Paid leave and Shop closed days. The earlier Leave days figure combined calendar closures with paid personal leave; it was not the absence count. Draft slips/details warn when current attendance differs from the saved snapshot and link to the reason-required draft refresh, keeping attendance figures and money synchronized. Viewing a slip does not rewrite a saved draft or a paid salary. Attendance cards say filtered rather than Today because they reflect the selected period and staff.
+
+The printed slip omits the salary-period date line, the generic paid-leave/shop-closed deduction explanation and the Technician role labels. No tests or live-server actions were performed for this follow-up.
