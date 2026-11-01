@@ -22,6 +22,13 @@ function refreshFunding(panel, force = false) {
     const first = (rows.find(row => cents(row.querySelector('[data-funding-amount]').value) > 0) || rows[0])?.querySelector('[data-funding-source]');
     panel.querySelector('[data-funding-account]').value = first?.selectedOptions[0]?.dataset.account || '';
     const allocated = rows.reduce((sum, row) => sum + cents(row.querySelector('[data-funding-amount]').value), 0);
+    for (const destination of form.querySelectorAll('[data-funding-destination]')) {
+        destination.disabled = ['loading', 'error'].includes(panel.dataset.fundingDateState);
+        for (const option of destination.options) option.disabled = option.dataset.unavailable === '1';
+        if (destination.selectedOptions[0]?.disabled) destination.value = '';
+        const samePool = destination.value && rows.some(row => row.querySelector('[data-funding-source]').value === destination.value && cents(row.querySelector('[data-funding-amount]').value) > 0);
+        destination.setCustomValidity(samePool ? 'Choose a different destination pool. Transfers between an account and its cashier are allowed.' : '');
+    }
     const label = panel.querySelector('[data-funding-total]');
     label.textContent = `Allocated: Rs. ${money(allocated)} / Total: Rs. ${money(total)}${allocated !== total ? ' — amounts must match' : ''}`;
     label.classList.toggle('text-red-600', allocated !== total);
@@ -66,9 +73,9 @@ function initializeFunding(root = document) {
                 const data = await response.json();
                 if (version !== dateVersion) return;
                 if (!response.ok || !Array.isArray(data.options)) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Could not load funding balances.');
-                panel.querySelectorAll('[data-funding-source]').forEach(select => {
+                [...panel.querySelectorAll('[data-funding-source]'), ...form.querySelectorAll('[data-funding-destination]')].forEach(select => {
                     const value = select.value;
-                    select.replaceChildren(new Option('Select payment source', ''), ...data.options.map(item => {
+                    select.replaceChildren(new Option(select.matches('[data-funding-destination]') ? 'Select destination' : 'Select payment source', ''), ...data.options.map(item => {
                         const option = new Option(`${item.label} · Rs. ${money(cents(item.balance))}${item.disabled ? ' · ' + (item.disabled_reason || 'Cashier closed') : ''}`, item.value);
                         option.dataset.account = item.account_id;
                         option.dataset.cashier = item.value.endsWith('_cashier') ? '1' : '0';

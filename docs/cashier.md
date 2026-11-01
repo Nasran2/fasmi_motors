@@ -129,6 +129,14 @@ Main Account and Spare Parts Account in the shared outgoing-funding picker show 
 
 Example: Main's current total is Rs. 80,000, of which Rs. 20,000 is the current cashier pool. Main Account displays Rs. 60,000 and Main Account Cashier displays Rs. 20,000. A new Rs. 5,000 capital contribution directly to Main changes the first choice to Rs. 65,000 while its cashier choice stays Rs. 20,000. The backend uses this same calculation under locks for outgoing payments and transfers, including split funding. Source labels now say “total excluding cashier” and the shared help text explains the split. Existing saved transactions and opening/closing counts are not rewritten. No tests or live-server changes were made.
 
+## Transfer destinations and account/cashier movements
+
+To Account offers the same five pools as Source: Main Account, Main Account Cashier, Spare Parts Account, Spare Parts Account Cashier and Bank. Both pickers refresh balances and cashier availability for the selected Transfer Date. Cashier destinations are greyed out when that date is closed, and the server rechecks the session under account/session locks before posting. A transfer into the exact same pool is rejected, including any positive split-source row that matches the destination. Different pools in the same ledger are allowed in both directions.
+
+For example, Spare Parts Account Rs. 10,000 and Spare Parts Cashier Rs. 3,000 have a combined ledger total of Rs. 13,000. Transferring Rs. 1,000 from Spare Parts Cashier to Spare Parts Account leaves Account Rs. 11,000 and Cashier Rs. 2,000; the combined total stays Rs. 13,000. The debit retains the selected source and the credit retains the selected destination in each ledger entry's existing funding_source field. This also supports split-funded transfers and account-to-cashier replenishment without counting the transfer as sales income. Transfer history displays the source and destination pool labels, including after cancellation; legacy entries fall back to their saved account names.
+
+No migration, historical financial repair or live-server action is required. No application tests were run; frontend assets were rebuilt for manual checking.
+
 ## Other charges and bill discounts
 
 Received Other charges now belong to Spare Parts, alongside parts receipts. Cash receipts therefore increase Spare Parts Cashier; non-cash receipts retain their Bank mirror. Main receives Service and Labour, Washing remains separate, and the net Spare Parts share bears the whole bill discount (percentage plus fixed). Parts amounts already include their line discounts; the bill total supplies the net residual, including tax, without deducting any discount twice. Opening-due receipts retain their existing Main allocation.

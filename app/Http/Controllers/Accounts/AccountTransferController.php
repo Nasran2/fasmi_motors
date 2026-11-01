@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AccountTransferController extends BaseAccountController
@@ -20,7 +21,7 @@ class AccountTransferController extends BaseAccountController
     public function index(Request $request)
     {
         [$from,$to,$range] = $this->range($request);
-        $transfers = AccountTransfer::with(['fromAccount', 'toAccount', 'creator'])->whereBetween('transfer_date', [$from, $to])
+        $transfers = AccountTransfer::with(['fromAccount', 'toAccount', 'creator', 'transactions'])->whereBetween('transfer_date', [$from, $to])
             ->when($request->status, fn ($q, $v) => $q->where('status', $v))->latest('transfer_date')->paginate(25)->withQueryString();
         $accounts = Account::where('active', true)->orderBy('name')->get();
         $balances = collect(['main', 'spare_parts', 'bank', 'washing', 'cash'])->mapWithKeys(fn ($type) => [$type => $this->balance($type)]);
@@ -31,7 +32,9 @@ class AccountTransferController extends BaseAccountController
             // A malformed previous submission must still render its validation errors.
         }
 
-        return view('accounts.transfers', compact('transfers', 'accounts', 'balances', 'from', 'to', 'range', 'fundingDate'));
+        $transferOptions = app(OutgoingFundingService::class)->options($fundingDate, true);
+
+        return view('accounts.transfers', compact('transfers', 'accounts', 'balances', 'from', 'to', 'range', 'fundingDate', 'transferOptions'));
     }
 
     public function fundingOptions(Request $request, OutgoingFundingService $funding)
@@ -51,25 +54,36 @@ class AccountTransferController extends BaseAccountController
 
     public function store(Request $request, AccountService $service)
     {
-        $v = $request->validate(['from_account' => 'nullable|in:main,spare_parts,bank,washing,cash', 'to_account' => 'required|in:main,spare_parts,bank,washing,cash|different:from_account', 'amount' => 'required|numeric|gt:0', 'transfer_date' => 'required|date|before_or_equal:now', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000'] + OutgoingFundingService::rules());
+        $v = $request->validate(['from_account' => 'nullable|in:main,spare_parts,bank,washing,cash',
+            'to_account' => ['required', Rule::in([...array_keys(OutgoingFundingService::SOURCES), 'washing', 'cash'])],
+            'amount' => 'required|numeric|gt:0|max:999999999999.99|decimal:0,2', 'transfer_date' => 'required|date|before_or_equal:now', 'payment_method' => 'nullable|string|max:50', 'reference' => 'nullable|string|max:100', 'note' => 'nullable|string|max:1000'] + OutgoingFundingService::rules());
         DB::transaction(function () use ($v, $service) {
             $funding = app(OutgoingFundingService::class);
             $plan = $funding->plan($v, (float) $v['amount'], $v['from_account'] ?? 'main');
             $from = $this->account($funding->type($plan[0]['source']));
-            $to = $this->account($v['to_account']);
+            $destination = $v['to_account'];
+            $destinationType = $funding->type($destination);
+            $to = $this->account($destinationType);
             foreach ($plan as $row) {
-                if ($this->account($funding->type($row['source']))->id === $to->id) {
-                    throw ValidationException::withMessages(['to_account' => 'Choose a destination different from every selected payment source.']);
+                if ($row['source'] === $destination) {
+                    throw ValidationException::withMessages(['to_account' => 'Choose a different destination pool. You can transfer between an account and its cashier, but not back into the same source.']);
                 }
             }
             app(CashierService::class)->lock();
+            if (str_ends_with($destination, '_cashier')) {
+                $session = CashierSession::whereDate('session_date', Carbon::parse($v['transfer_date'])->toDateString())->lockForUpdate()->first();
+                if ($session?->status !== 'open') {
+                    throw ValidationException::withMessages(['to_account' => 'Cashier destinations require an open cashier for the selected transfer date.']);
+                }
+            }
             $transfer = AccountTransfer::create(['transfer_no' => 'AT-'.now()->format('ymd').'-'.Str::upper(Str::random(5)), 'from_account_id' => $from->id, 'to_account_id' => $to->id, 'amount' => $v['amount'], 'transfer_date' => $v['transfer_date'], 'payment_method' => $v['payment_method'] ?? null, 'reference_number' => $v['reference'] ?? null, 'note' => $v['note'] ?? null, 'status' => 'Completed', 'created_by' => auth()->id()]);
-            $funding->post($plan, (float) $v['amount'], "Transfer to {$to->name}", $transfer, $v['payment_method'] ?? 'Cash', $v['transfer_date'], 'transfer', $v['note'] ?? null, 'transfer_out', allowOpenDate: true);
-            $destination = $v['to_account'] === 'cash' ? 'main' : $v['to_account'];
-            $service->recordTransaction($destination, 'transfer_in', (float) $v['amount'], "Transfer from {$from->name}", $transfer, $destination === 'bank' ? 'Bank Transfer' : 'Cash', $v['note'] ?? null, $to->id, $v['transfer_date'], 'transfer', in_array($destination, ['main', 'spare_parts', 'bank']) ? $destination : null);
+            $destinationLabel = OutgoingFundingService::SOURCES[$destination] ?? $to->name;
+            $funding->post($plan, (float) $v['amount'], "Transfer to {$destinationLabel}", $transfer, $v['payment_method'] ?? 'Cash', $v['transfer_date'], 'transfer', $v['note'] ?? null, 'transfer_out', allowOpenDate: true);
+            $sourceLabel = implode(' + ', array_map(fn ($row) => OutgoingFundingService::SOURCES[$row['source']], $plan));
+            $service->recordTransaction($destinationType === 'cash' ? 'main' : $destinationType, 'transfer_in', (float) $v['amount'], "Transfer from {$sourceLabel}", $transfer, $destinationType === 'bank' ? 'Bank Transfer' : 'Cash', $v['note'] ?? null, $to->id, $v['transfer_date'], 'transfer', isset(OutgoingFundingService::SOURCES[$destination]) ? $destination : null);
         });
 
-        return back()->with('success', 'Account transfer completed and both ledgers were updated.');
+        return back()->with('success', 'Transfer completed. Source and destination balances were updated.');
     }
 
     public function reverse(Request $request, AccountTransfer $transfer, AccountService $service)
