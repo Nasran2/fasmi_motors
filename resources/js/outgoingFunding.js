@@ -10,6 +10,7 @@ function refreshFunding(panel, force = false) {
     for (const [index, row] of rows.entries()) {
         const source = row.querySelector('[data-funding-source]');
         const amount = row.querySelector('[data-funding-amount]');
+        source.disabled = ['loading', 'error'].includes(panel.dataset.fundingDateState);
         source.name = `funding[${index}][source]`;
         amount.name = `funding[${index}][amount]`;
         for (const option of source.options) option.disabled = option.dataset.unavailable === '1' || (method !== 'Cash' && option.value !== 'bank');
@@ -32,14 +33,90 @@ function initializeFunding(root = document) {
         panel.dataset.ready = '1';
         const form = panel.closest('form');
         let resetVersion = 0;
+        let dateVersion = 0;
+        let dateAbort;
+        let dateTimer;
+        let requestedDate;
+        let loadedDate;
+        const dateAware = Boolean(panel.dataset.optionsUrl && panel.dataset.dateName);
+        const dateValue = () => (form?.elements.namedItem(panel.dataset.dateName)?.value || '').slice(0, 10);
+        async function updateFundingDate(force = false) {
+            if (!dateAware) return;
+            const date = dateValue();
+            if (!force && date === requestedDate) return;
+            requestedDate = date;
+            const version = ++dateVersion;
+            dateAbort?.abort();
+            const status = panel.querySelector('[data-funding-date-status]');
+            panel.dataset.fundingDateState = 'loading';
+            status.textContent = 'Loading balances and cashier status for the selected date…';
+            refreshFunding(panel);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                panel.dataset.fundingDateState = 'error';
+                status.textContent = 'Select a valid Transfer Date to load payment sources.';
+                refreshFunding(panel);
+                return;
+            }
+            const controller = new AbortController();
+            dateAbort = controller;
+            try {
+                const url = new URL(panel.dataset.optionsUrl, window.location.href);
+                url.searchParams.set('date', date);
+                const response = await fetch(url, {headers: {Accept: 'application/json'}, cache: 'no-store', signal: controller.signal});
+                const data = await response.json();
+                if (version !== dateVersion) return;
+                if (!response.ok || !Array.isArray(data.options)) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Could not load funding balances.');
+                panel.querySelectorAll('[data-funding-source]').forEach(select => {
+                    const value = select.value;
+                    select.replaceChildren(new Option('Select payment source', ''), ...data.options.map(item => {
+                        const option = new Option(`${item.label} · Rs. ${money(cents(item.balance))}${item.disabled ? ' · ' + (item.disabled_reason || 'Cashier closed') : ''}`, item.value);
+                        option.dataset.account = item.account_id;
+                        option.dataset.cashier = item.value.endsWith('_cashier') ? '1' : '0';
+                        option.dataset.unavailable = item.disabled ? '1' : '0';
+                        option.classList.toggle('bg-slate-200', item.disabled);
+                        option.classList.toggle('text-slate-400', item.disabled);
+                        return option;
+                    }));
+                    select.value = value;
+                });
+                loadedDate = date;
+                panel.dataset.fundingDateState = 'ready';
+                status.textContent = data.message;
+            } catch (error) {
+                if (version !== dateVersion || error.name === 'AbortError') return;
+                panel.dataset.fundingDateState = 'error';
+                status.textContent = (error.message || 'Could not load funding balances.') + ' Use Refresh balances to retry.';
+            }
+            refreshFunding(panel);
+        }
+        const dateChanged = event => {
+            if (dateAware && event.target.name === panel.dataset.dateName) {
+                clearTimeout(dateTimer);
+                // Invalidate pending responses immediately; only the latest date may populate options.
+                dateVersion++;
+                dateAbort?.abort();
+                requestedDate = undefined;
+                panel.dataset.fundingDateState = 'loading';
+                refreshFunding(panel);
+                dateTimer = setTimeout(() => updateFundingDate(), 150);
+            }
+        };
         form?.addEventListener('input', event => {
             if (event.target.matches('[data-funding-amount]')) event.target.dataset.edited = '1';
+            dateChanged(event);
             refreshFunding(panel);
         });
-        form?.addEventListener('change', () => refreshFunding(panel));
+        form?.addEventListener('change', event => { dateChanged(event); refreshFunding(panel); });
         form?.addEventListener('focusin', () => refreshFunding(panel));
-        form?.addEventListener('submit', () => refreshFunding(panel), true);
+        form?.addEventListener('submit', event => {
+            if (dateAware && (panel.dataset.fundingDateState !== 'ready' || loadedDate !== dateValue())) {
+                event.preventDefault();
+                updateFundingDate(true);
+            }
+            refreshFunding(panel);
+        }, true);
         panel.addEventListener('click', event => {
+            if (event.target.closest('[data-refresh-funding]')) updateFundingDate(true);
             if (event.target.closest('[data-add-funding]')) {
                 const rows = panel.querySelector('[data-funding-rows]');
                 if (rows.children.length >= 5) return;
@@ -76,9 +153,13 @@ function initializeFunding(root = document) {
         });
         form?.addEventListener('reset', () => {
             const version = resetVersion;
-            queueMicrotask(() => { if (version === resetVersion) panel.dispatchEvent(new CustomEvent('funding-reset')); });
+            queueMicrotask(() => {
+                if (version === resetVersion) panel.dispatchEvent(new CustomEvent('funding-reset'));
+                updateFundingDate(true);
+            });
         });
         refreshFunding(panel);
+        updateFundingDate();
     });
 }
 initializeFunding();

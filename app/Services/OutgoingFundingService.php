@@ -47,12 +47,19 @@ class OutgoingFundingService
     public function options(?string $date = null, bool $closing = false): array
     {
         $date ??= today()->toDateString();
-        $open = $closing ? CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists() : CashierSession::isOpenToday();
+        $selectedDate = Carbon::parse($date)->startOfDay();
+        $open = ($closing || $selectedDate->isToday()) && ! $selectedDate->isFuture()
+            && CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists();
         $balances = $this->balances($date);
+        $unavailableReason = ! $closing && ! $selectedDate->isToday()
+            ? 'Cashier funds require today’s date on this payment screen'
+            : 'No open cashier for '.$selectedDate->format('d M Y');
 
         return collect(self::SOURCES)->map(fn ($label, $source) => [
-            'value' => $source, 'label' => $label, 'account_id' => Account::systemAccount($this->type($source))->id,
+            'value' => $source, 'label' => $selectedDate->isToday() ? $label : str_replace('today’s cash', $selectedDate->format('d M Y').' cash', $label),
+            'account_id' => Account::systemAccount($this->type($source))->id,
             'balance' => $balances[$source], 'disabled' => str_ends_with($source, '_cashier') && ! $open,
+            'disabled_reason' => str_ends_with($source, '_cashier') && ! $open ? $unavailableReason : null,
         ])->values()->all();
     }
 
@@ -132,18 +139,21 @@ class OutgoingFundingService
         return array_map(fn ($row) => ['source' => $row['source'], 'amount' => number_format((float) $row['amount'], 2, '.', '')], $rows);
     }
 
-    public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense', ?CashierSession $closingSession = null): void
+    public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense', ?CashierSession $closingSession = null, bool $allowOpenDate = false): void
     {
         $rows = $this->plan(['funding' => $rows], $amount);
         $date = Carbon::parse($date ?? now());
-        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType, $closingSession) {
+        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType, $closingSession, $allowOpenDate) {
             app(CashierService::class)->lock();
-            $session = CashierSession::whereDate('session_date', $closingSession ? $date->toDateString() : today()->toDateString())->lockForUpdate()->first();
+            $session = CashierSession::whereDate('session_date', $closingSession || $allowOpenDate ? $date->toDateString() : today()->toDateString())->lockForUpdate()->first();
             $lateClose = $closingSession && $session?->id === $closingSession->id && $session->session_date->toDateString() === $date->toDateString() && ! $date->isFuture();
+            $openDatedTransfer = $allowOpenDate && ! $date->isFuture() && $session?->session_date->toDateString() === $date->toDateString();
             foreach ($rows as $row) {
                 $source = $row['source'];
-                if (str_ends_with($source, '_cashier') && ((! $date->isToday() && ! $lateClose) || $session?->status !== 'open')) {
-                    throw ValidationException::withMessages(['funding' => 'Cashier sources are available only for today while the cashier is open.']);
+                if (str_ends_with($source, '_cashier') && ((! $date->isToday() && ! $lateClose && ! $openDatedTransfer) || $session?->status !== 'open')) {
+                    throw ValidationException::withMessages(['funding' => $allowOpenDate
+                        ? 'Cashier sources require an open cashier for the selected transfer date. Refresh the funding options or choose the open cashier date.'
+                        : 'Cashier sources are available only for today while the cashier is open.']);
                 }
                 if ($source !== 'bank' && $method !== 'Cash') {
                     throw ValidationException::withMessages(['funding' => 'Use Cash for Main/Spare Parts sources. Select Bank Account for bank, card or cheque payments.']);

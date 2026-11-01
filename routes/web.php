@@ -381,6 +381,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
         Route::post('cash-book/{transaction}/reverse', [CashBookController::class, 'reverse'])->name('cash-book.reverse');
 
         Route::get('transfers', [AccountTransferController::class, 'index'])->name('transfers.index');
+        Route::get('transfers/funding-options', [AccountTransferController::class, 'fundingOptions'])->name('transfers.funding-options');
         Route::post('transfers', [AccountTransferController::class, 'store'])->name('transfers.store');
         Route::post('transfers/{transfer}/reverse', [AccountTransferController::class, 'reverse'])->name('transfers.reverse');
 
