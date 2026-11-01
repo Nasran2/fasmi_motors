@@ -48,12 +48,10 @@ class OutgoingFundingService
     {
         $date ??= today()->toDateString();
         $selectedDate = Carbon::parse($date)->startOfDay();
-        $open = ($closing || $selectedDate->isToday()) && ! $selectedDate->isFuture()
+        $open = ! $selectedDate->isFuture()
             && CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists();
         $balances = $this->balances($date);
-        $unavailableReason = ! $closing && ! $selectedDate->isToday()
-            ? 'Cashier funds require today’s date on this payment screen'
-            : 'No open cashier for '.$selectedDate->format('d M Y');
+        $unavailableReason = 'No open cashier for '.$selectedDate->format('d M Y');
 
         return collect(self::SOURCES)->map(fn ($label, $source) => [
             'value' => $source, 'label' => $selectedDate->isToday() ? $label : str_replace('today’s cash', $selectedDate->format('d M Y').' cash', $label),
@@ -137,17 +135,15 @@ class OutgoingFundingService
     {
         $rows = $this->plan(['funding' => $rows], $amount);
         $date = Carbon::parse($date ?? now());
-        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType, $closingSession, $allowOpenDate) {
+        DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType) {
             app(CashierService::class)->lock();
-            $session = CashierSession::whereDate('session_date', $closingSession || $allowOpenDate ? $date->toDateString() : today()->toDateString())->lockForUpdate()->first();
-            $lateClose = $closingSession && $session?->id === $closingSession->id && $session->session_date->toDateString() === $date->toDateString() && ! $date->isFuture();
-            $openDatedTransfer = $allowOpenDate && ! $date->isFuture() && $session?->session_date->toDateString() === $date->toDateString();
+            // All outgoing screens use the transaction's cash date, including
+            // an earlier day whose cashier has deliberately been left open.
+            $session = CashierSession::whereDate('session_date', $date->toDateString())->lockForUpdate()->first();
             foreach ($rows as $row) {
                 $source = $row['source'];
-                if (str_ends_with($source, '_cashier') && ((! $date->isToday() && ! $lateClose && ! $openDatedTransfer) || $session?->status !== 'open')) {
-                    throw ValidationException::withMessages(['funding' => $allowOpenDate
-                        ? 'Cashier sources require an open cashier for the selected transfer date. Refresh the funding options or choose the open cashier date.'
-                        : 'Cashier sources are available only for today while the cashier is open.']);
+                if (str_ends_with($source, '_cashier') && ($date->copy()->startOfDay()->isFuture() || $session?->status !== 'open')) {
+                    throw ValidationException::withMessages(['funding' => 'Cashier sources require an open cashier for the selected payment date. Refresh the funding options or choose the open cashier date.']);
                 }
                 if ($source !== 'bank' && $method !== 'Cash') {
                     throw ValidationException::withMessages(['funding' => 'Use Cash for Main/Spare Parts sources. Select Bank Account for bank, card or cheque payments.']);

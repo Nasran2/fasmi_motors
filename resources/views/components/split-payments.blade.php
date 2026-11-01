@@ -1,4 +1,4 @@
-@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'previousBalance' => 0, 'duePreview' => false, 'allowCashChange' => true])
+@props(['accounts', 'purchase' => false, 'partyCheques' => [], 'changeTotal' => null, 'totalFromForm' => false, 'partsTotal' => 0, 'previousBalance' => 0, 'duePreview' => false, 'allowCashChange' => true, 'fundingDateName' => 'payment_date'])
 @php
     $methods = $purchase ? ['Cash','Bank Transfer','Card','Cheque','Party Cheque'] : ['Cash','Card','Bank Transfer','Cheque','QR'];
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode($purchase ? 'spare_parts' : 'main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
@@ -7,8 +7,23 @@
     $initial = old('payments', [['method'=>'Cash','source'=>($purchase ? 'spare_parts' : null),'amount'=>0,'account_id'=>$cashAccountId,'cheque_date'=>'','cheque_number'=>'','bank_name'=>'','party_cheque_id'=>'']]);
     $chequeOptions = collect($partyCheques)->map(fn($c)=>['id'=>$c->id,'amount'=>(float)$c->amount])->values();
 @endphp
-<div class="space-y-3 text-slate-800" x-data="{
+<div class="space-y-3 text-slate-800" @if($purchase) data-purchase-funding data-options-url="{{ route('funding.options') }}" data-date-name="{{ $fundingDateName }}" data-funding-date="{{ today()->toDateString() }}" @funding-options-loaded="applyFundingOptions($event.detail.options)" @funding-date-state="fundingState=$event.detail.state" @endif x-data="{
     rows: {{ Illuminate\Support\Js::from($initial) }}, cheques: {{ Illuminate\Support\Js::from($chequeOptions) }},
+    fundingOptions: {{ Illuminate\Support\Js::from($fundingOptions) }}, fundingState: 'loading',
+    applyFundingOptions(options) {
+        this.fundingOptions = options;
+        this.rows.forEach(row => {
+            if (row.method === 'Party Cheque') return;
+            const option = options.find(option => option.value === row.source);
+            if (!option || option.disabled || (row.method !== 'Cash' && option.value !== 'bank')) {
+                row.source = '';
+                row.account_id = '';
+            } else row.account_id = option.account_id;
+        });
+    },
+    fundingLabel(option) {
+        return option.label + ' · Rs. ' + Number(option.balance).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + (option.disabled ? ' · ' + option.disabled_reason : '');
+    },
     invoiceTotal: {{ Illuminate\Support\Js::from($changeTotal === null ? null : (float) $changeTotal) }},
     existingPaid: 0, existingHold: 0,
     allowCashChange: @js($allowCashChange),
@@ -41,9 +56,10 @@
         }
     }" @endif>
     <div class="flex items-center justify-between gap-3">
-        <div><h3 class="font-extrabold">Payments</h3><p class="mt-1 text-xs text-slate-500">{{ $purchase ? 'Split payment across opening funds, today’s cashier cash or Bank. Cashier sources require an open cashier.' : 'Add cash, bank payments or multiple cheques.' }}</p></div>
+        <div><h3 class="font-extrabold">Payments</h3><p class="mt-1 text-xs text-slate-500">{{ $purchase ? 'Split payment across account funds, the selected date’s cashier cash or Bank. Cashier sources require that date to be open.' : 'Add cash, bank payments or multiple cheques.' }}</p></div>
         <button type="button" class="btn-secondary text-xs shrink-0" @click="add()">＋ Add Payment</button>
     </div>
+    @if($purchase)<div class="flex flex-wrap items-center gap-2"><p class="text-xs text-slate-600" data-funding-date-status role="status">Cashier availability and balances follow the payment date.</p><button type="button" class="text-xs font-bold text-blue-700" data-refresh-funding>Refresh balances</button></div>@endif
     <template x-for="(row,index) in rows" :key="index">
         <div class="payment-entry rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3" @input="$dispatch('split-payment-change')" @change="$dispatch('split-payment-change')">
             <div class="flex items-center justify-between gap-2 text-xs">
@@ -54,8 +70,9 @@
                 <label><span class="label">Method</span><select class="field" x-model="row.method" @change="row.account_id=defaultAccount(row.method); row.source=row.method==='Cash' ? 'spare_parts' : 'bank'" :name="`payments[${index}][method]`">@foreach($methods as $method)<option>{{ $method }}</option>@endforeach</select></label>
                 <label><span class="label" @if($changeTotal !== null && $allowCashChange) x-text="row.method === 'Cash' ? 'Cash received' : 'Amount'" @endif>Amount</span><input class="field" type="number" min="0" step=".01" x-model.number="row.amount" :readonly="row.method==='Party Cheque'" :name="`payments[${index}][amount]`" required></label>
                 @if($purchase)
-                <label x-show="row.method !== 'Party Cheque'"><span class="label">Paid from source</span><select class="field" x-model="row.source" :name="`payments[${index}][source]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'" @change="row.account_id=$event.target.selectedOptions[0].dataset.account; if (row.source==='bank' && row.method==='Cash') row.method='Bank Transfer'">
-                    @foreach($fundingOptions as $option)<option value="{{ $option['value'] }}" data-account="{{ $option['account_id'] }}" :disabled="@js($option['disabled']) || (row.method !== 'Cash' && '{{ $option['value'] }}' !== 'bank')" @class(['bg-slate-200 text-slate-400' => $option['disabled']])>{{ $option['label'] }} · Rs. {{ number_format($option['balance'],2) }}{{ $option['disabled'] ? ' · Cashier closed' : '' }}</option>@endforeach
+                <label x-show="row.method !== 'Party Cheque'"><span class="label">Paid from source</span><select class="field" x-model="row.source" :disabled="fundingState!=='ready'" :name="`payments[${index}][source]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'" @change="row.account_id=$event.target.selectedOptions[0].dataset.account; if (row.source==='bank' && row.method==='Cash') row.method='Bank Transfer'">
+                    <option value="">Select payment source</option>
+                    <template x-for="option in fundingOptions" :key="option.value"><option :value="option.value" :data-account="option.account_id" :disabled="option.disabled || (row.method !== 'Cash' && option.value !== 'bank')" :class="option.disabled ? 'bg-slate-200 text-slate-400' : ''" x-text="fundingLabel(option)"></option></template>
                 </select><input type="hidden" x-model="row.account_id" :name="`payments[${index}][account_id]`"></label>
                 @else
                 <label x-show="row.method !== 'Party Cheque'"><span class="label">{{ $purchase ? 'Paid From Account' : 'Receiving Account' }}</span><select class="field" x-model="row.account_id" :name="`payments[${index}][account_id]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'"><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>

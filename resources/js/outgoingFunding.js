@@ -3,6 +3,10 @@ const money = value => (value / 100).toLocaleString('en-LK', { minimumFractionDi
 function refreshFunding(panel, force = false) {
     const form = panel.closest('form');
     if (!form) return;
+    if (panel.matches('[data-purchase-funding]')) {
+        panel.dispatchEvent(new CustomEvent('funding-date-state', {detail: {state: panel.dataset.fundingDateState || 'loading'}}));
+        return;
+    }
     const fields = name => form.elements.namedItem(name);
     const total = cents((Number(fields(panel.dataset.amountName)?.value) || 0) * (panel.dataset.quantityName ? (Number(fields(panel.dataset.quantityName)?.value) || 0) : 1));
     const rows = [...panel.querySelectorAll('[data-funding-row]')];
@@ -15,7 +19,7 @@ function refreshFunding(panel, force = false) {
         amount.name = `funding[${index}][amount]`;
         for (const option of source.options) option.disabled = option.dataset.unavailable === '1' || (method !== 'Cash' && option.value !== 'bank');
         if (method !== 'Cash' && source.value !== 'bank') source.value = 'bank';
-        if (source.selectedOptions[0]?.disabled) source.value = '';
+        if (panel.dataset.fundingDateState === 'ready' && source.selectedOptions[0]?.disabled) source.value = '';
         if (rows.length === 1 && (force || !amount.dataset.edited)) amount.value = (total / 100).toFixed(2);
         row.querySelector('[data-remove-funding]').hidden = rows.length === 1;
     }
@@ -35,18 +39,26 @@ function refreshFunding(panel, force = false) {
     panel.dispatchEvent(new CustomEvent('outgoing-funding-change', {bubbles:true, detail:rows.map(row => ({source:row.querySelector('[data-funding-source]').value, amount:row.querySelector('[data-funding-amount]').value}))}));
 }
 function initializeFunding(root = document) {
-    root.querySelectorAll('[data-outgoing-funding]').forEach(panel => {
+    root.querySelectorAll('[data-outgoing-funding], [data-purchase-funding]').forEach(panel => {
         if (panel.dataset.ready) return;
         panel.dataset.ready = '1';
         const form = panel.closest('form');
+        if (!panel.dataset.dateName) {
+            panel.dataset.dateName = ['payment_date', 'expense_date', 'drawing_date', 'transfer_date', 'purchase_date']
+                .find(name => form?.elements.namedItem(name)) || '';
+        }
+        const purchaseFunding = panel.matches('[data-purchase-funding]');
         let resetVersion = 0;
         let dateVersion = 0;
         let dateAbort;
         let dateTimer;
         let requestedDate;
         let loadedDate;
-        const dateAware = Boolean(panel.dataset.optionsUrl && panel.dataset.dateName);
-        const dateValue = () => (form?.elements.namedItem(panel.dataset.dateName)?.value || '').slice(0, 10);
+        const dateAware = Boolean(panel.dataset.optionsUrl);
+        const dateValue = () => {
+            const field = panel.dataset.dateName ? form?.elements.namedItem(panel.dataset.dateName) : null;
+            return (field ? field.value : (panel.dataset.fundingDate || '')).slice(0, 10);
+        };
         async function updateFundingDate(force = false) {
             if (!dateAware) return;
             const date = dateValue();
@@ -60,7 +72,7 @@ function initializeFunding(root = document) {
             refreshFunding(panel);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
                 panel.dataset.fundingDateState = 'error';
-                status.textContent = 'Select a valid Transfer Date to load payment sources.';
+                status.textContent = 'Select a valid payment date to load payment sources.';
                 refreshFunding(panel);
                 return;
             }
@@ -73,6 +85,7 @@ function initializeFunding(root = document) {
                 const data = await response.json();
                 if (version !== dateVersion) return;
                 if (!response.ok || !Array.isArray(data.options)) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Could not load funding balances.');
+                if (purchaseFunding) panel.dispatchEvent(new CustomEvent('funding-options-loaded', {detail: {options: data.options}}));
                 [...panel.querySelectorAll('[data-funding-source]'), ...form.querySelectorAll('[data-funding-destination]')].forEach(select => {
                     const value = select.value;
                     select.replaceChildren(new Option(select.matches('[data-funding-destination]') ? 'Select destination' : 'Select payment source', ''), ...data.options.map(item => {
@@ -114,8 +127,9 @@ function initializeFunding(root = document) {
             refreshFunding(panel);
         });
         form?.addEventListener('change', event => { dateChanged(event); refreshFunding(panel); });
-        form?.addEventListener('focusin', () => refreshFunding(panel));
+        form?.addEventListener('focusin', () => { updateFundingDate(); refreshFunding(panel); });
         form?.addEventListener('submit', event => {
+            if (panel.closest('fieldset:disabled')) return;
             if (dateAware && (panel.dataset.fundingDateState !== 'ready' || loadedDate !== dateValue())) {
                 event.preventDefault();
                 updateFundingDate(true);
@@ -140,6 +154,7 @@ function initializeFunding(root = document) {
         });
         panel.addEventListener('funding-reset', event => {
             resetVersion++;
+            if (purchaseFunding) { updateFundingDate(true); return; }
             const container = panel.querySelector('[data-funding-rows]');
             const template = container.firstElementChild.cloneNode(true);
             const selectedAccount = panel.querySelector('[data-funding-account]').value;
@@ -156,17 +171,18 @@ function initializeFunding(root = document) {
                 if (allocations.length > 1) amount.dataset.edited = '1';
                 return row;
             }));
+            updateFundingDate(true);
             refreshFunding(panel);
         });
         form?.addEventListener('reset', () => {
             const version = resetVersion;
             queueMicrotask(() => {
                 if (version === resetVersion) panel.dispatchEvent(new CustomEvent('funding-reset'));
-                updateFundingDate(true);
+                else updateFundingDate(true);
             });
         });
-        refreshFunding(panel);
         updateFundingDate();
+        refreshFunding(panel);
     });
 }
 initializeFunding();

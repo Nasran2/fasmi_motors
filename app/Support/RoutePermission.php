@@ -60,6 +60,13 @@ final class RoutePermission
 
     public static function allows(User $user, string $routeName, ?string $workspaceSection = null, array $parameters = [], array $query = []): bool
     {
+        if ($routeName === 'funding.options') {
+            return collect(['account.transfers', 'account.daily_closing', 'expense.add', 'drawing.add',
+                'technician.salaries', 'technician.advances', 'technician.commission',
+                'purchase.add', 'purchase.supplier_payments', 'job_card.add_parts',
+                'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
+                ->contains(fn ($permission) => $user->canAccess($permission));
+        }
         if (in_array($routeName, ['cashier.closing-popup', 'cashier.index', 'cashier.open', 'cashier.close', 'cashier.collections', 'cashier.movements', 'cashier.transaction-source', 'cashier.opening-popup', 'cashier.opening-balances', 'cashier.historical-opening'], true)) {
             return collect(['account.daily_closing', 'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
                 ->contains(fn ($permission) => $user->canAccess($permission));

@@ -22,6 +22,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DataManagementController;
 use App\Http\Controllers\ExpenseDrawingController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\FundingOptionsController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\InvoiceDetailsController;
 use App\Http\Controllers\JobAdvanceController;
@@ -53,6 +54,7 @@ use Illuminate\Support\Facades\Route;
 Route::redirect('/', '/login')->name('home');
 
 Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashier.open'])->group(function () {
+    Route::get('funding/options', FundingOptionsController::class)->name('funding.options');
     Route::get('cashier', [CashierController::class, 'index'])->name('cashier.index');
     Route::get('cashier/opening-popup', [CashierController::class, 'openingPopup'])->name('cashier.opening-popup');
     Route::get('cashier/collections', [CashierController::class, 'collections'])->name('cashier.collections');
