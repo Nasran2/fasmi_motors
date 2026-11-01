@@ -5,7 +5,7 @@
 @endphp
 <div {{ $attributes->class(['space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4']) }} data-outgoing-funding data-amount-name="{{ $amountName }}" data-quantity-name="{{ $quantityName }}" data-default-source="{{ $default }}" data-date-name="{{ $dateName }}" data-options-url="{{ $optionsUrl }}">
     <div class="flex items-center justify-between gap-3"><h3 class="font-bold">Pay from</h3><button type="button" class="btn-secondary text-xs" data-add-funding>＋ Split across accounts</button></div>
-    <p class="text-xs text-slate-600">Account = opening funds. Account Cashier = {{ $dateName ? 'cash for the selected transfer date' : 'today’s cash only' }}. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
+    <p class="text-xs text-slate-600">Main and Spare Parts = current total account balance, excluding {{ $dateName ? 'the selected date’s' : 'today’s' }} cashier funds. Account Cashier = {{ $dateName ? 'cash for the selected transfer date' : 'today’s cash only' }}. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
     @if($dateName && $optionsUrl)<div class="flex flex-wrap items-center gap-2"><p class="text-xs text-slate-600" data-funding-date-status role="status">Cashier availability and balances follow the Transfer Date.</p><button type="button" class="text-xs font-bold text-blue-700" data-refresh-funding>Refresh balances</button></div>@endif
     <input type="hidden" name="account_id" @if($accountId) id="{{ $accountId }}" @endif value="{{ collect($fundingOptions)->firstWhere('value', $fundingRows[0]['source'] ?? $default)['account_id'] ?? '' }}" data-funding-account>
     <div data-funding-rows>

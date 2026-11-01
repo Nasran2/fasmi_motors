@@ -18,9 +18,9 @@ use Illuminate\Validation\ValidationException;
 class OutgoingFundingService
 {
     public const SOURCES = [
-        'main' => 'Main Account — opening balance',
+        'main' => 'Main Account — total excluding cashier',
         'main_cashier' => 'Main Account Cashier — today’s cash',
-        'spare_parts' => 'Spare Parts Account — opening balance',
+        'spare_parts' => 'Spare Parts Account — total excluding cashier',
         'spare_parts_cashier' => 'Spare Parts Account Cashier — today’s cash',
         'bank' => 'Bank Account',
     ];
@@ -87,20 +87,14 @@ class OutgoingFundingService
 
                 continue;
             }
-            $prior = $entries->filter(fn ($entry) => $entry->transaction_date->lt($start));
             $today = $entries->filter(fn ($entry) => $entry->transaction_date->betweenIncluded($start, $end));
-            $openingCorrections = $today->whereIn('category', ['cashier_opening', 'cashier_account_opening']);
-            $spent = $today->where('funding_source', $type)->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']);
-            $result[$type] = round((float) $account->opening_balance + $prior->sum('credit') - $prior->sum('debit')
-                + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') + $spent->sum('credit') - $spent->sum('debit'), 2);
-            if ($context !== null) {
-                $result[$type] = round($context['accounts'][$type] + $spent->sum('credit') - $spent->sum('debit') - ($context['snapshot']['opening_funding'][$type] ?? 0)
-                    + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') - ($context['snapshot']['opening_corrections'][$type] ?? 0), 2);
-            }
-            $result[$type.'_cashier'] = round($this->cashierAmount($today, $type) - ($context['snapshot']['cashier'][$type] ?? 0), 2);
+            $cashierBalance = round($this->cashierAmount($today, $type) - ($context['snapshot']['cashier'][$type] ?? 0), 2);
             $ledgerBalance = round((float) $account->opening_balance + $entries->sum('credit') - $entries->sum('debit'), 2);
-            $result[$type] = min($result[$type], $ledgerBalance);
-            $result[$type.'_cashier'] = min($result[$type.'_cashier'], $ledgerBalance);
+            // Use the full current account total, including capital, transfers and corrections.
+            // Reserve the current cycle's cash for its separate Cashier source. A negative
+            // cashier position must not increase the amount available from the account.
+            $result[$type] = round($ledgerBalance - max(0, $cashierBalance), 2);
+            $result[$type.'_cashier'] = min($cashierBalance, $ledgerBalance);
         }
         $reserved = SupplierPayment::where('status', 'Hold')->where('funding_source', 'bank')->where('account_id', $accounts['bank']->id);
         $reserved = ($lock ? $reserved->lockForUpdate() : $reserved)->get()->sum('amount');
