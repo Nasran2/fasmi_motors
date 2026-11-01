@@ -248,35 +248,42 @@ class AccountService
         }
     }
 
-    /** Component budgets include the bill's discount/tax and always sum to its total. */
+    /** Service/labour and washing are protected; Spare Parts bears bill discounts. */
     public function receiptComponentBudgets(Invoice $invoice): array
     {
         $total = max(0, (int) round((float) $invoice->total * 100));
         if ($invoice->isOpeningDue()) {
             return ['service' => 0, 'labor' => 0, 'washing' => 0, 'other' => $total, 'spare_parts' => 0];
         }
-        $parts = max(0, (int) round((float) $invoice->parts_amount * 100));
+        $service = max(0, (int) round((float) $invoice->service_amount * 100));
+        $labor = max(0, (int) round((float) $invoice->labor_amount * 100));
         $washing = max(0, (int) round((float) $invoice->washing_amount * 100));
-        $partsOnly = $invoice->invoice_type === 'Parts Sale' && $parts > 0
-            && (float) $invoice->service_amount + (float) $invoice->labor_amount + (float) $invoice->washing_amount + (float) $invoice->other_amount == 0;
-        $parts = $partsOnly ? $total : min($total, $parts);
-        $washing = min($total - $parts, $washing);
-        $main = $total - $parts - $washing;
-        $service = min($main, max(0, (int) round((float) $invoice->service_amount * 100)));
-        $labor = min($main - $service, max(0, (int) round((float) $invoice->labor_amount * 100)));
+        // The residual includes Other, net parts (already less line discounts),
+        // bill discount and tax. Never push a discount into Main or Washing,
+        // even when it exceeds the bill's parts/Other charges.
+        $spare = $total - $service - $labor - $washing;
+        $other = min(max(0, $spare), max(0, (int) round((float) $invoice->other_amount * 100)));
 
-        // Keep the existing full-bill account totals, including discount/tax
-        // treatment. Only the order of collecting those balances changes.
         return ['service' => $service, 'labor' => $labor, 'washing' => $washing,
-            'other' => $main - $service - $labor, 'spare_parts' => $parts];
+            'other' => $other, 'spare_parts' => $spare - $other];
     }
 
     public function receiptComponentAllocation(Invoice $invoice, int $amount): array
     {
         $remaining = max(0, $amount);
         $allocation = [];
-        foreach ($this->receiptComponentBudgets($invoice) as $type => $budget) {
-            $allocation[$type] = min($remaining, $budget);
+        $budgets = $this->receiptComponentBudgets($invoice);
+        $total = max(0, (int) round((float) $invoice->total * 100));
+        if ($total > 0 && $remaining >= $total && $budgets['spare_parts'] < 0) {
+            // Settle an excessive discount from Spare Parts with the final
+            // receipt. Before settlement, keep actual collections in priority
+            // order; an unpaid bill must not create an account debit.
+            $budgets['other'] += $remaining - $total;
+
+            return $budgets;
+        }
+        foreach ($budgets as $type => $budget) {
+            $allocation[$type] = min($remaining, max(0, $budget));
             $remaining -= $allocation[$type];
         }
         // Legacy zero-total receipts must still reconcile to their recorded money.
@@ -289,8 +296,16 @@ class AccountService
     {
         $parts = $this->receiptComponentAllocation($invoice, $amount);
 
-        return ['spare_parts' => $parts['spare_parts'], 'washing' => $parts['washing'],
-            'main' => $parts['service'] + $parts['labor'] + $parts['other']];
+        return $this->componentAccounts($invoice, $parts);
+    }
+
+    private function componentAccounts(Invoice $invoice, array $parts): array
+    {
+        // Opening dues use the Other column as a legacy receipt placeholder;
+        // they are not a job's Other charge and continue to settle into Main.
+        return ['spare_parts' => $parts['spare_parts'] + ($invoice->isOpeningDue() ? 0 : $parts['other']),
+            'washing' => $parts['washing'],
+            'main' => $parts['service'] + $parts['labor'] + ($invoice->isOpeningDue() ? $parts['other'] : 0)];
     }
 
     public function orderedReceipts(Invoice $invoice, ?Payment $current = null, CarbonInterface|string|null $settledAt = null)
@@ -331,7 +346,6 @@ class AccountService
     {
         $parts = $this->paymentComponentAllocation($invoice, $payment, $settledAt);
 
-        return ['spare_parts' => $parts['spare_parts'], 'washing' => $parts['washing'],
-            'main' => $parts['service'] + $parts['labor'] + $parts['other']];
+        return $this->componentAccounts($invoice, $parts);
     }
 }

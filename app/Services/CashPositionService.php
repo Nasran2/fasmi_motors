@@ -60,7 +60,11 @@ class CashPositionService
                     $internalIn += max(0, $net);
                     $internalOut += max(0, -$net);
                 }
-                if ($net > 0) {
+                if ($receipt && $entries->first()->reference_type === (new Payment)->getMorphClass()) {
+                    // A bill discount can make the Spare Parts share negative.
+                    // This offsets the receipt allocation; it is not cash paid out.
+                    $income += $net;
+                } elseif ($net > 0) {
                     if ($receipt) {
                         $income += $net;
                     } else {

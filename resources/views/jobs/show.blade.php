@@ -82,6 +82,7 @@
     <input type="hidden" name="other_income_name" id="hidden_other_income_name" x-model="otherIncomeName" value="{{ old('other_income_name', $job->other_income_name ?: 'Other Income') }}">
     <label class="flex justify-between items-end mb-1.5"><span class="label !mb-0 flex items-center gap-1"><span id="lbl_other_income_name" x-text="otherIncomeName">{{ $job->other_income_name ?: 'Other Income' }}</span> (LKR) <button type="button" onclick="editName('Other Income', 'hidden_other_income_name')" class="text-blue-500 hover:text-blue-700" @disabled($isLocked)>✏️</button></span></label>
     <input type="number" step=".01" name="other_total" x-model.number="otherTotal" value="{{ $job->other_total }}" class="field" @disabled($isLocked)>
+    <p class="mt-2 text-xs text-slate-500">Cash received for Other goes to Spare Parts Cashier.</p>
 </div>
 
 <div class="sm:col-span-2 grid gap-4 sm:grid-cols-3">
@@ -93,6 +94,7 @@
     <label><span class="label">Fixed discount (LKR)</span><input type="number" step=".01" min="0" max="999999999999.99" name="fixed_discount" x-model.number="fixedDiscount" value="{{ old('fixed_discount', $job->fixed_discount ?? 0) }}" class="field text-right" @disabled($isLocked)></label>
     <label><span class="label">Tax (LKR)</span><input type="number" step=".01" name="tax" x-model.number="taxTotal" value="{{ $job->tax }}" class="field" @disabled($isLocked)></label>
     <p class="sm:col-span-3 text-sm font-bold text-slate-700" aria-live="polite">Total discount: Rs. <span x-text="discountAmount.toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})">{{ number_format($job->discount, 2) }}</span></p>
+    <p class="sm:col-span-3 text-xs text-slate-500">Percentage and fixed discounts are deducted from Spare Parts Account.</p>
 </div>
 
 <div class="sm:col-span-2 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2">@if($isLocked)<button type="button" onclick="openUnlockModal()" class="w-full sm:w-auto btn-primary bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 px-4 shadow-lg shadow-amber-100 transition-colors order-2 sm:order-1">🔓 Request Changes / Edit Job</button><button class="w-full sm:w-auto btn-primary bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 px-6 shadow-lg shadow-emerald-100 transition-colors order-1 sm:order-2">Update Status</button>@else<button class="btn-primary">Update job</button>@endif</div></form></div>
