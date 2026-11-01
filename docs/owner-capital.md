@@ -1,0 +1,13 @@
+# Owner capital
+
+Expenses & Drawings → Owner Capital lists owner contributions, with Add Owner Capital in the same menu. A new entry defaults to Spare Parts Account and Cash; Main or Bank can be selected instead. Bank transfers require Bank Account. Capital credits the selected account directly, independently of customer receipts, sales revenue and the physical cashier drawer. It can be entered while the cashier is closed. It becomes available in that account's funds and carries through its ledger balance.
+
+View shows owner, effective date, amount, destination, method, reference, notes, account postings and change history. Filters support dates, owner/reference/note search, destination and Active / Deleted / All entries. Edit and Delete require reasons; edits reverse the previous effective-date posting before recording its replacement, while deletion soft-deletes the entry and reverses its credit. Reversed originals and their compensation remain posted, so they net to zero rather than counting the correction twice. Deleted entries remain viewable from the list and ledger source links. Previously recorded cashier opening/closing counts are retained; corrections affect ledger-derived balances without rewriting those counted amounts.
+
+Saving uses the existing account/cashier locks and a record version to reject stale edits. Mutations are transactional, audited and use submission tokens. The record and selectable accounts are scoped to the selected shop. Capital has its own transaction type, owner_capital, and is included in account balance credits without being classified as sales income. Capital goes into Main/Spare Parts account funds, not their Cashier pools.
+
+The separate capital.view, capital.add, capital.edit and capital.delete permissions are available under User Management → Permissions → Expenses & Drawings. Super Admin retains full access; Admin and Accountant seed defaults include the four permissions. Existing non-super-admin role grants are not changed automatically: enable the desired permissions through User Management. Do not rerun DatabaseSeeder on an existing installation just to grant permissions.
+
+Deploy migration 2026_11_01_000001_create_owner_capitals_table before using the module, and rebuild frontend assets. Clear cached route/config files through the normal deployment process if they are cached. No application tests or browser checks were run for this update, per the user's instruction. No live-server changes were made.
+
+The new migration was applied to the guarded local development database only, and the frontend production build completed successfully. No capital entries or financial transactions were created as part of implementation.

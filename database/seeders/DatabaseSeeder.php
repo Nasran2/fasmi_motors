@@ -27,6 +27,9 @@ class DatabaseSeeder extends Seeder
             'Technician' => ['dashboard.view', 'intake.view', 'job_card.view', 'job_card.change_status', 'customer.view', 'bike.view', 'technician.view', 'technician.attendance', 'technician.history'],
             'Accountant' => ['dashboard.view', 'purchase.view', 'purchase.supplier_payments', 'purchase.view_due', 'sales.view_invoices', 'sales.receive_payments', 'sales.due_bills', 'sales.customer_payments', 'account.view_main', 'account.view_spare_parts', 'account.view_bank', 'account.view_cash_book', 'account.transfers', 'account.daily_closing', 'account.cheques', 'account.bank_payments', 'account.opening_balances', 'account.edit_ledger', 'account.adjustment', 'account.reopen_closing', 'expense.view', 'expense.add', 'expense.cancel', 'expense.categories', 'drawing.view', 'drawing.add', 'drawing.cancel', 'drawing.categories', 'reports.view', 'reports.export_pdf', 'reports.export_excel', 'reports.print'],
         ];
+        foreach (['Admin', 'Accountant'] as $name) {
+            $permissions[$name] = array_merge($permissions[$name], ['capital.view', 'capital.add', 'capital.edit', 'capital.delete']);
+        }
         foreach (['Super Admin', 'Admin', 'Manager', 'Cashier', 'Store Keeper', 'Technician', 'Accountant'] as $name) {
             Role::updateOrCreate(['name' => $name], ['permissions' => $name === 'Super Admin' ? [] : $permissions[$name]]);
         }

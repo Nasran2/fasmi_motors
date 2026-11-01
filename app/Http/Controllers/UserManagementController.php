@@ -419,6 +419,10 @@ class UserManagementController extends Controller
                 'drawing.edit' => 'Edit Drawing',
                 'drawing.cancel' => 'Cancel Drawing',
                 'drawing.categories' => 'Drawing Categories',
+                'capital.view' => 'View Owner Capital',
+                'capital.add' => 'Add Owner Capital',
+                'capital.edit' => 'Edit Owner Capital',
+                'capital.delete' => 'Delete Owner Capital',
             ],
             'Service Reminders' => [
                 'reminder.view' => 'View Reminders',

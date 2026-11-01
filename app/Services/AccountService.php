@@ -47,7 +47,7 @@ class AccountService
             // Expenses/payments decrease balance
 
             $isIncrease = in_array($transactionType, [
-                'income', 'payment', 'transfer_in', 'payment_received', 'opening_balance', 'adjustment_increase',
+                'income', 'payment', 'transfer_in', 'payment_received', 'opening_balance', 'adjustment_increase', 'owner_capital',
             ]);
 
             $debit = 0;
