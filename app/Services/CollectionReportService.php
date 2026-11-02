@@ -65,6 +65,7 @@ class CollectionReportService
                 'date' => $income->transaction_date, 'number' => $reference?->number ?: $income->transaction_no,
                 'invoice' => $members->pluck('invoice.number')->filter()->unique()->implode(', ') ?: $invoice?->number, 'payment_ids' => $members->pluck('id')->all(), 'customer' => $invoice?->customer?->name ?: ($reference instanceof JobAdvance ? $reference->jobCard?->customer?->name : null),
                 'description' => $income->description, 'method' => $income->payment_method ?: 'Cash',
+                'source_transaction_ids' => $group->pluck('id')->all(),
                 'channel' => $income->account_id === $bankId ? 'bank' : 'cash', 'amount' => $amount,
                 'components' => array_map(fn ($cents) => $cents / 100, $components),
             ]);

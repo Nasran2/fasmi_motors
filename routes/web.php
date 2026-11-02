@@ -59,6 +59,7 @@ Route::middleware(['auth', 'verified', 'active.user', 'route.permission', 'cashi
     Route::get('cashier/opening-popup', [CashierController::class, 'openingPopup'])->name('cashier.opening-popup');
     Route::get('cashier/collections', [CashierController::class, 'collections'])->name('cashier.collections');
     Route::get('cashier/movements', [CashierController::class, 'movements'])->name('cashier.movements');
+    Route::get('cashier/card-details', [CashierController::class, 'cardDetails'])->name('cashier.card-details');
     Route::get('cashier/transactions/{transaction}/source', AccountTransactionSourceController::class)->whereNumber('transaction')->name('cashier.transaction-source');
     Route::post('cashier/open', [CashierController::class, 'open'])->name('cashier.open');
     Route::post('cashier/historical-opening', [CashierController::class, 'recordHistoricalOpening'])->name('cashier.historical-opening');

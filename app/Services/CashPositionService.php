@@ -8,36 +8,77 @@ use App\Models\AccountTransfer;
 use App\Models\CashierSession;
 use App\Models\Payment;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 
 class CashPositionService
 {
     public const ACCOUNTS = ['main' => 'Main Account', 'washing' => 'Washing Account', 'spare_parts' => 'Spare Parts Account'];
+
+    private function cashQuery(string $type, bool $movementsOnly)
+    {
+        $bankId = Account::systemAccount('bank')->id;
+        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($type)->id)
+            ->where(fn ($query) => $query->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
+            ->where(function ($query) use ($bankId) {
+                $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
+                    ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
+                    ->orWhere(function ($query) use ($bankId) {
+                        $query->where('reference_type', (new AccountTransfer)->getMorphClass())
+                            ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
+                    });
+            });
+        if ($movementsOnly) {
+            $query->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', [
+                'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase',
+                'cashier_account_opening', 'cashier_account_reconciliation',
+            ]));
+        }
+
+        return $query;
+    }
+
+    private function groups(Collection $rows, array $collectedPaymentIds): Collection
+    {
+        return $rows->groupBy(fn ($row) => $row->reference_id ? $row->reference_type.'|'.$row->reference_id : 'entry-'.$row->id)
+            ->map(fn ($entries) => [
+                'entries' => $entries,
+                'net' => round($entries->sum('credit') - $entries->sum('debit'), 2),
+                'receipt' => $entries->contains(fn ($row) => $row->reference_type === (new Payment)->getMorphClass()
+                    ? in_array($row->reference_id, $collectedPaymentIds) : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true)),
+                'internal' => $entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep'),
+            ]);
+    }
+
+    /** The exact net cash movements used in accounts(), with their source entries. */
+    public function movementDetails(string $date, ?CashierSession $session, Collection $collections): Collection
+    {
+        $paymentIds = $collections->where('channel', 'cash')->pluck('payment_ids')->flatten()->all();
+        $result = collect();
+        foreach (self::ACCOUNTS as $type => $label) {
+            $rows = $this->cashQuery($type, $session?->drawer_opening_balance !== null)
+                ->whereDate('transaction_date', $date)->orderBy('transaction_date')->orderBy('id')->get()
+                ->where('category', '!=', 'cashier_opening');
+            foreach ($this->groups($rows, $paymentIds) as $group) {
+                if ($group['internal'] || $group['net'] == 0) {
+                    continue;
+                }
+                $receiptAllocation = $group['receipt'] && ($group['net'] > 0 || $group['entries']->first()->reference_type === (new Payment)->getMorphClass());
+                $result->push($group + ['account' => $label, 'kind' => $receiptAllocation ? 'receipt' : ($group['net'] < 0 ? 'paid' : 'other')]);
+            }
+        }
+
+        return $result;
+    }
 
     public function accounts(string $date, ?CashierSession $session = null, $collections = null, bool $movementsOnly = false, ?string $through = null): array
     {
         $start = Carbon::parse($date)->startOfDay();
         $collections ??= app(CollectionReportService::class)->rows($date, $through ?? $date);
         $collectedPaymentIds = $collections->where('channel', 'cash')->pluck('payment_ids')->flatten()->all();
-        $bankId = Account::systemAccount('bank')->id;
         $result = [];
         foreach (self::ACCOUNTS as $type => $label) {
             $account = Account::systemAccount($type);
-            $base = AccountTransaction::posted()->where('account_id', $account->id)
-                ->where(fn ($query) => $query->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
-                ->where(function ($query) use ($bankId) {
-                    $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
-                        ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
-                        ->orWhere(function ($query) use ($bankId) {
-                            $query->where('reference_type', (new AccountTransfer)->getMorphClass())
-                                ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
-                        });
-                });
-            if ($movementsOnly) {
-                $base->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', [
-                    'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase',
-                    'cashier_account_opening', 'cashier_account_reconciliation',
-                ]));
-            }
+            $base = $this->cashQuery($type, $movementsOnly);
             $prior = (clone $base)->where('transaction_date', '<', $start);
             $opening = (float) $account->opening_balance + (float) (clone $prior)->sum('credit') - (float) (clone $prior)->sum('debit');
             $rows = (clone $base)->whereBetween('transaction_date', [$start, Carbon::parse($through ?? $date)->endOfDay()])->get();
@@ -51,12 +92,9 @@ class CashPositionService
             }
             $rows = $rows->where('category', '!=', 'cashier_opening');
             $income = $expenses = $outgoing = $otherIn = $internalIn = $internalOut = 0.0;
-            $groups = $rows->groupBy(fn ($row) => $row->reference_id ? $row->reference_type.'|'.$row->reference_id : 'entry-'.$row->id);
-            foreach ($groups as $entries) {
-                $net = round($entries->sum('credit') - $entries->sum('debit'), 2);
-                $receipt = $entries->contains(fn ($row) => $row->reference_type === (new Payment)->getMorphClass()
-                    ? in_array($row->reference_id, $collectedPaymentIds) : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true));
-                if ($entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep')) {
+            foreach ($this->groups($rows, $collectedPaymentIds) as $group) {
+                ['entries' => $entries, 'net' => $net, 'receipt' => $receipt] = $group;
+                if ($group['internal']) {
                     $internalIn += max(0, $net);
                     $internalOut += max(0, -$net);
                 }

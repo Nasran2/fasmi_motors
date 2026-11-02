@@ -10,6 +10,7 @@ use App\Models\Technician;
 use App\Services\AccountService;
 use App\Services\AccountTransactionSourceService;
 use App\Services\CashierAccountBalanceService;
+use App\Services\CashierCardBreakdownService;
 use App\Services\CashierClosingHistoryService;
 use App\Services\CashierService;
 use App\Services\CollectionReportService;
@@ -17,11 +18,34 @@ use App\Services\DrawerCashierService;
 use App\Services\OutgoingFundingService;
 use App\Services\WashingCommissionService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class CashierController extends Controller
 {
+    public function cardDetails(Request $request, CashierService $cashier, CashierCardBreakdownService $breakdowns)
+    {
+        $values = $request->validate([
+            'date' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'card' => 'required|in:opening,received,paid,balance',
+            'page' => 'sometimes|integer|min:1',
+        ]);
+        $date = $values['date'];
+        $card = $values['card'];
+        $session = CashierSession::whereDate('session_date', $date)->first();
+        $summary = $cashier->summary($date);
+        $labels = ['opening' => 'Opening cash in hand', 'received' => 'Cash collected today', 'paid' => 'Cash paid out today', 'balance' => 'Cash in hand now'];
+        $totals = ['opening' => $summary['cash_opening'], 'received' => $summary['cash_received'], 'paid' => $summary['cash_paid'], 'balance' => $summary['cash_in_hand']];
+        $items = $breakdowns->breakdown($date, $summary, $session, $request->user())[$card];
+        $page = $request->integer('page', 1);
+        $rows = new LengthAwarePaginator($items->forPage($page, 25)->values(), $items->count(), 25, $page,
+            ['path' => $request->url(), 'query' => $request->query()]);
+        $events = $card === 'opening' ? ($session?->events()->with('creator')->whereIn('action', ['opened', 'reopened', 'opening_recorded', 'opening_corrected'])->orderBy('id')->get() ?? collect()) : collect();
+
+        return view('cashier.card-details-popup', compact('date', 'card', 'labels', 'totals', 'summary', 'rows', 'events'));
+    }
+
     public function movements(Request $request, AccountTransactionSourceService $sources)
     {
         $values = $request->validate([

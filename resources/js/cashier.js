@@ -281,6 +281,8 @@ export async function openCashierMovements(url) {
     };
     dialog.addEventListener('click', event => {
         if (event.target.closest('[data-close-cashier-movements]')) dialog.close();
+        const summaryLink = event.target.closest('[data-cashier-summary-link]');
+        if (summaryLink) { event.preventDefault(); load(summaryLink.href); }
         const page = event.target.closest('[data-movement-pagination] a');
         if (page) { event.preventDefault(); load(page.href); }
     });

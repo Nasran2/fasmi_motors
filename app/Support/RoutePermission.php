@@ -67,7 +67,7 @@ final class RoutePermission
                 'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
                 ->contains(fn ($permission) => $user->canAccess($permission));
         }
-        if (in_array($routeName, ['cashier.closing-popup', 'cashier.index', 'cashier.open', 'cashier.close', 'cashier.collections', 'cashier.movements', 'cashier.transaction-source', 'cashier.opening-popup', 'cashier.opening-balances', 'cashier.historical-opening'], true)) {
+        if (in_array($routeName, ['cashier.closing-popup', 'cashier.index', 'cashier.open', 'cashier.close', 'cashier.collections', 'cashier.movements', 'cashier.card-details', 'cashier.transaction-source', 'cashier.opening-popup', 'cashier.opening-balances', 'cashier.historical-opening'], true)) {
             return collect(['account.daily_closing', 'job_card.create', 'sales.parts_sales', 'sales.job_card_billing'])
                 ->contains(fn ($permission) => $user->canAccess($permission));
         }
