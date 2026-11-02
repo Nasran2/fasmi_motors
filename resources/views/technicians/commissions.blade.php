@@ -2,6 +2,7 @@
 <div class="space-y-5">
     <div class="flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase text-red-600">Staff / Separate Commission</p><h1 class="page-title">Technician Commission</h1><p class="page-subtitle">View commission by person, deduct with a reason and pay separately from salary.</p></div><a href="#commission-form" class="btn-primary">Add Manual Commission</a></div>
     <x-flash />
+    <p class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">Earned commission, including washing commission, does not deduct cash or account balances automatically. Use Pay to record money paid manually. Deduct only reduces the commission owed to the staff member; it does not record money paid out.</p>
     <form method="GET" class="panel grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4" x-data="{ period: @js(request('period', 'month')) }">
         <label><span class="label">Report period</span><select name="period" x-model="period" class="field"><option value="day">Daily</option><option value="month">Monthly</option><option value="custom">Custom dates</option><option value="all">All dates</option></select></label>
         <label x-show="period === 'day'"><span class="label">Date</span><input name="date" type="date" value="{{ request('date', today()->toDateString()) }}" class="field"></label>

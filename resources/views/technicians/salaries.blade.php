@@ -208,6 +208,9 @@
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1 items-center">
                   <a href="{{ route('technicians.salaries.slip', $sheet) }}" class="btn-secondary !px-2.5 !py-1 text-xs">Slip</a>
+                  @if(in_array($sheet->status, ['Draft', 'Finalized', 'Partially Paid', 'Paid'], true))
+                  <button type="button" class="btn-secondary !px-2.5 !py-1 text-xs text-blue-700" onclick="openSalaryRecalculation('{{ route('technicians.salaries.refresh-attendance', $sheet) }}', '{{ $sheet->number }}')">Recalculate</button>
+                  @endif
                   @if($sheet->status === 'Draft')
                   <a href="{{ route('technicians.salaries.show', $sheet) }}#salary-adjustments" class="btn-secondary !px-2.5 !py-1 text-xs">Add / Deduct</a>
                   <form method="POST" action="{{ route('technicians.salaries.destroy', $sheet) }}" data-confirm="Delete this draft paysheet?">
@@ -217,7 +220,7 @@
                   <button type="button" onclick="openPaymentModal('finalize', '{{ route('technicians.salaries.finalize', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}', '{{ route('technicians.salaries.repair-deductions', $sheet) }}')" class="btn-primary !px-2.5 !py-1 text-xs">Finalize</button>
                   @elseif($sheet->status !== 'Paid')
                   @if((float) $sheet->balance_amount > 0)
-                  <button type="button" onclick="openPaymentModal('pay', '{{ route('technicians.salaries.pay', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}', '{{ route('technicians.salaries.repair-deductions', $sheet) }}')" class="btn-secondary !px-2.5 !py-1 text-xs text-emerald-600">Mark Paid</button>
+                  <button type="button" onclick="openPaymentModal('pay', '{{ route('technicians.salaries.pay', $sheet) }}', '{{ $sheet->balance_amount }}', '{{ $sheet->number }}', '{{ route('technicians.salaries.repair-deductions', $sheet) }}')" class="btn-secondary !px-2.5 !py-1 text-xs text-emerald-600">Pay / Partial Pay</button>
                   @else
                   <span class="text-xs text-slate-500">No cash due</span>
                   @endif
@@ -527,6 +530,23 @@
     let repairPaymentRequest = 0;
     let repairPaymentData = null;
     let repairPaymentLoading = false;
+    function openSalaryRecalculation(url, number) {
+        const form = document.getElementById('salary-recalculate-form');
+        form.action = url;
+        form.querySelector('[name="reason"]').value = '';
+        document.getElementById('salary-recalculate-number').textContent = number;
+        Flux.modal('salary-recalculate-modal').show();
+    }
+
+    function updateSalaryPaymentChoice() {
+        const choice = document.getElementById('salary-payment-choice').value;
+        const input = document.getElementById('payment-amount');
+        input.readOnly = choice !== 'partial';
+        input.value = choice === 'unpaid' ? '0.00' : choice === 'full' ? input.max : '';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        updatePaymentRequiredFields();
+    }
+
     function openPaymentModal(action, url, balance, sheetNumber, repairUrl) {
         const requestId = ++repairPaymentRequest;
         repairPaymentData = null;
@@ -534,8 +554,15 @@
         showSalarySaveAlert('payment-save-alert', '');
         const form = document.getElementById('payment-form');
         form.action = url;
+        form.dataset.paymentAction = action;
         const amountInput = document.getElementById('payment-amount');
         amountInput.value = balance;
+        amountInput.readOnly = true;
+        const choice = document.getElementById('salary-payment-choice');
+        choice.value = 'full';
+        choice.querySelector('[value="unpaid"]').hidden = action !== 'finalize';
+        choice.querySelector('[value="unpaid"]').disabled = action !== 'finalize';
+        document.getElementById('payment-balance-before').textContent = salaryMoney(balance);
         form.querySelector('[data-outgoing-funding]').dispatchEvent(new CustomEvent('funding-reset'));
         amountInput.max = Math.max(0, Number(balance));
         
@@ -545,13 +572,13 @@
         
         if (action === 'finalize') {
             title.textContent = 'Finalize Paysheet ' + sheetNumber;
-            desc.textContent = 'You can process the payment now, or leave the amount as 0 to just finalize and lock it.';
+            desc.textContent = 'Choose full payment, partial payment or finalize only. For a payment, select its date and source.';
             btn.textContent = 'Finalize & Save';
             amountInput.required = false;
             amountInput.min = 0;
         } else {
             title.textContent = 'Pay Balance for ' + sheetNumber;
-            desc.textContent = 'Record a payment for this finalized paysheet.';
+            desc.textContent = 'Choose full or partial payment, then select the payment date and source. Previous payments stay recorded.';
             btn.textContent = 'Record Payment';
             amountInput.required = true;
             amountInput.min = 0.01;
@@ -628,7 +655,13 @@
             });
             if (!data.rows.length) document.getElementById('payment-repair-summary').textContent = 'No staff bike repair deductions for this paysheet.';
             if (data.editable) updateRepairPaymentTotal(data);
-            else updatePaymentRequiredFields();
+            else {
+                amountInput.max = Number(data.balance_amount).toFixed(2);
+                if (choice.value === 'full') amountInput.value = amountInput.max;
+                document.getElementById('payment-balance-before').textContent = salaryMoney(data.balance_amount);
+                amountInput.dispatchEvent(new Event('input', {bubbles: true}));
+                updatePaymentRequiredFields();
+            }
         }).catch(error => {
             if (requestId !== repairPaymentRequest) return;
             document.getElementById('payment-repair-summary').textContent = error.message;
@@ -641,9 +674,11 @@
         const total = [...document.querySelectorAll('#payment-repair-rows input')].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
         const balance = Math.max(0, Math.round((data.net_before_repairs - total - data.paid_amount) * 100) / 100);
         const amountInput = document.getElementById('payment-amount');
-        if (Number(amountInput.value) === Number(form.dataset.suggestedBalance)) amountInput.value = balance.toFixed(2);
         amountInput.max = balance.toFixed(2);
         form.dataset.suggestedBalance = balance;
+        if (document.getElementById('salary-payment-choice').value === 'full') amountInput.value = balance.toFixed(2);
+        document.getElementById('payment-balance-before').textContent = salaryMoney(balance);
+        amountInput.dispatchEvent(new Event('input', {bubbles: true}));
         document.getElementById('payment-repair-total').textContent = `Repair deduction applied Rs. ${Math.min(total, data.net_before_repairs).toFixed(2)} · Salary balance Rs. ${balance.toFixed(2)}${total > data.net_before_repairs ? ' · Unrecovered repair balance carries forward' : ''}`;
         updatePaymentRequiredFields();
     }
@@ -652,8 +687,16 @@
         const amountInput = document.getElementById('payment-amount');
         const amount = parseFloat(amountInput.value) || 0;
         const isPay = amount > 0;
+        const requireAmount = document.getElementById('salary-payment-choice').value === 'partial'
+            || document.getElementById('payment-form').dataset.paymentAction === 'pay';
+        amountInput.required = requireAmount;
+        amountInput.min = requireAmount ? '0.01' : '0';
+        document.getElementById('salary-payment-funding').disabled = !isPay;
         document.getElementById('payment-account').required = isPay;
         document.getElementById('payment-method-modal').required = isPay;
+        document.getElementById('salary-payment-date').required = isPay;
+        const remaining = Math.max(0, salaryCents(amountInput.max) - salaryCents(amountInput.value));
+        document.getElementById('payment-balance-after').textContent = salaryMoney(remaining / 100);
         let invalidRepair = false;
         let repairTotal = 0;
         document.querySelectorAll('#payment-repair-rows input').forEach(input => {
@@ -670,6 +713,17 @@
     }
   </script>
 
+  <flux:modal name="salary-recalculate-modal" class="w-full max-w-xl">
+      <form method="POST" id="salary-recalculate-form" class="space-y-4">
+          @csrf<x-submission-token/>
+          <h2 class="text-lg font-black">Recalculate <span id="salary-recalculate-number"></span></h2>
+          <p class="text-sm text-slate-600">Update attendance, OT, full basic salary and contributions using current rules for this paysheet's saved period. Manual adjustments stay. Finalized sheets keep applied advances, repair deductions and old-balance recoveries. Payments and their dates stay recorded.</p>
+          <p class="text-sm text-amber-800">The balance and payment status will update. Any salary overpayment is recorded as a balance for later recovery. This action does not pay or refund money.</p>
+          <label class="block"><span class="label">Reason for recalculation *</span><textarea name="reason" class="field" required minlength="5" maxlength="500"></textarea></label>
+          <div class="flex justify-end gap-2"><flux:modal.close><button type="button" class="btn-secondary">Cancel</button></flux:modal.close><button class="btn-primary">Recalculate Paysheet</button></div>
+      </form>
+  </flux:modal>
+
   <flux:modal name="payment-modal" class="w-full max-w-2xl max-h-[85vh] overflow-y-auto" style="background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #e2e8f0 !important;">
       <form method="POST" action="" id="payment-form" onsubmit="updatePaymentRequiredFields(); return !document.getElementById('payment-submit-btn').disabled;" class="space-y-4">
           @csrf<x-submission-token/>
@@ -684,12 +738,19 @@
               <p id="payment-repair-total" class="text-sm font-bold"></p>
           </section>
 
+          <div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm">
+              Balance before payment: <strong id="payment-balance-before"></strong>
+              <label class="mt-3 block"><span class="label">Payment option</span><select id="salary-payment-choice" class="w-full" onchange="updateSalaryPaymentChoice()"><option value="full">Pay full balance</option><option value="partial">Pay part of the balance</option><option value="unpaid">Finalize only — leave unpaid</option></select></label>
+          </div>
           <div>
               <label class="label">Amount (Rs.) <span class="required-star">*</span></label>
               <input type="number" step="0.01" min="0" name="amount" id="payment-amount" class="w-full font-mono font-bold text-lg text-emerald-700" required>
           </div>
           
-          <x-outgoing-funding default="main_cashier" account-id="payment-account"/>
+          <p class="text-sm">Balance after this payment: <strong id="payment-balance-after"></strong></p>
+          <fieldset id="salary-payment-funding">
+              <x-outgoing-funding default="main_cashier" account-id="payment-account" date-name="payment_date"/>
+          </fieldset>
 
           <div class="grid grid-cols-2 gap-4">
               <div>
@@ -702,7 +763,7 @@
               </div>
               <div>
                   <label class="label">Payment Date <span class="required-star">*</span></label>
-                  <input type="date" name="payment_date" value="{{ today()->toDateString() }}" class="w-full" required>
+                  <input type="date" name="payment_date" id="salary-payment-date" value="{{ today()->toDateString() }}" max="{{ today()->toDateString() }}" class="w-full" required>
               </div>
           </div>
 

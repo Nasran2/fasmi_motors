@@ -59,11 +59,15 @@ class DrawerCashierService
             : ($previous?->cash_balances ? round(array_sum($previous->cash_balances), 2) : null);
         $cash = $session ? $summary['cash_in_hand'] : round(($this->carriedOpening($date, true) ?? 0)
             + $summary['cashier_funds']['main'] + $summary['cashier_funds']['spare_parts'], 2);
+        $accounts = $this->accountDefaults($summary, true);
+        $washingSettlement = $accounts['washing'];
+        $accounts['main'] = round($accounts['main'] + $washingSettlement, 2);
+        $accounts['washing'] = 0.0;
 
         // Operational accounts use their current full ledger totals. The physical
         // cashier opening is entered independently and never reduces these totals.
         return [
-            'cash' => $cash, 'accounts' => $this->accountDefaults($summary, true),
+            'cash' => $cash, 'accounts' => $accounts, 'washing_settlement' => $washingSettlement,
             'reopening' => (bool) $session,
             'previous_date' => $previous?->session_date->toDateString(),
             'previous_cash' => $recordedCash,
@@ -145,6 +149,9 @@ class DrawerCashierService
         $plan = $this->openingPlan(today()->toDateString(), $summary, $session);
         $source = $plan['accounts'];
         $confirmed = $this->validate($cash, $balances, $source);
+        if ($confirmed['washing'] != 0) {
+            throw ValidationException::withMessages(['opening_balances.washing' => 'Washing starts at zero. Its carried balance is transferred to Main automatically. Refresh the opening popup.']);
+        }
         $changes = collect($confirmed)->map(fn ($amount, $type) => round($amount - $source[$type], 2))->all();
         $suggested = $plan['cash'];
         if ((array_filter($changes) || ($suggested !== null && round($cash - $suggested, 2) != 0)) && blank($reason)) {
@@ -165,6 +172,9 @@ class DrawerCashierService
         } else {
             $session = CashierSession::create($values + ['session_date' => today(), 'opened_at' => now(), 'opened_by' => auth()->id()]);
         }
+        app(WashingSettlementService::class)->settle($session, $plan['washing_settlement'], $summary['cash_accounts']['washing']['closing'], now(), 'opening');
+        // Snapshot after settlement so carried washing is not a new cashier receipt.
+        $settledSummary = $service->summary(today()->toDateString());
         $this->postAccountChanges($session, $changes, $reason, $reopening, true);
         if ($saveDefault) {
             Setting::updateOrCreate(['key' => WashingCommissionService::settingKey()], ['value' => $washing['washing_commission_amount'], 'group' => 'technician', 'type' => 'number']);
@@ -172,7 +182,10 @@ class DrawerCashierService
         $session->events()->create(['action' => $reopening ? 'reopened' : 'opened', 'cash_amount' => $cash,
             'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
             'details' => ['reason' => $reason, 'separate_cash_balance' => true, 'cash_balances' => $confirmed, 'bank_balance' => $confirmed['bank'], 'drawer_adjustment' => $adjustment,
-                'opening_context' => $this->openingContext($cash, $confirmed, $summary), 'carried_cash' => $suggested, 'previous_close_date' => $plan['previous_date'], 'account_balance_source' => 'current_ledger', 'account_balances_before' => $source], 'created_by' => auth()->id()]);
+                'opening_context' => $this->openingContext($cash, $confirmed, $settledSummary), 'washing_to_main' => $plan['washing_settlement'],
+                'washing_cash_to_main' => $summary['cash_accounts']['washing']['closing'],
+                'carried_cash' => $suggested, 'previous_close_date' => $plan['previous_date'], 'account_balance_source' => 'current_ledger',
+                'account_balances_before' => $this->accountDefaults($summary, true)], 'created_by' => auth()->id()]);
 
         return $session;
     }

@@ -129,7 +129,7 @@ class CashierController extends Controller
         $balanceVersion = $liveClosing ? $service->fingerprint($summary) : null;
         $expectedBalances = $liveClosing ? collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all() : [];
         if ($liveClosing) {
-            foreach (['main', 'spare_parts', 'bank'] as $type) {
+            foreach (['main', 'spare_parts', 'bank', 'washing'] as $type) {
                 $expectedBalances[$type] = $summary['accounts'][$type]['closing'];
             }
         }
@@ -222,7 +222,7 @@ class CashierController extends Controller
         $rows = $all->filter(fn ($row) => match ($method) {
             'cash' => $row['channel'] === 'cash', 'bank' => $row['channel'] === 'bank',
             'bank_transfer' => $row['channel'] === 'bank' && $row['method'] === 'Bank Transfer', default => true,
-        })->filter(fn ($row) => empty($values['search']) || str_contains(mb_strtolower(implode(' ', [$row['number'], $row['invoice'], $row['customer'], $row['description']])), mb_strtolower($values['search'])));
+        })->filter(fn ($row) => empty($values['search']) || str_contains(mb_strtolower(implode(' ', [$row['number'], $row['invoice'], $row['customer'], $row['description'], implode(' ', $row['bikes'] ?? [])])), mb_strtolower($values['search'])));
         $totals = ['cash' => round($all->where('channel', 'cash')->sum('amount'), 2),
             'bank' => round($all->where('channel', 'bank')->sum('amount'), 2), 'all' => round($all->sum('amount'), 2),
             'filtered' => round($rows->sum('amount'), 2)];

@@ -83,7 +83,8 @@ class SalarySheetDetailService
         DB::transaction(function () use ($sheet, $reason) {
             $staff = Technician::whereKey($sheet->technician_id)->lockForUpdate()->firstOrFail();
             $sheet = TechnicianSalarySheet::whereKey($sheet->id)->lockForUpdate()->firstOrFail();
-            abort_unless($sheet->status === 'Draft' && (float) $sheet->paid_amount === 0.0, 422, 'Reopen an unpaid finalized sheet before refreshing attendance.');
+            abort_unless(in_array($sheet->status, ['Draft', 'Finalized', 'Partially Paid', 'Paid'], true), 422, 'This paysheet cannot be recalculated.');
+            $finalized = $sheet->status !== 'Draft';
             if (TechnicianSalarySheet::where('technician_id', $staff->id)->whereKeyNot($sheet->id)
                 ->whereDate('period_start', '<=', $sheet->period_end)->whereDate('period_end', '>=', $sheet->period_start)
                 ->whereIn('status', ['Finalized', 'Partially Paid', 'Paid'])->exists()) {
@@ -106,15 +107,36 @@ class SalarySheetDetailService
             $inputs = array_replace($inputs, Arr::only($sheet->getAttributes(), ['allowances', 'manual_additions', 'other_deductions', 'manual_deductions']));
             // Only the manual supplement is an input; automatic closed-day pay is recomputed.
             $inputs['worked_on_leave_pay'] = data_get($sheet->calculation_snapshot, 'earnings.worked_on_leave_manual', $inputs['worked_on_leave_pay'] ?? 0);
-            $inputs['paid_amount'] = 0; // A draft refresh cannot create a payment.
+            $inputs['paid_amount'] = (float) $sheet->paid_amount;
             $month = data_get($sheet->calculation_snapshot, 'salary_cycle.salary_month', $sheet->period_end);
-            $values = app(SalaryCalculationService::class)->generateMonthlySalary($staff, $month, $inputs);
+            $values = app(SalaryCalculationService::class)->generateMonthlySalary($staff, $month, $inputs, settledSheet: $finalized ? $sheet : null);
             if ($values['period_start']->toDateString() !== $sheet->period_start->toDateString() || $values['period_end']->toDateString() !== $sheet->period_end->toDateString()) {
-                throw ValidationException::withMessages(['reason' => 'The salary cycle changed. Regenerate the draft for the correct period.']);
+                throw ValidationException::withMessages(['reason' => 'The salary cycle changed. Restore the original period settings before recalculating this paysheet.']);
+            }
+            foreach (TechnicianContribution::where('salary_sheet_id', $sheet->id)->lockForUpdate()->get() as $contribution) {
+                if ($contribution->paid_at || $contribution->status !== 'Unpaid') {
+                    foreach ($values['calculation_snapshot']['contributions'] as $field => $amount) {
+                        if (round((float) $contribution->$field, 2) !== round((float) $amount, 2)) {
+                            throw ValidationException::withMessages(['reason' => 'This recalculation changes EPF / ETF already marked paid. Correct the contribution record before recalculating; no changes were saved.']);
+                        }
+                    }
+                }
+            }
+            $snapshot = array_replace($sheet->calculation_snapshot ?? [], $values['calculation_snapshot']);
+            $snapshot['recalculations'][] = ['reason' => $reason, 'at' => now()->toIso8601String(), 'user_id' => auth()->id(),
+                'previous_gross' => (float) $sheet->gross_salary, 'previous_deductions' => (float) $sheet->total_deductions,
+                'previous_net' => (float) $sheet->net_payable, 'paid_amount' => (float) $sheet->paid_amount];
+            $values['calculation_snapshot'] = app(SalaryBalanceService::class)->restate($snapshot, $values['gross_salary'], $values['total_deductions']);
+            if ($finalized) {
+                $values['status'] = (float) $sheet->paid_amount > 0 ? ($values['balance_amount'] <= 0 ? 'Paid' : 'Partially Paid') : 'Finalized';
+                $values['paid_at'] = $values['status'] === 'Paid' ? ($sheet->paid_at ?? $sheet->payment_date) : null;
             }
             $sheet->update(Arr::only($values, array_keys($sheet->getAttributes())));
+            if ($finalized) {
+                app(SalaryRepairCorrectionService::class)->syncOverpayment($sheet, $reason);
+            }
             TechnicianContribution::where('salary_sheet_id', $sheet->id)->update($values['calculation_snapshot']['contributions']);
-            $this->audit($sheet, 'Salary Draft Refreshed', $before, ['reason' => $reason]);
+            $this->audit($sheet, 'Salary Recalculated', $before, ['reason' => $reason, 'payments_preserved' => true]);
         }, 3);
     }
 

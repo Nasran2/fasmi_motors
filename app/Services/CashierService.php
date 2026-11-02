@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Account;
 use App\Models\AccountTransaction;
-use App\Models\AccountTransfer;
 use App\Models\CashierSession;
 use App\Models\DailyClosing;
 use App\Models\Drawing;
@@ -77,7 +76,7 @@ class CashierService
         foreach (['main', 'spare_parts'] as $type) {
             $priorAllocationRows = $transactions->where('account_id', Account::systemAccount($type)->id)->where('category', 'cashier_daily_allocation');
             $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit') - ($openingContext['snapshot']['daily_allocation'][$type] ?? 0), 2);
-            $washingToMain = $type === 'main' ? $cashAccounts['washing']['closing'] : 0;
+            $washingToMain = $type === 'main' ? $accounts['washing']['closing'] : 0;
             $allocationAccounts[$type] = [
                 'opening' => $openingContext['accounts'][$type] ?? $accounts[$type]['opening'],
                 'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
@@ -467,7 +466,8 @@ class CashierService
             if (! $fundedWithdrawal && $withdrawal > 0 && ($expected['spare_parts'] < 0 || ($independent ? $summary['cash_in_hand'] - $withdrawal : array_sum($expected)) < 0)) {
                 throw ValidationException::withMessages(['owner_withdrawal' => 'The withdrawal exceeds the Spare Parts cash in hand.']);
             }
-            $washingTransfer = round($independent ? $summary['cash_accounts']['washing']['closing'] : $expected['washing'], 2);
+            $washingTransfer = round($expected['washing'], 2);
+            $washingCashTransfer = round($summary['cash_accounts']['washing']['closing'], 2);
             $expected['main'] = round($expected['main'] + $washingTransfer, 2);
             $expected['washing'] = round($expected['washing'] - $washingTransfer, 2);
             $bankExpected = round($summary['accounts']['bank']['closing'] - $withdrawalAccounts['bank'], 2);
@@ -533,20 +533,7 @@ class CashierService
                     $this->accounts->recordTransaction('spare_parts', 'drawing', $withdrawal, 'Owner withdrawal at cashier closing', $drawing, 'Cash', transactionDate: $effectiveAt, category: 'owner_withdrawal');
                 }
             }
-            if ($washingTransfer != 0) {
-                $fromType = $washingTransfer > 0 ? 'washing' : 'main';
-                $toType = $washingTransfer > 0 ? 'main' : 'washing';
-                $from = Account::systemAccount($fromType);
-                $to = Account::systemAccount($toType);
-                $transfer = AccountTransfer::create([
-                    'transfer_no' => 'AT-CASHIER-'.$session->id.'-'.Str::upper(Str::random(6)),
-                    'from_account_id' => $from->id, 'to_account_id' => $to->id, 'amount' => abs($washingTransfer),
-                    'transfer_date' => $effectiveAt, 'payment_method' => 'Cash', 'status' => 'Completed',
-                    'reference_number' => 'Cashier #'.$session->id, 'note' => 'Washing cash settled into Main at cashier closing', 'created_by' => auth()->id(),
-                ]);
-                $this->accounts->recordTransaction($fromType, 'transfer_out', abs($washingTransfer), 'Cashier closing: washing cash settlement', $transfer, 'Cash', transactionDate: $effectiveAt, category: 'cashier_washing_sweep');
-                $this->accounts->recordTransaction($toType, 'transfer_in', abs($washingTransfer), 'Cashier closing: washing cash settlement', $transfer, 'Cash', transactionDate: $effectiveAt, category: 'cashier_washing_sweep');
-            }
+            app(WashingSettlementService::class)->settle($session, $washingTransfer, $washingCashTransfer, $effectiveAt, 'closing');
             foreach ($differences as $type => $difference) {
                 if ($difference != 0) {
                     $this->accounts->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference),
@@ -584,10 +571,10 @@ class CashierService
                 'cash_expense' => $summary['cash_paid'] + $cashWithdrawal + ($independent ? max(0, -$summary['drawer_adjustment']) : 0), 'cash_closing_balance' => $drawerExpected,
                 'cash_actual_balance' => $counted, 'cash_difference' => $drawerDifference];
             if ($dailyAdditions !== null) {
-                $closingData['cash_income'] = $summary['cash_received'] + $summary['cash_other_in'] + max(0, -$washingTransfer);
-                $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $allocatedToday + max(0, $washingTransfer);
+                $closingData['cash_income'] = $summary['cash_received'] + $summary['cash_other_in'] + max(0, -$washingCashTransfer);
+                $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $allocatedToday + max(0, $washingCashTransfer);
                 if ($summary['opening_context'] !== null) {
-                    $cycleWashing = $washingTransfer - ($summary['opening_context']['cash_movements']['washing_cash'] ?? 0);
+                    $cycleWashing = $washingCashTransfer - ($summary['opening_context']['cash_movements']['washing_cash'] ?? 0);
                     $closingData['cash_opening_balance'] = $summary['cashier_funds']['opening'];
                     $closingData['cash_income'] = $summary['cashier_cycle']['income'] + max(0, -$cycleWashing);
                     $closingData['cash_expense'] = $summary['cashier_cycle']['paid'] + $cashWithdrawal + $allocatedToday + max(0, $cycleWashing);
@@ -598,6 +585,8 @@ class CashierService
             $summary['closing_withdrawal_funding'] = $withdrawalPlan;
             $summary['closing_cash_withdrawal'] = $cashWithdrawal;
             $summary['closing_washing_transfer'] = $washingTransfer;
+            $summary['closing_washing_cash_transfer'] = $washingCashTransfer;
+            $summary['closing_washing_non_cash_transfer'] = round($washingTransfer - $washingCashTransfer, 2);
             $summary['closing_bank_balance'] = $bankActual;
             $summary['closing_account_additions'] = $dailyAdditions;
             $summary['closing_allocation_bases'] = $allocationBases;
@@ -618,7 +607,7 @@ class CashierService
             unset($summary['transactions'], $summary['collections']);
             $session->events()->create(['action' => 'closed', 'cash_amount' => $counted,
                 'washing_person_id' => $session->washing_person_id, 'washing_commission_amount' => $session->washing_commission_amount,
-                'details' => ['closing_snapshot' => $summary, 'separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'withdrawal_funding' => $withdrawalPlan, 'cash_withdrawal' => $cashWithdrawal, 'account_additions' => $dailyAdditions, 'allocation_bases' => $allocationBases, 'allocated_today' => $allocatedToday, 'washing_to_main' => $washingTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
+                'details' => ['closing_snapshot' => $summary, 'separate_cash_balance' => $independent, 'owner_withdrawal' => $withdrawal, 'withdrawal_funding' => $withdrawalPlan, 'cash_withdrawal' => $cashWithdrawal, 'account_additions' => $dailyAdditions, 'allocation_bases' => $allocationBases, 'allocated_today' => $allocatedToday, 'washing_to_main' => $washingTransfer, 'washing_cash_to_main' => $washingCashTransfer, 'closing_balance' => $counted, 'balances' => $values['balances'], 'bank_balance' => $bankActual, 'bank_difference' => $bankDifference, 'reason' => $values['difference_reason'] ?? null], 'created_by' => auth()->id()]);
             $session->update([
                 'status' => 'closed', 'closed_by' => auth()->id(), 'closed_at' => now(),
                 'owner_withdrawal' => (float) $session->owner_withdrawal + $withdrawal,

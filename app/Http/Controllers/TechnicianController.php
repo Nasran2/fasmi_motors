@@ -785,6 +785,7 @@ class TechnicianController extends Controller
 
         return response()->json([
             'editable' => $editable, 'rows' => $rows, 'paid_amount' => (float) $sheet->paid_amount,
+            'balance_amount' => max(0, (float) $sheet->balance_amount),
             'net_before_repairs' => round((float) $sheet->net_payable + (float) $snapshotItems->sum('amount'), 2),
         ]);
     }
@@ -899,7 +900,7 @@ class TechnicianController extends Controller
         $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:500']]);
         $details->refreshAttendance($sheet, $data['reason']);
 
-        return back()->with('success', 'Draft attendance and OT refreshed. Manual amounts and descriptions were retained.');
+        return back()->with('success', 'Paysheet recalculated from current attendance and salary rules. Recorded payments, applied recoveries and adjustment descriptions were retained.');
     }
 
     public function salarySlip(TechnicianSalarySheet $sheet, SalarySheetDetailService $details)

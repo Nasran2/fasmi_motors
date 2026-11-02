@@ -1,5 +1,13 @@
 # Salary details, overtime and adjustments
 
+## Recalculate saved paysheets and record dated partial payments
+
+Salary Payments now offers **Recalculate** on Draft, Finalized, Partially Paid and Paid rows. The reason popup applies current attendance, staff salary, OT and EPF/ETF rules to the saved salary period. Drafts remain drafts. Finalized sheets retain their applied advances, repair deductions and old-balance recoveries; recalculation does not recover them again or select new debts. Manual monetary overrides and described adjustments remain. Recorded salary payments and their dates are preserved, and the outstanding balance/status update. A previously paid sheet with a larger net amount becomes Partially Paid so its extra balance can be paid separately.
+
+The recalculation reason and earlier totals are saved in the snapshot and audit log. Overpayments use the existing carried-balance recovery mechanism, without issuing a refund. Recalculation rolls back if applied deductions exceed the new earnings, if the salary period changes or overlaps another finalized sheet, if already-paid EPF/ETF figures would change, or if an already-recovered overpayment would be rewritten. Ordinary attendance editing and bulk recalculation still respect finalized-period locks; the explicit paysheet action recalculates its own attendance under the staff lock.
+
+**Finalize** offers full payment, partial payment or finalize only without payment. Unpaid finalized and partially paid sheets show **Pay / Partial Pay**. Select the amount, payment date and funding source; balances before and after payment are displayed. Sources refresh for the selected payment date. Finalizing without payment does not require a funding source. No tests or browser/runtime checks were run for this change, and live data was not changed.
+
 Overtime eligibility includes a check-in exactly at workshop opening time. With opening at 08:00, 07:59 and 08:00 qualify; 08:01 does not. Eligibility still requires an actual checkout beyond the configured closing grace period. Missing/automatic checkout does not earn automatic OT. Existing manual amount overrides remain available.
 
 In Salary Payments, save a draft and choose **View** to see the complete salary period with daily check-in/out times, status, worked hours, overtime and attendance deductions. New calculations capture attendance times with the salary snapshot. Legacy sheets without this snapshot show current attendance records with an explanatory note; their saved salary amounts are unchanged.

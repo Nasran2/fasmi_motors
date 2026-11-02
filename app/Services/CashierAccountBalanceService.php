@@ -61,7 +61,7 @@ class CashierAccountBalanceService
                     'reason' => $values['reason']], 'created_by' => auth()->id()]);
             $summary = $cashier->summary($session->session_date->toDateString());
             $expected = collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all();
-            foreach (['main', 'spare_parts', 'bank'] as $account) {
+            foreach (['main', 'spare_parts', 'bank', 'washing'] as $account) {
                 $expected[$account] = $summary['accounts'][$account]['closing'];
             }
 

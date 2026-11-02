@@ -257,16 +257,24 @@ class SalaryCalculationService
         return $this->generateMonthlySalary(Technician::findOrFail($technicianId), $month, $custom, isPreview: true);
     }
 
-    public function generateMonthlySalary(Technician $technician, CarbonInterface|string $month, array $custom = [], bool $isPreview = false): array
+    public function generateMonthlySalary(Technician $technician, CarbonInterface|string $month, array $custom = [], bool $isPreview = false, ?TechnicianSalarySheet $settledSheet = null): array
     {
         $salaryMonth = Carbon::parse($month)->startOfMonth();
         $cycle = $this->salaryCycle->previewSalaryPeriod($salaryMonth, $technician);
         $start = Carbon::parse($cycle['salary_period_start'])->startOfDay();
         $end = Carbon::parse($cycle['salary_period_end'])->startOfDay();
         $attendance = $this->getAttendanceSummary($technician->id, $start, $end);
-        $advance = $this->getAdvanceSummary($technician->id, $salaryMonth);
-        $pendingDeductions = $this->getTechnicianPendingDeductions($technician->id, $salaryMonth, $end);
-        $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
+        // A finalized sheet already recovered these amounts. Recalculation must
+        // retain them without selecting new debts or settling the same bill twice.
+        $advance = $settledSheet
+            ? array_replace(data_get($settledSheet->calculation_snapshot, 'advance_summary', ['items' => [], 'count' => 0]), ['total_amount' => (float) $settledSheet->total_advance_deduction])
+            : $this->getAdvanceSummary($technician->id, $salaryMonth);
+        $pendingDeductions = $settledSheet
+            ? data_get($settledSheet->calculation_snapshot, 'pending_deductions', ['items' => []])
+            : $this->getTechnicianPendingDeductions($technician->id, $salaryMonth, $end);
+        if (! $settledSheet) {
+            $pendingDeductions['items'] = $this->selectBikeAmounts($pendingDeductions['items'], $custom['bike_installments'] ?? []);
+        }
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $dailySalary = $this->dailySalary($technician);
         $regularHours = max(0, $attendance['total_worked_minutes'] - $attendance['total_actual_ot_minutes'] - ($technician->salary_type === 'Hourly' ? $attendance['leave_work_regular_minutes'] : 0)) / 60;
@@ -316,13 +324,23 @@ class SalaryCalculationService
             throw ValidationException::withMessages(['bike_installments' => 'Deductions exceed gross salary. Reduce the selected deductions before saving.']);
         }
         $availableForDebt = round(max(0, $gross - $fixedDeductions), 2);
-        $debt = app(SalaryBalanceService::class)->allocate($technician->id, $salaryMonth, $custom,
+        $debt = $settledSheet ? [
+            'items' => data_get($settledSheet->calculation_snapshot, 'old_balances', []),
+            'repairs' => collect($pendingDeductions['items'])->where('kind', 'bike_installment')->values()->all(),
+            'summary' => data_get($settledSheet->calculation_snapshot, 'debt_summary', []) + ['applied_old_balance' => $settledSheet->old_balance_deduction],
+        ] : app(SalaryBalanceService::class)->allocate($technician->id, $salaryMonth, $custom,
             collect($pendingDeductions['items'])->where('kind', 'bike_installment')->values()->all(), $availableForDebt);
         $pendingDeductions['items'] = $manualItems->concat($debt['repairs'])->values()->all();
         $pendingDeductions['total_amount'] = round((float) collect($pendingDeductions['items'])->sum('amount'), 2);
         $deductionParts['job_bike'] = $pendingDeductions['total_amount'];
         $deductionParts['old_balance'] = $debt['summary']['applied_old_balance'];
+        if ($settledSheet) {
+            $deductionParts['job_bike'] = $pendingDeductions['total_amount'] = (float) $settledSheet->total_job_deduction;
+        }
         $totalDeductions = $this->calculateTotalDeductions($deductionParts);
+        if ($settledSheet && $totalDeductions > $gross) {
+            throw ValidationException::withMessages(['reason' => 'Recalculation would make deductions exceed gross salary. Correct the applied deductions before recalculating; no changes were saved.']);
+        }
         $net = $this->calculateNetPayable($gross, $totalDeductions);
         $balance = $this->calculateBalance($net, $paidAmount);
         $technicianData = $this->getTechnicianSalaryData($technician->id);

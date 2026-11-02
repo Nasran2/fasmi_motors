@@ -99,12 +99,12 @@
         @endforeach
         </tbody></table></div>
     </section>
-    @if($sheet->status === 'Draft')
+    @if(in_array($sheet->status, ['Draft', 'Finalized', 'Partially Paid', 'Paid'], true))
     <form method="POST" action="{{ route('technicians.salaries.refresh-attendance', $sheet) }}" id="refresh-salary-calculation" class="panel space-y-3 p-5">
         @csrf<x-submission-token />
-        <h2 class="font-black">Refresh draft salary calculation</h2><p class="text-sm text-slate-500">Apply the staff working times, current salary and OT rules, extra daily pay for shop-closed work, and separate unpaid leave deductions. Manual amount overrides and adjustment descriptions are retained. Finalized salary attendance stays locked.</p>
+        <h2 class="font-black">Recalculate paysheet</h2><p class="text-sm text-slate-500">Apply current staff working times, salary, OT and contribution rules. Manual amounts and descriptions stay. Finalized sheets keep their applied advances, repair and old-balance recoveries. Recorded payments and dates stay; the remaining balance and payment status update. Recalculation does not pay or refund money.</p>
         <label class="block"><span class="label">Reason for recalculation</span><input name="reason" required minlength="5" maxlength="500" class="field" placeholder="e.g. Apply full basic salary and separate unpaid leave deductions"></label>
-        <button class="btn-secondary">Refresh Attendance &amp; OT</button>
+        <button class="btn-secondary">Recalculate Paysheet</button>
     </form>
     @endif
 </div>

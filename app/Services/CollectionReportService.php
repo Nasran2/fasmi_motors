@@ -19,6 +19,11 @@ class CollectionReportService
         $entries = AccountTransaction::posted()->whereIn('account_id', $ids)
             ->where(fn ($q) => $q->where('account_id', $bankId)->orWhere('payment_method', 'Cash'))
             ->with('reference')->orderBy('transaction_date')->orderBy('id')->get();
+        $invoiceRelations = ['customer', 'bike', 'jobCard.intake.bike.customer', 'jobCard.quickBike', 'jobCard.quickCustomer'];
+        $entries->loadMorph('reference', [
+            Payment::class => array_map(fn ($relation) => 'invoice.'.$relation, $invoiceRelations),
+            JobAdvance::class => ['jobCard.intake.bike.customer', 'jobCard.quickBike', 'jobCard.quickCustomer'],
+        ]);
         $entries = $entries->filter(fn ($row) => ! ($row->reference instanceof Payment || $row->reference instanceof JobAdvance) || $row->reference->status === 'Completed');
         $groups = $entries->groupBy(function ($row) use ($bankId) {
             $reference = $row->reference;
@@ -29,7 +34,8 @@ class CollectionReportService
             return ($row->account_id === $bankId ? 'bank|' : 'cash|').$key;
         });
         $receiptGroupIds = $entries->map(fn ($row) => $row->reference instanceof Payment ? $row->reference->receipt_group_id : null)->filter()->unique();
-        $receiptMembers = Payment::whereIn('receipt_group_id', $receiptGroupIds)->where('status', 'Completed')->whereHas('invoice')->with('invoice')->get()->groupBy('receipt_group_id');
+        $receiptMembers = Payment::whereIn('receipt_group_id', $receiptGroupIds)->where('status', 'Completed')->whereHas('invoice')
+            ->with(array_map(fn ($relation) => 'invoice.'.$relation, $invoiceRelations))->get()->groupBy('receipt_group_id');
         $start = Carbon::parse($from)->startOfDay();
         $end = Carbon::parse($to)->endOfDay();
         $rows = collect();
@@ -61,9 +67,18 @@ class CollectionReportService
             if ($members->isEmpty()) {
                 $components['other'] = (int) round($amount * 100);
             }
+            // A grouped receipt can cover several bikes. Resolve each actual job /
+            // invoice bike rather than treating a missing invoice customer as walk-in.
+            $bikes = $members->map(fn ($member) => ($member->invoice?->jobCard?->bike ?? $member->invoice?->bike)?->number);
+            $customers = $members->map(fn ($member) => ($member->invoice?->customer ?? $member->invoice?->jobCard?->customer)?->name);
+            if ($reference instanceof JobAdvance) {
+                $bikes->push($reference->jobCard?->bike?->number);
+                $customers->push($reference->jobCard?->customer?->name);
+            }
             $rows->push([
                 'date' => $income->transaction_date, 'number' => $reference?->number ?: $income->transaction_no,
-                'invoice' => $members->pluck('invoice.number')->filter()->unique()->implode(', ') ?: $invoice?->number, 'payment_ids' => $members->pluck('id')->all(), 'customer' => $invoice?->customer?->name ?: ($reference instanceof JobAdvance ? $reference->jobCard?->customer?->name : null),
+                'invoice' => $members->pluck('invoice.number')->filter()->unique()->implode(', ') ?: $invoice?->number, 'payment_ids' => $members->pluck('id')->all(),
+                'customer' => $customers->filter()->unique()->implode(', '), 'bikes' => $bikes->filter()->unique()->values()->all(),
                 'description' => $income->description, 'method' => $income->payment_method ?: 'Cash',
                 'source_transaction_ids' => $group->pluck('id')->all(),
                 'channel' => $income->account_id === $bankId ? 'bank' : 'cash', 'amount' => $amount,
