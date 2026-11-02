@@ -37,7 +37,7 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         init() {
             this.$watch(this.dailyAdditionsMode ? 'additions.main' : 'balances.main', () => this.updateClosingBalance());
             this.$watch(this.dailyAdditionsMode ? 'additions.spare_parts' : 'balances.spare_parts', () => this.updateClosingBalance());
-            if (this.dailyAdditionsMode) this.$watch('currentCashInHand', () => this.updateClosingBalance());
+            if (this.dailyAdditionsMode) this.$watch('separationCashTotal', () => this.updateClosingBalance());
         },
         updateClosingBalance() {
             this.closingBalance = this.remainingCashTotal.toFixed(2);
@@ -63,6 +63,9 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
             return (this.cents(this.cashierFunds?.[type]) - pending) / 100;
         },
         get currentCashInHand() {
+            // Physical drawer cash includes washing until it is settled at closing.
+            // Main/Spare funding pools below deliberately exclude that settlement.
+            if (this.independent) return (this.cents(this.drawerExpected) - this.cents(this.cashWithdrawal)) / 100;
             return (this.cents(this.cashierFunds?.opening) + this.cents(this.currentCashierAmount('main')) + this.cents(this.currentCashierAmount('spare_parts'))) / 100;
         },
         pendingCashierWithdrawal(type, rows = this.withdrawalFunding) {
@@ -124,7 +127,7 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
             }
         },
         get allocatedCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.additions.main) + this.cents(this.additions.spare_parts)) / 100 : (this.cents(this.balances.main) + this.cents(this.balances.spare_parts)) / 100; },
-        get separationCashTotal() { return this.dailyAdditionsMode ? this.currentCashInHand : (this.cents(this.expectedBalance('main')) + this.cents(this.expectedBalance('spare_parts'))) / 100; },
+        get separationCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.cashierFunds?.opening) + this.cents(this.currentCashierAmount('main')) + this.cents(this.currentCashierAmount('spare_parts'))) / 100 : (this.cents(this.expectedBalance('main')) + this.cents(this.expectedBalance('spare_parts'))) / 100; },
         get remainingCashTotal() { return (this.cents(this.separationCashTotal) - this.cents(this.allocatedCashTotal)) / 100; },
         get additionsTooHigh() { return this.dailyAdditionsMode && this.cents(this.remainingCashTotal) < 0; },
         get cashMatchesAccounts() { return this.hasCount && (this.dailyAdditionsMode ? !this.additionsTooHigh : (this.independent || this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal))); },
