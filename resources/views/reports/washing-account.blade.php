@@ -2,11 +2,11 @@
   <div class="space-y-6">
     @include('reports._filter', [
       'title' => 'Washing Account Report',
-      'subtitle' => 'Washing charges billed, unpaid washing amounts, received payments, expenses and balance. Unpaid charges increase the received balance only after payment settles.',
+      'subtitle' => 'Washing charges and settled washing receipts. New washing receipts credit Main immediately; the washing received total is for information only.',
     ])
 
     @include('reports._stats')
-    <p class="text-xs text-slate-500">Opening and closing balances cover the full period. Transaction filters apply to the displayed movements and filtered totals.</p>
+    <p class="text-xs text-slate-500">Washing received covers settled cash and bank receipts in the selected dates, including payments for older bills. It is already included in Main for new receipts. Opening, closing and movement totals below refer to the legacy Washing ledger. Transaction filters apply to that ledger; washing received covers the full selected period.</p>
 
     <section class="panel space-y-4">
       <h2 class="text-lg font-black">Washing charges on bills</h2>
@@ -23,7 +23,7 @@
       </table></div>
       @if(method_exists($washingBills, 'links')){{ $washingBills->links() }}@endif
     </section>
-    <h2 class="text-lg font-black">Received payments and account movements</h2>
+    <h2 class="text-lg font-black">Legacy Washing Account movements</h2>
     <div class="panel p-0 overflow-hidden border border-slate-200 rounded-xl shadow-sm bg-white print:border-none print:shadow-none">
       <div class="overflow-x-auto">
         <table id="washing-movements-table" class="w-full text-left text-sm whitespace-nowrap">

@@ -4,6 +4,8 @@ namespace App\Support;
 
 use App\Models\Invoice;
 use App\Services\AccountService;
+use App\Services\CollectionReportService;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -35,5 +37,12 @@ final class WashingCharges
             'washing_charges_billed' => round($invoices->sum('washing_amount'), 2),
             'washing_charges_unpaid' => round($invoices->sum(fn ($invoice) => self::unpaid($invoice)), 2),
         ];
+    }
+
+    public static function receivedForPeriod(CarbonInterface|string $from, CarbonInterface|string $to): float
+    {
+        $receipts = app(CollectionReportService::class)->rows(Carbon::parse($from)->toDateString(), Carbon::parse($to)->toDateString());
+
+        return $receipts->sum(fn ($receipt) => (int) round(($receipt['components']['washing'] ?? 0) * 100)) / 100;
     }
 }

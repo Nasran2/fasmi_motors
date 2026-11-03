@@ -14,7 +14,7 @@
             <td class="space-y-1 p-3 align-top">
                 @if($source['invoice'])<div>@if($source['invoice_url'])<a href="{{ $source['invoice_url'] }}" target="_blank" rel="noopener" class="font-bold text-blue-700 underline underline-offset-2">{{ $source['invoice'] }}</a>@else<span class="font-bold">{{ $source['invoice'] }}</span>@endif</div>@endif
                 @if($source['job'])<div>@if($source['job_url'])<a href="{{ $source['job_url'] }}" target="_blank" rel="noopener" class="text-blue-700 underline underline-offset-2">{{ $source['job'] }}</a>@else<span>{{ $source['job'] }}</span>@endif</div>@endif
-                @if($source['bike'])<div class="font-semibold">Bike: {{ $source['bike'] }}</div>@endif
+                @if($source['bike'] || ($source['bike_name'] ?? null))<div class="font-semibold">Bike: {{ $source['bike_name'] ?? '' }} {{ $source['bike'] }}</div>@endif
                 @unless($source['invoice'] || $source['job'])<a href="{{ $source['url'] }}" target="_blank" rel="noopener" class="text-blue-700 underline underline-offset-2">{{ $source['number'] ?: 'View transaction details' }}</a>@endunless
             </td>
             <td class="p-3 align-top">{{ $row->payment_method ?: '—' }}</td>

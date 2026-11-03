@@ -57,6 +57,7 @@ class AccountTransactionSourceService
             'job' => $job?->number,
             'job_url' => $job && RoutePermission::allows($user, 'jobs.show') ? route('jobs.show', $job) : null,
             'bike' => $bike?->number,
+            'bike_name' => trim(implode(' ', array_filter([$bike?->brand, $bike?->model]))),
             'number' => $source?->number,
             'url' => $this->url($transaction, $user) ?? route('cashier.transaction-source', $transaction),
         ];

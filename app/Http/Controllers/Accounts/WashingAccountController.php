@@ -16,12 +16,13 @@ class WashingAccountController extends BaseAccountController
         $charges = WashingCharges::forPeriod($data['from'], $data['to']);
         $data += [
             'title' => 'Washing Account Ledger', 'type' => 'washing',
-            'subtitle' => 'Washing charges, received payments, expenses and account balance',
+            'subtitle' => 'New washing receipts credit Main immediately. Washing received is an information total; ledger balances below show legacy Washing funds and their movements.',
             'cards' => [
                 'Opening Balance' => $data['totals']['opening'],
                 'Washing Charges Billed' => $charges['washing_charges_billed'],
+                'Washing Received · Information Only' => WashingCharges::receivedForPeriod($data['from'], $data['to']),
                 'Unpaid / Held Washing Charges' => $charges['washing_charges_unpaid'],
-                'Money Received / In' => $data['totals']['credit'],
+                'Legacy Washing Money In' => $data['totals']['credit'],
                 'Expenses' => $data['totals']['expense'],
                 'Transfer In' => $data['totals']['transfer_in'],
                 'Transfer Out' => $data['totals']['transfer_out'],

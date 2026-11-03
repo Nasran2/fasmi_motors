@@ -21,7 +21,7 @@ class CashierCardBreakdownService
     public function breakdown(string $date, array $summary, ?CashierSession $session, User $user): array
     {
         $collections = $summary['collections']->where('channel', 'cash')->values();
-        $sourceIds = $collections->pluck('source_transaction_ids')->flatten()->unique();
+        $sourceIds = $summary['collections']->pluck('source_transaction_ids')->flatten()->unique();
         $entries = AccountTransaction::posted()->whereIn('id', $sourceIds)->get()->keyBy('id');
         $receiptKeys = [];
         $received = $collections->map(function ($receipt, $index) use ($entries, $user, &$receiptKeys) {
@@ -34,6 +34,15 @@ class CashierCardBreakdownService
                 'note' => $sourceEntries->pluck('note')->filter()->unique()->implode("\n"), 'account' => 'Cash receipt',
                 'amount' => $receipt['amount'], 'sources' => $this->sourceDetails($sourceEntries, $user)];
         });
+        $washing = $summary['collections']->filter(fn ($receipt) => ($receipt['components']['washing'] ?? 0) != 0)
+            ->map(function ($receipt) use ($entries, $user) {
+                $sourceEntries = collect($receipt['source_transaction_ids'])->map(fn ($id) => $entries->get($id))->filter();
+
+                return ['date' => $receipt['date'], 'number' => $receipt['number'], 'description' => $receipt['description'],
+                    'note' => $sourceEntries->pluck('note')->filter()->unique()->implode("\n"),
+                    'account' => $receipt['method'].' · washing portion', 'amount' => $receipt['components']['washing'],
+                    'sources' => $this->sourceDetails($sourceEntries, $user)];
+            })->sortBy('date')->values();
 
         $groups = $this->cash->movementDetails($date, $session, $summary['collections']);
         $movementRow = function ($group) use ($user) {
@@ -80,6 +89,6 @@ class CashierCardBreakdownService
         });
 
         return ['opening' => collect([$opening]), 'received' => $received->sortBy('date')->values(),
-            'paid' => $paid->sortBy('date')->values(), 'balance' => $all];
+            'paid' => $paid->sortBy('date')->values(), 'balance' => $all, 'washing' => $washing];
     }
 }

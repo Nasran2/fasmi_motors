@@ -28,7 +28,7 @@ class CashierController extends Controller
     {
         $values = $request->validate([
             'date' => 'required|date_format:Y-m-d|before_or_equal:today',
-            'card' => 'required|in:opening,received,paid,balance',
+            'card' => 'required|in:opening,received,paid,balance,washing',
             'page' => 'sometimes|integer|min:1',
         ]);
         $date = $values['date'];
@@ -37,6 +37,8 @@ class CashierController extends Controller
         $summary = $cashier->summary($date);
         $labels = ['opening' => 'Opening cash in hand', 'received' => 'Cash collected today', 'paid' => 'Cash paid out today', 'balance' => 'Cash in hand now'];
         $totals = ['opening' => $summary['cash_opening'], 'received' => $summary['cash_received'], 'paid' => $summary['cash_paid'], 'balance' => $summary['cash_in_hand']];
+        $labels['washing'] = 'Washing received · information only';
+        $totals['washing'] = $summary['washing_received'];
         $items = $breakdowns->breakdown($date, $summary, $session, $request->user())[$card];
         $page = $request->integer('page', 1);
         $rows = new LengthAwarePaginator($items->forPage($page, 25)->values(), $items->count(), 25, $page,

@@ -63,8 +63,8 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
             return (this.cents(this.cashierFunds?.[type]) - pending) / 100;
         },
         get currentCashInHand() {
-            // Physical drawer cash includes washing until it is settled at closing.
-            // Main/Spare funding pools below deliberately exclude that settlement.
+            // Physical drawer cash includes washing receipts, credited to Main.
+            // Carried account balances remain separate from the drawer.
             if (this.independent) return (this.cents(this.drawerExpected) - this.cents(this.cashWithdrawal)) / 100;
             return (this.cents(this.cashierFunds?.opening) + this.cents(this.currentCashierAmount('main')) + this.cents(this.currentCashierAmount('spare_parts'))) / 100;
         },

@@ -447,6 +447,7 @@ class ReportController extends Controller
         $extra = [];
         if ($type === 'washing') {
             $stats += WashingCharges::forPeriod($from, $to);
+            $stats['washing_received_information_only'] = WashingCharges::receivedForPeriod($from, $to);
             $washingQuery = $this->invoiceFilters(WashingCharges::queryForPeriod($from, $to), $r)
                 ->with($this->invoiceRelations())->orderByDesc('bill_date')->orderByDesc('id');
             $extra['washingBills'] = $r->boolean('print') || $r->boolean('export_csv')

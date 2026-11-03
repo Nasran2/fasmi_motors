@@ -17,6 +17,7 @@
     @if($card === 'opening') This is the recorded physical opening cash. Main, Spare Parts and Bank account balances are separate. Opening history below is an audit trail; its counts are not added together.
     @elseif($card === 'received') {{ $rows->total() }} cash receipt(s). Each receipt is counted once, including washing. Bank receipts are excluded.
     @elseif($card === 'paid') {{ $rows->total() }} cash payment allocation(s). Split payments show the amount taken from each cashier account. Reversed entries are netted; internal washing settlement is excluded.
+    @elseif($card === 'washing') Washing portions of received payments, including cash and bank. New receipts credit Main immediately. This information total is already included in the account balances and must not be added again.
     @else All physical cash movements for this date, including washing. Bank and carried account balances are excluded.
     @endif
     Select a source link to open it in a new tab.
@@ -29,7 +30,9 @@
             <tr>
                 <td class="p-3 align-top"><span class="block text-xs text-slate-500">{{ $row['date']->format('d M, h:i A') }}</span><span class="font-bold">{{ $row['number'] }}</span><span class="mt-1 block text-xs text-slate-500">{{ $row['account'] }}</span></td>
                 <td class="p-3 align-top">{{ $row['description'] }}@if($row['note'])<p class="mt-1 whitespace-pre-wrap text-xs text-slate-600">{{ $row['note'] }}</p>@endif
-                    @foreach(collect($row['sources'])->pluck('bike')->filter()->unique() as $bike)<p class="mt-2 font-bold text-blue-800">Bike number: {{ $bike }}</p>@endforeach
+                    @foreach(collect($row['sources'])->filter(fn ($source) => ($source['bike'] ?? null) || ($source['bike_name'] ?? null))->unique(fn ($source) => ($source['bike'] ?? '').'|'.($source['bike_name'] ?? '')) as $bike)
+                        <p class="mt-2 font-bold text-blue-800">Bike: {{ $bike['bike_name'] ?? '' }}@if($bike['bike'] ?? null) · {{ $bike['bike'] }}@endif</p>
+                    @endforeach
                 </td>
                 <td class="space-y-2 p-3 align-top">
                     @forelse($row['sources'] as $source)

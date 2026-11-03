@@ -32,7 +32,12 @@ class ReconcileRepairReceipts extends Command
             foreach ($invoices as $invoice) {
                 $ids = $invoice->payments()->where('status', 'Completed')->whereNotIn('method', ['Salary Deduction', 'Manual Clearance'])->pluck('id');
                 $received = (float) $invoice->payments()->whereIn('id', $ids)->sum('amount');
-                $allocation = $service->receiptAllocation($invoice, (int) round($received * 100));
+                $allocation = ['spare_parts' => 0, 'washing' => 0, 'main' => 0];
+                foreach ($service->orderedReceipts($invoice) as $payment) {
+                    foreach ($service->paymentReceiptAllocation($invoice, $payment) as $type => $cents) {
+                        $allocation[$type] += $cents;
+                    }
+                }
                 $changed = false;
                 foreach ($allocation as $type => $cents) {
                     $expected = $cents / 100;

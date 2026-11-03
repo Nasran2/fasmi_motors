@@ -205,6 +205,13 @@ class AccountService
 
     public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): void
     {
+        // Preserve the routing of receipts already posted under the old policy.
+        // New receipts credit washing to Main immediately, including bank receipts.
+        $alreadyPosted = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
+            ->where('reference_id', $payment->id)->where('transaction_type', 'income')->exists();
+        if (! $alreadyPosted) {
+            $payment->forceFill(['washing_to_main' => true])->save();
+        }
         $amount = (int) round((float) $payment->amount * 100);
         foreach ($this->paymentReceiptAllocation($invoice, $payment, $settledAt) as $type => $cents) {
             if ($cents > 0) {
@@ -223,15 +230,17 @@ class AccountService
     public function reallocateInvoiceReceipts(Invoice $invoice, CarbonInterface|string|null $fromDate = null, CarbonInterface|string|null $correctionDate = null): void
     {
         $cumulative = 0;
-        $previous = ['spare_parts' => 0, 'washing' => 0, 'main' => 0];
+        $previous = $this->receiptComponentAllocation($invoice, 0);
         foreach ($this->orderedReceipts($invoice) as $payment) {
             $cumulative += (int) round((float) $payment->amount * 100);
-            $target = $this->receiptAllocation($invoice, $cumulative);
-            $allocation = [];
+            $target = $this->receiptComponentAllocation($invoice, $cumulative);
+            $components = [];
             foreach ($target as $type => $cents) {
-                $allocation[$type] = ($cents - $previous[$type]) / 100;
+                $components[$type] = $cents - $previous[$type];
             }
             $previous = $target;
+            $allocation = array_map(fn ($cents) => $cents / 100,
+                $this->componentAccounts($invoice, $components, (bool) $payment->washing_to_main));
             // Cheques post on clearance; all other receipts post on their selected payment date.
             $effectiveDate = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('transaction_type', 'income')->oldest('transaction_date')->value('transaction_date') ?? $payment->paid_at;
             if ($fromDate && Carbon::parse($effectiveDate)->lt($fromDate)) {
@@ -299,13 +308,13 @@ class AccountService
         return $this->componentAccounts($invoice, $parts);
     }
 
-    private function componentAccounts(Invoice $invoice, array $parts): array
+    private function componentAccounts(Invoice $invoice, array $parts, bool $washingToMain = false): array
     {
         // Opening dues use the Other column as a legacy receipt placeholder;
         // they are not a job's Other charge and continue to settle into Main.
         return ['spare_parts' => $parts['spare_parts'] + ($invoice->isOpeningDue() ? 0 : $parts['other']),
-            'washing' => $parts['washing'],
-            'main' => $parts['service'] + $parts['labor'] + ($invoice->isOpeningDue() ? $parts['other'] : 0)];
+            'washing' => $washingToMain ? 0 : $parts['washing'],
+            'main' => $parts['service'] + $parts['labor'] + ($washingToMain ? $parts['washing'] : 0) + ($invoice->isOpeningDue() ? $parts['other'] : 0)];
     }
 
     public function orderedReceipts(Invoice $invoice, ?Payment $current = null, CarbonInterface|string|null $settledAt = null)
@@ -342,10 +351,10 @@ class AccountService
         return $this->receiptComponentAllocation($invoice, (int) round((float) $payment->amount * 100));
     }
 
-    private function paymentReceiptAllocation(Invoice $invoice, Payment $payment, CarbonInterface|string|null $settledAt = null): array
+    public function paymentReceiptAllocation(Invoice $invoice, Payment $payment, CarbonInterface|string|null $settledAt = null): array
     {
         $parts = $this->paymentComponentAllocation($invoice, $payment, $settledAt);
 
-        return $this->componentAccounts($invoice, $parts);
+        return $this->componentAccounts($invoice, $parts, (bool) $payment->washing_to_main);
     }
 }

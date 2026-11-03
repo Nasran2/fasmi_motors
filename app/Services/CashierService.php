@@ -55,6 +55,15 @@ class CashierService
 
         $session = CashierSession::whereDate('session_date', $date)->first();
         $collections = app(CollectionReportService::class)->rows($date, $date);
+        // The displayed opening is the selected date's confirmed snapshot.
+        // Keep the ledger closing intact and expose any reconciliation separately.
+        $displayAccounts = $accounts;
+        foreach ($displayAccounts as $type => &$account) {
+            $account['opening'] = (float) ($session?->account_opening_balances[$type] ?? $account['opening']);
+            $account['reconciliation'] = round($account['closing'] - $account['opening'] - $account['income'] + $account['outgoing'], 2);
+        }
+        unset($account);
+        $washingReceived = $collections->sum(fn ($receipt) => (int) round(($receipt['components']['washing'] ?? 0) * 100)) / 100;
         $cashAccounts = app(CashPositionService::class)->accounts($date, $session, $collections);
 
         $independent = $session?->drawer_opening_balance !== null;
@@ -88,6 +97,7 @@ class CashierService
         return [
             'separate_cash_balance' => $independent, 'drawer_adjustment' => (float) ($session?->drawer_adjustment ?? 0),
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
+            'display_accounts' => $displayAccounts, 'washing_received' => $washingReceived,
             'opening_context' => $openingContext, 'account_opening_balances' => $session?->account_opening_balances,
             'cashier_cycle' => ['income' => round($collections->where('channel', 'cash')->sum('amount') + collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']) - ($openingContext['cash_movements']['income'] ?? 0), 2),
                 'paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) - ($openingContext['cash_movements']['paid'] ?? 0), 2)],
