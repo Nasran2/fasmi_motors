@@ -17,6 +17,7 @@ use App\Services\CollectionReportService;
 use App\Services\DrawerCashierService;
 use App\Services\OutgoingFundingService;
 use App\Services\WashingCommissionService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -48,12 +49,12 @@ class CashierController extends Controller
         return view('cashier.card-details-popup', compact('date', 'card', 'labels', 'totals', 'summary', 'rows', 'events'));
     }
 
-    public function movements(Request $request, AccountTransactionSourceService $sources)
+    public function movements(Request $request, AccountTransactionSourceService $sources, AccountService $accounts)
     {
         $values = $request->validate([
             'date' => 'required|date_format:Y-m-d|before_or_equal:today',
             'account' => 'required|in:'.implode(',', array_keys(CashierService::ACCOUNTS)),
-            'side' => 'required|in:credit,debit',
+            'side' => 'required|in:credit,debit,adjustment',
             'page' => 'sometimes|integer|min:1',
         ]);
         $date = $values['date'];
@@ -61,13 +62,29 @@ class CashierController extends Controller
         $label = CashierService::ACCOUNTS[$values['account']];
         $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($values['account'])->id)
             ->whereDate('transaction_date', $date)
-            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening']))
-            ->where($side, '>', 0);
-        $total = (float) (clone $query)->sum($side);
+            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening']));
+        $reconciliation = 0;
+        if ($side === 'adjustment') {
+            $query->balanceAdjustments();
+            $total = round((clone $query)->sum('credit') - (clone $query)->sum('debit'), 2);
+            $opening = CashierSession::whereDate('session_date', $date)->first()?->account_opening_balances[$values['account']] ?? null;
+            if ($opening !== null) {
+                $openingCorrections = AccountTransaction::posted()
+                    ->where('account_id', Account::systemAccount($values['account'])->id)
+                    ->whereDate('transaction_date', $date)
+                    ->whereIn('category', ['cashier_opening', 'cashier_account_opening'])->get();
+                $reconciliation = round($accounts->ledgerOpeningBalance($values['account'], Carbon::parse($date)->startOfDay())
+                    + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') - (float) $opening, 2);
+                $total = round($total + $reconciliation, 2);
+            }
+        } else {
+            $query->balanceAdjustments(false)->where($side, '>', 0);
+            $total = (float) (clone $query)->sum($side);
+        }
         $rows = $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate(25)->withQueryString();
         $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
 
-        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total'));
+        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reconciliation'));
     }
 
     public function index(Request $request, CashierService $service, AccountService $accounts)

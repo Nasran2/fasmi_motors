@@ -8,6 +8,28 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class AccountTransaction extends Model
 {
+    public const BALANCE_ADJUSTMENT_TYPES = ['adjustment_increase', 'adjustment_decrease'];
+
+    public function scopeBalanceAdjustments($query, bool $include = true)
+    {
+        $condition = function ($adjustments) {
+            $adjustments->whereIn('transaction_type', self::BALANCE_ADJUSTMENT_TYPES)
+                ->orWhere(function ($reversal) {
+                    // A reversed correction remains a correction, rather than money received or spent.
+                    $reversal->where('transaction_type', 'reversal')
+                        ->where('description', 'like', 'Reversal of %')
+                        ->whereExists(function ($original) {
+                            $original->selectRaw('1')->from('account_transactions as adjustment_original')
+                                ->whereIn('adjustment_original.transaction_type', self::BALANCE_ADJUSTMENT_TYPES)
+                                ->whereColumn('adjustment_original.account_id', 'account_transactions.account_id')
+                                ->whereRaw('adjustment_original.transaction_no = SUBSTR(account_transactions.description, 13)');
+                        });
+                });
+        };
+
+        return $include ? $query->where($condition) : $query->whereNot($condition);
+    }
+
     public function scopeLedger($query, string $type)
     {
         if ($type !== 'cash') {

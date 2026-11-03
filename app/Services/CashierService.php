@@ -58,9 +58,17 @@ class CashierService
         // The displayed opening is the selected date's confirmed snapshot.
         // Keep the ledger closing intact and expose any reconciliation separately.
         $displayAccounts = $accounts;
+        $adjustmentIds = AccountTransaction::whereIn('id', $transactions->modelKeys())
+            ->balanceAdjustments()->pluck('id');
         foreach ($displayAccounts as $type => &$account) {
             $account['opening'] = (float) ($session?->account_opening_balances[$type] ?? $account['opening']);
             $account['reconciliation'] = round($account['closing'] - $account['opening'] - $account['income'] + $account['outgoing'], 2);
+            $adjustments = $transactions->where('account_id', Account::systemAccount($type)->id)
+                ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening'])
+                ->whereIn('id', $adjustmentIds);
+            $account['income'] = round($account['income'] - $adjustments->sum('credit'), 2);
+            $account['outgoing'] = round($account['outgoing'] - $adjustments->sum('debit'), 2);
+            $account['adjustments'] = round($adjustments->sum('credit') - $adjustments->sum('debit') + $account['reconciliation'], 2);
         }
         unset($account);
         $washingReceived = $collections->sum(fn ($receipt) => (int) round(($receipt['components']['washing'] ?? 0) * 100)) / 100;

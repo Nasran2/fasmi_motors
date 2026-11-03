@@ -41,16 +41,51 @@
     </div>
     <p class="text-sm text-slate-600">Cash in hand includes cash received for washing. Bank payments and carried Main / Spare Parts account balances are excluded.@if($summary['cash_other_in'] != 0) Other cash in: Rs. {{ number_format($summary['cash_other_in'], 2) }}.@endif</p>
     @if($independent)
-        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div class="border-b p-5"><h2 class="text-lg font-black">Account balances · separate from cashier cash</h2><p class="mt-1 text-sm text-slate-500">These account balances do not add up to the physical cash in the cashier. Cash collections are listed separately below. Opening balances are the saved amounts for this date. Any ledger reconciliation is shown beside the balance; the Washing received information row is excluded from the total.</p></div><div class="overflow-auto"><table class="w-full text-right text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="p-4 text-left">Account</th><th class="p-4">Opening balance · {{ \Carbon\Carbon::parse($date)->format('d M Y') }}</th><th class="p-4">Credits</th><th class="p-4">Debits</th><th class="p-4">Balance</th></tr></thead><tbody class="divide-y">@foreach(\App\Services\CashierService::ACCOUNTS as $type => $label) @php($account = $summary['display_accounts'][$type])@if($type !== 'washing' || $account['opening'] != 0 || $account['income'] != 0 || $account['outgoing'] != 0 || $account['closing'] != 0)<tr><th class="p-4 text-left">{{ $label }}@if($type === 'washing')<span class="mt-1 block text-xs font-normal text-slate-500">Legacy funds awaiting transfer to Main</span>@endif</th><td class="p-4">{{ number_format($account['opening'], 2) }}</td><td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'credit']) }}" class="rounded px-1 font-semibold underline decoration-emerald-200 underline-offset-4 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} credits">{{ number_format($account['income'], 2) }}</button></td><td class="p-4 text-red-600"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'debit']) }}" class="rounded px-1 font-semibold underline decoration-red-200 underline-offset-4 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} debits">{{ number_format($account['outgoing'], 2) }}</button></td><td class="p-4 font-black">{{ number_format($account['closing'], 2) }}@if($account['reconciliation'] != 0)<span class="mt-1 block text-xs font-normal text-amber-800">Ledger reconciliation: {{ number_format($account['reconciliation'], 2) }}</span>@endif</td></tr>@endif@endforeach
-                <tr class="bg-blue-50"><th class="p-4 text-left">Washing received<span class="mt-1 block text-xs font-normal text-slate-600">Information only · new receipts included in Main</span></th><td class="p-4">0.00</td><td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'washing']) }}" class="font-semibold underline underline-offset-4">{{ number_format($summary['washing_received'], 2) }}</button></td><td class="p-4 text-slate-500">—</td><td class="p-4 text-xs text-slate-600">Already included above</td></tr>
-            </tbody>
-            <tfoot class="border-t bg-slate-50 font-black">
-                <tr>
-                    <th scope="row" colspan="4" class="p-4 text-left">Total account balance</th>
-                    <td class="p-4">Rs. {{ number_format(collect($summary['accounts'])->sum('closing'), 2) }}</td>
-                </tr>
-            </tfoot>
-        </table></div></section>
+        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="border-b p-5">
+                <h2 class="text-lg font-black">Account balances · separate from cashier cash</h2>
+                <p class="mt-1 text-sm text-slate-500">Opening balance + credits − debits + adjustments = balance. Opening balances are the saved amounts for this date. Adjustments include any opening reconciliation and are separate from money received or paid. The Washing received information row is excluded from the total.</p>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr><th class="p-4 text-left">Account</th><th class="p-4">Opening balance · {{ \Carbon\Carbon::parse($date)->format('d M Y') }}</th><th class="p-4">Credits</th><th class="p-4">Debits</th><th class="p-4">Adjustments (+ / −)</th><th class="p-4">Balance</th></tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        @foreach(\App\Services\CashierService::ACCOUNTS as $type => $label)
+                            @php
+                                $account = $summary['display_accounts'][$type];
+                                $adjustmentColor = $account['adjustments'] > 0 ? 'text-emerald-700' : ($account['adjustments'] < 0 ? 'text-red-600' : 'text-slate-500');
+                            @endphp
+                            @if($type !== 'washing' || $account['opening'] != 0 || $account['income'] != 0 || $account['outgoing'] != 0 || $account['adjustments'] != 0 || $account['closing'] != 0)
+                                <tr>
+                                    <th class="p-4 text-left">{{ $label }}@if($type === 'washing')<span class="mt-1 block text-xs font-normal text-slate-500">Legacy funds awaiting transfer to Main</span>@endif</th>
+                                    <td class="p-4">{{ number_format($account['opening'], 2) }}</td>
+                                    <td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'credit']) }}" class="rounded px-1 font-semibold underline decoration-emerald-200 underline-offset-4 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} credits">{{ number_format($account['income'], 2) }}</button></td>
+                                    <td class="p-4 text-red-600"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'debit']) }}" class="rounded px-1 font-semibold underline decoration-red-200 underline-offset-4 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} debits">{{ number_format($account['outgoing'], 2) }}</button></td>
+                                    <td class="p-4 {{ $adjustmentColor }}"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'adjustment']) }}" class="rounded px-1 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} adjustments">{{ $account['adjustments'] > 0 ? '+' : '' }}{{ number_format($account['adjustments'], 2) }}</button></td>
+                                    <td class="p-4 font-black">{{ number_format($account['closing'], 2) }}</td>
+                                </tr>
+                            @endif
+                        @endforeach
+                        <tr class="bg-blue-50">
+                            <th class="p-4 text-left">Washing received<span class="mt-1 block text-xs font-normal text-slate-600">Information only · new receipts included in Main</span></th>
+                            <td class="p-4">0.00</td>
+                            <td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'washing']) }}" class="font-semibold underline underline-offset-4">{{ number_format($summary['washing_received'], 2) }}</button></td>
+                            <td class="p-4 text-slate-500">—</td>
+                            <td class="p-4 text-slate-500">—</td>
+                            <td class="p-4 text-xs text-slate-600">Already included above</td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="border-t bg-slate-50 font-black">
+                        <tr>
+                            <th scope="row" colspan="5" class="p-4 text-left">Total account balance</th>
+                            <td class="p-4">Rs. {{ number_format(collect($summary['accounts'])->sum('closing'), 2) }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </section>
     @else
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b p-5"><h2 class="text-lg font-black">Cash in hand by account</h2><p class="mt-1 text-sm text-slate-500">Only received cash and cash movements are included. Partial collections settle Service → Labour → Washing → Other → Spare Parts.</p></div>
