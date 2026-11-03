@@ -484,10 +484,12 @@ class CashierService
             if (! $fundedWithdrawal && $withdrawal > 0 && ($expected['spare_parts'] < 0 || ($independent ? $summary['cash_in_hand'] - $withdrawal : array_sum($expected)) < 0)) {
                 throw ValidationException::withMessages(['owner_withdrawal' => 'The withdrawal exceeds the Spare Parts cash in hand.']);
             }
-            $washingTransfer = round($expected['washing'], 2);
+            $washingTransfer = round($summary['accounts']['washing']['closing'], 2);
             $washingCashTransfer = round($summary['cash_accounts']['washing']['closing'], 2);
-            $expected['main'] = round($expected['main'] + $washingTransfer, 2);
-            $expected['washing'] = round($expected['washing'] - $washingTransfer, 2);
+            // Settle the full Washing ledger, while legacy drawer counts include
+            // only the cash leg. Non-cash settlement must not change drawer cash.
+            $expected['main'] = round($expected['main'] + ($independent ? $washingTransfer : $washingCashTransfer), 2);
+            $expected['washing'] = 0.0;
             $bankExpected = round($summary['accounts']['bank']['closing'] - $withdrawalAccounts['bank'], 2);
             $bankActual = round((float) ($values['balances']['bank'] ?? $bankExpected), 2);
             $bankDifference = round($bankActual - $bankExpected, 2);

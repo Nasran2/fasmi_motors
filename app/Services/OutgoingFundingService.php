@@ -14,11 +14,11 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** Five spendable pools backed by the existing three ledgers. */
+/** Payment choices backed by the existing ledgers and cashier cash tracking. */
 class OutgoingFundingService
 {
     public const SOURCES = [
-        'main' => 'Main Account — total excluding cashier',
+        'main' => 'Main Account — total balance',
         'main_cashier' => 'Main Account Cashier — today’s cash',
         'spare_parts' => 'Spare Parts Account — total excluding cashier',
         'spare_parts_cashier' => 'Spare Parts Account Cashier — today’s cash',
@@ -30,7 +30,7 @@ class OutgoingFundingService
         return str_replace('_cashier', '', $source);
     }
 
-    public function defaultSource(?int $accountId, string $method = 'Cash', string $fallback = 'main_cashier'): string
+    public function defaultSource(?int $accountId, string $method = 'Cash', string $fallback = 'main'): string
     {
         if ($method !== 'Cash') {
             return 'bank';
@@ -41,7 +41,12 @@ class OutgoingFundingService
             }
         }
 
-        return $fallback;
+        return $this->canonicalSource($fallback);
+    }
+
+    public function canonicalSource(string $source): string
+    {
+        return $source === 'main_cashier' ? 'main' : $source;
     }
 
     public function options(?string $date = null, bool $closing = false): array
@@ -53,10 +58,12 @@ class OutgoingFundingService
         $balances = $this->balances($date);
         $unavailableReason = 'No open cashier for '.$selectedDate->format('d M Y');
 
-        return collect(self::SOURCES)->map(fn ($label, $source) => [
+        return collect(self::SOURCES)->except('main_cashier')->map(fn ($label, $source) => [
             'value' => $source, 'label' => $selectedDate->isToday() ? $label : str_replace('today’s cash', $selectedDate->format('d M Y').' cash', $label),
             'account_id' => Account::systemAccount($this->type($source))->id,
-            'balance' => $balances[$source], 'disabled' => str_ends_with($source, '_cashier') && ! $open,
+            'balance' => $source === 'main' ? round($balances['main'] + ($open ? max(0, $balances['main_cashier']) : 0), 2) : $balances[$source],
+            'cashier_balance' => $source === 'main' && $open ? max(0, $balances['main_cashier']) : 0,
+            'disabled' => str_ends_with($source, '_cashier') && ! $open,
             'disabled_reason' => str_ends_with($source, '_cashier') && ! $open ? $unavailableReason : null,
         ])->values()->all();
     }
@@ -128,7 +135,38 @@ class OutgoingFundingService
             throw ValidationException::withMessages(['funding' => 'The payment source amounts must add up to the total payment.']);
         }
 
-        return array_map(fn ($row) => ['source' => $row['source'], 'amount' => number_format((float) $row['amount'], 2, '.', '')], $rows);
+        return array_map(fn ($row) => ['source' => $this->canonicalSource($row['source']), 'amount' => number_format((float) $row['amount'], 2, '.', '')], $rows);
+    }
+
+    /** Keep cashier movements traceable while offering one combined Main Account. */
+    public function resolveMainFunding(array $rows, string $date, bool $lock = false, bool $enforceAvailability = true): array
+    {
+        $balances = $this->balances($date, $lock);
+        $open = ! Carbon::parse($date)->startOfDay()->isFuture()
+            && CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists();
+        $cashier = $open ? max(0, (int) round($balances['main_cashier'] * 100)) : 0;
+        $available = (int) round($balances['main'] * 100) + $cashier;
+        $requested = array_sum(array_map(fn ($row) => $this->canonicalSource($row['source']) === 'main' ? (int) round((float) $row['amount'] * 100) : 0, $rows));
+        if ($enforceAvailability && $requested > max(0, $available)) {
+            throw ValidationException::withMessages(['funding' => 'Main Account has only Rs. '.number_format(max(0, $available) / 100, 2).' available.']);
+        }
+        $resolved = [];
+        foreach ($rows as $row) {
+            if ($this->canonicalSource($row['source']) !== 'main') {
+                $resolved[] = $row;
+                continue;
+            }
+            $amount = (int) round((float) $row['amount'] * 100);
+            $fromCashier = min($amount, $cashier);
+            foreach (['main_cashier' => $fromCashier, 'main' => $amount - $fromCashier] as $source => $cents) {
+                if ($cents > 0) {
+                    $resolved[] = ['source' => $source, 'amount' => number_format($cents / 100, 2, '.', '')];
+                }
+            }
+            $cashier -= $fromCashier;
+        }
+
+        return $resolved;
     }
 
     public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense', ?CashierSession $closingSession = null, bool $allowOpenDate = false): void
@@ -140,6 +178,7 @@ class OutgoingFundingService
             // All outgoing screens use the transaction's cash date, including
             // an earlier day whose cashier has deliberately been left open.
             $session = CashierSession::whereDate('session_date', $date->toDateString())->lockForUpdate()->first();
+            $rows = $this->resolveMainFunding($rows, $date->toDateString(), true);
             foreach ($rows as $row) {
                 $source = $row['source'];
                 if (str_ends_with($source, '_cashier') && ($date->copy()->startOfDay()->isFuture() || $session?->status !== 'open')) {

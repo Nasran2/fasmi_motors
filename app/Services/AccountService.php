@@ -210,7 +210,10 @@ class AccountService
         $alreadyPosted = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
             ->where('reference_id', $payment->id)->where('transaction_type', 'income')->exists();
         if (! $alreadyPosted) {
-            $payment->forceFill(['washing_to_main' => true])->save();
+            $payment->forceFill([
+                'washing_to_main' => true,
+                'opening_due_to_spare_parts' => $invoice->isOpeningDue(),
+            ])->save();
         }
         $amount = (int) round((float) $payment->amount * 100);
         foreach ($this->paymentReceiptAllocation($invoice, $payment, $settledAt) as $type => $cents) {
@@ -240,7 +243,7 @@ class AccountService
             }
             $previous = $target;
             $allocation = array_map(fn ($cents) => $cents / 100,
-                $this->componentAccounts($invoice, $components, (bool) $payment->washing_to_main));
+                $this->componentAccounts($invoice, $components, (bool) $payment->washing_to_main, (bool) $payment->opening_due_to_spare_parts));
             // Cheques post on clearance; all other receipts post on their selected payment date.
             $effectiveDate = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('transaction_type', 'income')->oldest('transaction_date')->value('transaction_date') ?? $payment->paid_at;
             if ($fromDate && Carbon::parse($effectiveDate)->lt($fromDate)) {
@@ -308,13 +311,15 @@ class AccountService
         return $this->componentAccounts($invoice, $parts);
     }
 
-    private function componentAccounts(Invoice $invoice, array $parts, bool $washingToMain = false): array
+    private function componentAccounts(Invoice $invoice, array $parts, bool $washingToMain = false, bool $openingDueToSpareParts = false): array
     {
-        // Opening dues use the Other column as a legacy receipt placeholder;
-        // they are not a job's Other charge and continue to settle into Main.
-        return ['spare_parts' => $parts['spare_parts'] + ($invoice->isOpeningDue() ? 0 : $parts['other']),
+        // Keep historical opening-due receipts in Main. Each new receipt saves
+        // its Spare Parts routing so later invoice recalculation preserves it.
+        $openingInMain = $invoice->isOpeningDue() && ! $openingDueToSpareParts;
+
+        return ['spare_parts' => $parts['spare_parts'] + ($openingInMain ? 0 : $parts['other']),
             'washing' => $washingToMain ? 0 : $parts['washing'],
-            'main' => $parts['service'] + $parts['labor'] + ($washingToMain ? $parts['washing'] : 0) + ($invoice->isOpeningDue() ? $parts['other'] : 0)];
+            'main' => $parts['service'] + $parts['labor'] + ($washingToMain ? $parts['washing'] : 0) + ($openingInMain ? $parts['other'] : 0)];
     }
 
     public function orderedReceipts(Invoice $invoice, ?Payment $current = null, CarbonInterface|string|null $settledAt = null)
@@ -355,6 +360,6 @@ class AccountService
     {
         $parts = $this->paymentComponentAllocation($invoice, $payment, $settledAt);
 
-        return $this->componentAccounts($invoice, $parts, (bool) $payment->washing_to_main);
+        return $this->componentAccounts($invoice, $parts, (bool) $payment->washing_to_main, (bool) $payment->opening_due_to_spare_parts);
     }
 }
