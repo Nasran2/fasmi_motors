@@ -64,17 +64,22 @@ class CashierController extends Controller
             ->whereDate('transaction_date', $date)
             ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening']));
         $reconciliation = 0;
+        $recordedOpening = null;
+        $ledgerOpening = null;
+        $postedAdjustments = 0;
         if ($side === 'adjustment') {
             $query->balanceAdjustments();
-            $total = round((clone $query)->sum('credit') - (clone $query)->sum('debit'), 2);
-            $opening = CashierSession::whereDate('session_date', $date)->first()?->account_opening_balances[$values['account']] ?? null;
-            if ($opening !== null) {
+            $postedAdjustments = round((clone $query)->sum('credit') - (clone $query)->sum('debit'), 2);
+            $total = $postedAdjustments;
+            $recordedOpening = CashierSession::whereDate('session_date', $date)->first()?->account_opening_balances[$values['account']] ?? null;
+            if ($recordedOpening !== null) {
                 $openingCorrections = AccountTransaction::posted()
                     ->where('account_id', Account::systemAccount($values['account'])->id)
                     ->whereDate('transaction_date', $date)
                     ->whereIn('category', ['cashier_opening', 'cashier_account_opening'])->get();
-                $reconciliation = round($accounts->ledgerOpeningBalance($values['account'], Carbon::parse($date)->startOfDay())
-                    + $openingCorrections->sum('credit') - $openingCorrections->sum('debit') - (float) $opening, 2);
+                $ledgerOpening = round($accounts->ledgerOpeningBalance($values['account'], Carbon::parse($date)->startOfDay())
+                    + $openingCorrections->sum('credit') - $openingCorrections->sum('debit'), 2);
+                $reconciliation = round($ledgerOpening - (float) $recordedOpening, 2);
                 $total = round($total + $reconciliation, 2);
             }
         } else {
@@ -84,7 +89,7 @@ class CashierController extends Controller
         $rows = $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate(25)->withQueryString();
         $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
 
-        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reconciliation'));
+        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reconciliation', 'recordedOpening', 'ledgerOpening', 'postedAdjustments'));
     }
 
     public function index(Request $request, CashierService $service, AccountService $accounts)

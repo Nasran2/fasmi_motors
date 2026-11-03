@@ -8,10 +8,19 @@
     <button type="button" data-close-cashier-movements class="btn-secondary" aria-label="Close transaction details">✕</button>
 </header>
 <p class="my-4 text-sm text-slate-500">Select an invoice, job card or source reference to open it in a new tab. {{ $isAdjustment ? 'Adjustments change the account balance and are separate from credits and debits.' : 'Adjustments and opening-balance corrections are excluded.' }}</p>
-@if($isAdjustment && $reconciliation != 0)
+@if($isAdjustment)
     <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-        <p class="font-semibold">Opening balance reconciliation: <strong class="{{ $reconciliation > 0 ? 'text-emerald-700' : 'text-red-600' }}">Rs. {{ $reconciliation > 0 ? '+' : '' }}{{ number_format($reconciliation, 2) }}</strong></p>
-        <p class="mt-1 text-slate-600">Difference between the saved opening balance for this date and the ledger opening, including opening corrections. Included once in the adjustment total; this is not a receipt or payment.</p>
+        <h3 class="font-bold">Where this adjustment comes from</h3>
+        <dl class="mt-3 space-y-2">
+            @if($recordedOpening !== null)
+                <div class="flex justify-between gap-4"><dt>Ledger opening, including opening corrections</dt><dd class="font-semibold">Rs. {{ number_format($ledgerOpening, 2) }}</dd></div>
+                <div class="flex justify-between gap-4"><dt>− Saved opening for this date</dt><dd class="font-semibold">Rs. {{ number_format($recordedOpening, 2) }}</dd></div>
+                <div class="flex justify-between gap-4 border-t pt-2"><dt>Opening reconciliation</dt><dd class="font-semibold {{ $reconciliation > 0 ? 'text-emerald-700' : ($reconciliation < 0 ? 'text-red-600' : 'text-slate-500') }}">Rs. {{ $reconciliation > 0 ? '+' : '' }}{{ number_format($reconciliation, 2) }}</dd></div>
+            @endif
+            <div class="flex justify-between gap-4"><dt>+ Net adjustment transactions listed below (all pages)</dt><dd class="font-semibold {{ $postedAdjustments > 0 ? 'text-emerald-700' : ($postedAdjustments < 0 ? 'text-red-600' : 'text-slate-500') }}">Rs. {{ $postedAdjustments > 0 ? '+' : '' }}{{ number_format($postedAdjustments, 2) }}</dd></div>
+            <div class="flex justify-between gap-4 border-t pt-2 font-bold"><dt>Total adjustments</dt><dd class="{{ $totalColor }}">Rs. {{ $total > 0 ? '+' : '' }}{{ number_format($total, 2) }}</dd></div>
+        </dl>
+        <p class="mt-3 text-slate-600">Recorded cents are kept in full. Opening reconciliation and balance corrections can explain cents in the final balance; they are not new receipts or payments. Transaction notes below show saved correction reasons. To correct an unverified Main or Spare Parts total, use Edit total in Close Cashier and enter the verified amount with a reason.</p>
     </div>
 @endif
 <div class="overflow-x-auto rounded-xl border border-slate-200">
