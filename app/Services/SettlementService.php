@@ -33,13 +33,13 @@ class SettlementService
             'note' => $input['note'] ?? null,
         ]];
         if (is_array($rows)) {
-            $rows = array_map(fn($row) => is_array($row) ? $row + ['reference' => $input['reference'] ?? null, 'note' => $input['note'] ?? null] : $row, $rows);
+            $rows = array_map(fn ($row) => is_array($row) ? $row + ['reference' => $input['reference'] ?? null, 'note' => $input['note'] ?? null] : $row, $rows);
         }
         $methods = $purchase ? 'Cash,Card,Bank Transfer,Cheque,Party Cheque' : 'Cash,Card,Bank Transfer,Cheque,QR,Credit/Due';
         $v = Validator::make(['payments' => $rows], [
             'payments' => 'present|array|max:30',
             'payments.*' => 'required|array',
-            'payments.*.method' => 'required|in:' . $methods,
+            'payments.*.method' => 'required|in:'.$methods,
             'payments.*.amount' => 'required|numeric|min:0|decimal:0,2',
             'payments.*.account_id' => 'nullable|integer',
             'payments.*.source' => ['nullable', Rule::in(array_keys(OutgoingFundingService::SOURCES))],
@@ -82,7 +82,7 @@ class SettlementService
             }
         }
 
-        return array_values(array_filter($v['payments'], fn($r) => (float) $r['amount'] > 0));
+        return array_values(array_filter($v['payments'], fn ($r) => (float) $r['amount'] > 0));
     }
 
     public function total(array $rows): float
@@ -115,19 +115,12 @@ class SettlementService
                 $effectiveDate = $parsed->format('H:i:s') === '00:00:00' ? $parsed->setTimeFrom(now()) : $parsed;
             }
             $payment = $invoice->payments()->create([
-                'number' => 'RCPT-' . Str::upper(Str::random(12)),
-                'amount' => $row['amount'],
-                'method' => $row['method'],
-                'received_amount' => $received,
-                'change_amount' => $change,
-                'account_id' => $row['account_id'] ?? null,
-                'cheque_id' => $cheque?->id,
-                'paid_at' => $effectiveDate,
-                'status' => $cheque ? 'Hold' : 'Completed',
+                'number' => 'RCPT-'.Str::upper(Str::random(12)), 'amount' => $row['amount'], 'method' => $row['method'],
+                'received_amount' => $received, 'change_amount' => $change,
+                'account_id' => $row['account_id'] ?? null, 'cheque_id' => $cheque?->id,
+                'paid_at' => $effectiveDate, 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $invoice->due_amount - (float) $row['amount'], 2),
-                'reference' => $row['reference'] ?? null,
-                'note' => $row['note'] ?? null,
-                'created_by' => auth()->id(),
+                'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),
             ]);
             $this->move($invoice, (float) $payment->amount, $cheque ? 'hold_amount' : 'paid_amount', 1);
             if (! $cheque && (float) $payment->amount > 0) {
@@ -157,19 +150,11 @@ class SettlementService
                 throw ValidationException::withMessages(['payments' => 'Bank Account does not have enough unreserved funds for this cheque.']);
             }
             $payment = $purchase->payments()->create([
-                'number' => 'SPY-' . Str::upper(Str::random(12)),
-                'supplier_id' => $purchase->supplier_id,
-                'funding_source' => $row['method'] === 'Party Cheque' ? null : ($row['source'] ?? null),
-                'account_id' => $row['account_id'] ?? null,
-                'amount' => $row['amount'],
-                'payment_method' => $row['method'],
-                'cheque_id' => $cheque?->id,
-                'payment_date' => $date ?? today(),
-                'status' => $cheque ? 'Hold' : 'Completed',
+                'number' => 'SPY-'.Str::upper(Str::random(12)), 'supplier_id' => $purchase->supplier_id, 'funding_source' => $row['method'] === 'Party Cheque' ? null : ($row['source'] ?? null),
+                'account_id' => $row['account_id'] ?? null, 'amount' => $row['amount'], 'payment_method' => $row['method'],
+                'cheque_id' => $cheque?->id, 'payment_date' => $date ?? today(), 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $purchase->due_amount - (float) $row['amount'], 2),
-                'reference' => $row['reference'] ?? null,
-                'note' => $row['note'] ?? null,
-                'created_by' => auth()->id(),
+                'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),
             ]);
             $this->move($purchase, (float) $payment->amount, $cheque ? 'hold_amount' : 'paid_amount', 1);
             if (! $cheque) {
@@ -207,21 +192,11 @@ class SettlementService
         $party = $document instanceof Invoice ? $document->customer : $document->supplier;
 
         return Cheque::create([
-            'cheque_type' => $type,
-            'party_type' => $party->getMorphClass(),
-            'party_id' => $party->id,
-            'party_name' => $party->name,
-            'reference_type' => $document->getMorphClass(),
-            'reference_id' => $document->id,
-            'related_reference' => $document->number,
-            'cheque_number' => $row['cheque_number'],
-            'bank_name' => $row['bank_name'],
-            'cheque_date' => $row['cheque_date'],
-            'amount' => $row['amount'],
-            'bank_account_id' => $row['account_id'] ?? null,
-            'status' => 'Pending',
-            'created_by' => auth()->id(),
-            'updated_by' => auth()->id(),
+            'cheque_type' => $type, 'party_type' => $party->getMorphClass(), 'party_id' => $party->id,
+            'party_name' => $party->name, 'reference_type' => $document->getMorphClass(), 'reference_id' => $document->id,
+            'related_reference' => $document->number, 'cheque_number' => $row['cheque_number'], 'bank_name' => $row['bank_name'],
+            'cheque_date' => $row['cheque_date'], 'amount' => $row['amount'], 'bank_account_id' => $row['account_id'] ?? null,
+            'status' => 'Pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id(),
         ]);
     }
 
@@ -277,7 +252,7 @@ class SettlementService
                 } elseif (in_array($status, ['Returned', 'Cancelled'], true)) {
                     AccountTransaction::where('reference_type', $advance->getMorphClass())->where('reference_id', $advance->id)
                         ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()
-                        ->each(fn($entry) => $service->reverseTransaction($entry, $reason ?? 'Advance cheque returned'));
+                        ->each(fn ($entry) => $service->reverseTransaction($entry, $reason ?? 'Advance cheque returned'));
                     $advance->update(['status' => $status]);
                 }
             }
@@ -308,7 +283,7 @@ class SettlementService
                     $column = $payment->status === 'Hold' ? 'hold_amount' : 'paid_amount';
                     $document->due_date ??= $cheque->cheque_date;
                     $this->move($document, $amount, $column, -1);
-                    AccountTransaction::where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn($t) => $service->reverseTransaction($t, $reason ?? 'Cheque returned'));
+                    AccountTransaction::where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn ($t) => $service->reverseTransaction($t, $reason ?? 'Cheque returned'));
                     $payment->update(['status' => $status]);
                     if ($document instanceof Invoice) {
                         $service->reallocateInvoiceReceipts($document);
@@ -319,7 +294,7 @@ class SettlementService
                 if ($status === 'Cleared') {
                     $service->recordTransaction('bank', $cheque->cheque_type === 'Received' ? 'income' : 'expense', (float) $cheque->amount, "Cheque {$cheque->cheque_number} passed", $cheque, 'Cheque', $cheque->note, $cheque->bank_account_id, $date ?? today(), 'cheque');
                 } elseif ($old === 'Cleared') {
-                    AccountTransaction::where('reference_type', $cheque->getMorphClass())->where('reference_id', $cheque->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn($t) => $service->reverseTransaction($t, $reason ?? 'Cheque returned'));
+                    AccountTransaction::where('reference_type', $cheque->getMorphClass())->where('reference_id', $cheque->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn ($t) => $service->reverseTransaction($t, $reason ?? 'Cheque returned'));
                 }
             }
             $cheque->update(['status' => $status, 'realized_date' => $status === 'Cleared' ? ($date ?? today()) : $cheque->realized_date, 'status_reason' => $reason, 'updated_by' => auth()->id()]);
