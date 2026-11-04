@@ -1,7 +1,7 @@
 <x-layouts::app title="Transaction · {{ $transaction->transaction_no }}">
 <div class="mx-auto max-w-4xl space-y-5"><div><p class="text-xs font-bold uppercase text-red-600">Account transaction details</p><h1 class="page-title">{{ $transaction->transaction_no }}</h1></div>
 <section class="panel p-5"><dl class="grid gap-5 sm:grid-cols-2">
-@foreach(['Date' => $transaction->transaction_date->format('d M Y h:i A'), 'Account' => $transaction->account?->name,
+@foreach(['Date' => $transaction->display_date_time, 'Account' => $transaction->account?->name,
     'Type' => $transaction->transaction_type, 'Description' => $transaction->description, 'Money in' => 'Rs. '.number_format($transaction->credit,2),
     'Money out' => 'Rs. '.number_format($transaction->debit,2), 'Method' => $transaction->payment_method, 'Note' => $transaction->note,
     'Status' => $transaction->status, 'Recorded by' => $transaction->creator?->name] as $label => $value)

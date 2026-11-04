@@ -114,7 +114,8 @@ class OutgoingFundingService
         if ($type === 'main') {
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
             // Cashier receipts for Main only track cash collected today.
-            $cash = $entries->filter(fn ($entry) => ($entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash'))
+            $cash = $entries->filter(fn ($entry) => ($entry->funding_source === null || $entry->funding_source === 'main')
+                && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
                 && $entry->credit > 0
                 && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation'], true));
 
@@ -166,6 +167,9 @@ class OutgoingFundingService
     {
         $rows = $this->plan(['funding' => $rows], $amount);
         $date = Carbon::parse($date ?? now());
+        if ($date->format('H:i:s') === '00:00:00') {
+            $date = $date->copy()->setTimeFrom($reference?->created_at ?? now());
+        }
         DB::transaction(function () use ($rows, $description, $reference, $method, $date, $category, $note, $transactionType) {
             app(CashierService::class)->lock();
             // All outgoing screens use the transaction's cash date, including

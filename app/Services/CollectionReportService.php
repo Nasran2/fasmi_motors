@@ -75,8 +75,12 @@ class CollectionReportService
                 $bikes->push($reference->jobCard?->bike?->number);
                 $customers->push($reference->jobCard?->customer?->name);
             }
+            $txDate = $income->transaction_date;
+            if ($txDate && $txDate->format('H:i:s') === '00:00:00' && $income->created_at) {
+                $txDate = $txDate->copy()->setTimeFrom($income->created_at);
+            }
             $rows->push([
-                'date' => $income->transaction_date, 'number' => $reference?->number ?: $income->transaction_no,
+                'date' => $txDate, 'number' => $reference?->number ?: $income->transaction_no,
                 'invoice' => $members->pluck('invoice.number')->filter()->unique()->implode(', ') ?: $invoice?->number, 'payment_ids' => $members->pluck('id')->all(),
                 'customer' => $customers->filter()->unique()->implode(', '), 'bikes' => $bikes->filter()->unique()->values()->all(),
                 'description' => $income->description, 'method' => $income->payment_method ?: 'Cash',

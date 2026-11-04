@@ -109,11 +109,16 @@ class SettlementService
                 }
                 $cheque ??= $this->newCheque($invoice, $row, 'Received');
             }
+            $effectiveDate = now();
+            if ($date) {
+                $parsed = Carbon::parse($date);
+                $effectiveDate = $parsed->format('H:i:s') === '00:00:00' ? $parsed->setTimeFrom(now()) : $parsed;
+            }
             $payment = $invoice->payments()->create([
                 'number' => 'RCPT-'.Str::upper(Str::random(12)), 'amount' => $row['amount'], 'method' => $row['method'],
                 'received_amount' => $received, 'change_amount' => $change,
                 'account_id' => $row['account_id'] ?? null, 'cheque_id' => $cheque?->id,
-                'paid_at' => $date ?? now(), 'status' => $cheque ? 'Hold' : 'Completed',
+                'paid_at' => $effectiveDate, 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $invoice->due_amount - (float) $row['amount'], 2),
                 'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),
             ]);

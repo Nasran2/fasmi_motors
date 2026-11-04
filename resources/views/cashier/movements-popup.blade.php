@@ -33,7 +33,7 @@
             $amountColor = $isAdjustment ? ($amount > 0 ? 'text-emerald-700' : ($amount < 0 ? 'text-red-600' : 'text-slate-500')) : ($side === 'credit' ? 'text-emerald-700' : 'text-red-600');
         @endphp
         <tr>
-            <td class="p-3 align-top"><span class="block text-xs text-slate-500">{{ $row->transaction_date->format('h:i A') }}</span><a href="{{ $source['url'] }}" target="_blank" rel="noopener" class="font-semibold text-blue-700 underline underline-offset-2">{{ $row->transaction_no }}</a><span class="mt-1 block text-xs text-slate-500">{{ str_replace('_', ' ', $row->transaction_type) }}</span></td>
+            <td class="p-3 align-top"><span class="block text-xs text-slate-500">{{ $row->display_time }}</span><a href="{{ $source['url'] }}" target="_blank" rel="noopener" class="font-semibold text-blue-700 underline underline-offset-2">{{ $row->transaction_no }}</a><span class="mt-1 block text-xs text-slate-500">{{ str_replace('_', ' ', $row->transaction_type) }}</span></td>
             <td class="p-3 align-top">{{ $row->description }}@if($row->note)<span class="mt-1 block whitespace-pre-wrap text-xs text-slate-500">{{ $row->note }}</span>@endif</td>
             <td class="space-y-1 p-3 align-top">
                 @if($source['invoice'])<div>@if($source['invoice_url'])<a href="{{ $source['invoice_url'] }}" target="_blank" rel="noopener" class="font-bold text-blue-700 underline underline-offset-2">{{ $source['invoice'] }}</a>@else<span class="font-bold">{{ $source['invoice'] }}</span>@endif</div>@endif

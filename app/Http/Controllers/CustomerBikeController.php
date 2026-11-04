@@ -220,7 +220,7 @@ class CustomerBikeController extends Controller
     public function receivePayment(Request $request, Invoice $invoice, WorkshopService $service)
     {
         $validated = $request->validate(['paid_at' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
-        $paidAt = ! empty($validated['paid_at']) ? Carbon::parse($validated['paid_at'])->startOfDay() : now();
+        $paidAt = ! empty($validated['paid_at']) ? Carbon::parse($validated['paid_at'])->setTimeFrom(now()) : now();
         $settlement = app(SettlementService::class);
         $rows = $settlement->rows($request->all());
         DB::transaction(function () use ($rows, $invoice, $settlement, $paidAt) {

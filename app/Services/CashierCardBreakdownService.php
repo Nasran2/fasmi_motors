@@ -48,8 +48,12 @@ class CashierCardBreakdownService
         $movementRow = function ($group) use ($user) {
             $entries = $group['entries'];
             $entry = $entries->first(fn ($row) => $group['net'] < 0 ? $row->debit > 0 : $row->credit > 0) ?? $entries->first();
+            $date = $entry->transaction_date;
+            if ($date && $date->format('H:i:s') === '00:00:00' && $entry->created_at) {
+                $date = $entry->transaction_date->copy()->setTimeFrom($entry->created_at);
+            }
 
-            return ['date' => $entry->transaction_date, 'number' => $entry->transaction_no, 'description' => $entry->description,
+            return ['date' => $date, 'number' => $entry->transaction_no, 'description' => $entry->description,
                 'note' => $entries->pluck('note')->filter()->unique()->implode("\n"), 'account' => $group['account'],
                 'amount' => $group['net'], 'sources' => $this->sourceDetails($entries, $user)];
         };

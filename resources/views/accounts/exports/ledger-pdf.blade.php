@@ -8,7 +8,7 @@
   <thead><tr><th>Date &amp; Time</th><th>Type</th><th>Method</th><th>Description</th><th>Reference</th><th class="number">Money In (Rs.)</th><th class="number">Money Out (Rs.)</th><th class="number">Balance (Rs.)</th></tr></thead>
   <tbody>
     @forelse($transactions as $t)
-    <tr><td>{{ $t->transaction_date->format('d M Y H:i') }}</td><td>{{ ucwords(str_replace('_',' ',$t->transaction_type)) }}</td><td>{{ $t->payment_method ?: '-' }}</td><td>{{ $t->description }}</td><td>{{ $t->transaction_no }}</td><td class="number">{{ number_format($t->credit,2) }}</td><td class="number">{{ number_format($t->debit,2) }}</td><td class="number">{{ number_format($t->running_balance,2) }}</td></tr>
+    <tr><td>{{ $t->display_date_time }}</td><td>{{ ucwords(str_replace('_',' ',$t->transaction_type)) }}</td><td>{{ $t->payment_method ?: '-' }}</td><td>{{ $t->description }}</td><td>{{ $t->transaction_no }}</td><td class="number">{{ number_format($t->credit,2) }}</td><td class="number">{{ number_format($t->debit,2) }}</td><td class="number">{{ number_format($t->running_balance,2) }}</td></tr>
     @empty<tr><td colspan="8">No transactions match the selected period.</td></tr>@endforelse
   </tbody>
   <tbody class="document-totals"><tr><td colspan="5">Period totals / Closing balance</td><td class="number">{{ number_format($totals['credit'],2) }}</td><td class="number">{{ number_format($totals['debit'],2) }}</td><td class="number">{{ number_format($totals['closing'],2) }}</td></tr></tbody>

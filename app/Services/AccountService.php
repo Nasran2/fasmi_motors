@@ -106,9 +106,21 @@ class AccountService
                 $fundingSource = 'main';
             }
 
+            if ($transactionDate) {
+                $parsedDate = Carbon::parse($transactionDate);
+                if ($parsedDate->format('H:i:s') === '00:00:00') {
+                    $refTime = $reference?->created_at ?? now();
+                    $effectiveDate = $parsedDate->copy()->setTimeFrom($refTime);
+                } else {
+                    $effectiveDate = $parsedDate;
+                }
+            } else {
+                $effectiveDate = now();
+            }
+
             $transaction = AccountTransaction::create([
                 'transaction_no' => 'TRX-'.strtoupper(Str::random(8)),
-                'transaction_date' => $transactionDate ?: now(),
+                'transaction_date' => $effectiveDate,
                 'account_type' => $accountType,
                 'account_id' => $accountId,
                 'transaction_type' => $transactionType,
@@ -157,8 +169,13 @@ class AccountService
 
             $last = AccountTransaction::where('account_type', $transaction->account_type)->where('account_id', $transaction->account_id)->latest('transaction_date')->latest('id')->lockForUpdate()->first();
             $previous = (float) ($last->running_balance ?? 0);
+            $reversalDate = now();
+            if ($effectiveDate) {
+                $parsed = Carbon::parse($effectiveDate);
+                $reversalDate = $parsed->format('H:i:s') === '00:00:00' ? $parsed->setTimeFrom(now()) : $parsed;
+            }
             AccountTransaction::create([
-                'transaction_no' => 'REV-'.strtoupper(Str::random(8)), 'transaction_date' => $effectiveDate ?? now(),
+                'transaction_no' => 'REV-'.strtoupper(Str::random(8)), 'transaction_date' => $reversalDate,
                 'account_type' => $transaction->account_type, 'account_id' => $transaction->account_id,
                 'transaction_type' => 'reversal', 'debit' => $transaction->credit, 'credit' => $transaction->debit,
                 'amount' => $transaction->amount, 'running_balance' => $previous + (float) $transaction->debit - (float) $transaction->credit,

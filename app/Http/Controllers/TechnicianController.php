@@ -835,7 +835,7 @@ class TechnicianController extends Controller
             $sheet = TechnicianSalarySheet::lockForUpdate()->findOrFail($sheet->id);
             abort_unless(in_array($sheet->status, ['Finalized', 'Partially Paid'], true), 422);
             $paid = ((int) round((float) $sheet->paid_amount * 100) + (int) round((float) $data['amount'] * 100)) / 100;
-            $date = Carbon::parse($data['payment_date'] ?? today())->startOfDay();
+            $date = Carbon::parse($data['payment_date'] ?? today())->setTimeFrom(now());
             $balance = round((float) $sheet->net_payable - $paid, 2);
             $overpaid = max(0, -$balance);
             $funding = app(OutgoingFundingService::class);

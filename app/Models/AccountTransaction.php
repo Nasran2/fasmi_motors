@@ -57,6 +57,27 @@ class AccountTransaction extends Model
             });
     }
 
+    public function getDisplayTimeAttribute(): string
+    {
+        if ($this->transaction_date && $this->transaction_date->format('H:i:s') !== '00:00:00') {
+            return $this->transaction_date->format('h:i A');
+        }
+
+        if ($this->created_at) {
+            return $this->created_at->format('h:i A');
+        }
+
+        return $this->transaction_date ? $this->transaction_date->format('h:i A') : '—';
+    }
+
+    public function getDisplayDateTimeAttribute(): string
+    {
+        $time = $this->display_time;
+        $date = $this->transaction_date ? $this->transaction_date->format('d M Y') : '';
+
+        return trim("{$date}, {$time}");
+    }
+
     public function scopePosted($query)
     {
         // Reversed originals remain part of history; their compensating entry cancels them.

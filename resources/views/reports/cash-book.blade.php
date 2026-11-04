@@ -48,7 +48,7 @@
               <tr class="hover:bg-slate-50">
                 <td class="px-3 py-3">{{ $row->cash_book_sequence }}</td>
                 <td class="px-3 py-3 whitespace-nowrap">
-                  {{ $row->transaction_date->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->transaction_date->format('h:i:s A') }}</span>
+                  {{ $row->transaction_date->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->display_time }}</span>
                   @if($row->created_at?->toDateString() !== $row->transaction_date->toDateString())
                     <br><span class="text-xs text-slate-500">Recorded: {{ $row->created_at?->format('d M Y h:i A') }}</span>
                   @endif
