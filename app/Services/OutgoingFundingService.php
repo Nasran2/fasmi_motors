@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 class OutgoingFundingService
 {
     public const SOURCES = [
-        'main' => 'Main Account — total balance',
+        'main' => 'Main Account — carried balance excluding cashier',
         'main_cashier' => 'Main Account Cashier — today’s cash',
         'spare_parts' => 'Spare Parts Account — total excluding cashier',
         'spare_parts_cashier' => 'Spare Parts Account Cashier — today’s cash',
@@ -61,8 +61,8 @@ class OutgoingFundingService
         return collect(self::SOURCES)->except('main_cashier')->map(fn ($label, $source) => [
             'value' => $source, 'label' => $selectedDate->isToday() ? $label : str_replace('today’s cash', $selectedDate->format('d M Y').' cash', $label),
             'account_id' => Account::systemAccount($this->type($source))->id,
-            'balance' => $source === 'main' ? round($balances['main'] + ($open ? max(0, $balances['main_cashier']) : 0), 2) : $balances[$source],
-            'cashier_balance' => $source === 'main' && $open ? max(0, $balances['main_cashier']) : 0,
+            'balance' => $balances[$source],
+            'cashier_balance' => 0,
             'disabled' => str_ends_with($source, '_cashier') && ! $open,
             'disabled_reason' => str_ends_with($source, '_cashier') && ! $open ? $unavailableReason : null,
         ])->values()->all();
@@ -138,35 +138,18 @@ class OutgoingFundingService
         return array_map(fn ($row) => ['source' => $this->canonicalSource($row['source']), 'amount' => number_format((float) $row['amount'], 2, '.', '')], $rows);
     }
 
-    /** Keep cashier movements traceable while offering one combined Main Account. */
+    /** Main outgoing payments use carried funds, never cashier collections. */
     public function resolveMainFunding(array $rows, string $date, bool $lock = false, bool $enforceAvailability = true): array
     {
         $balances = $this->balances($date, $lock);
-        $open = ! Carbon::parse($date)->startOfDay()->isFuture()
-            && CashierSession::whereDate('session_date', $date)->where('status', 'open')->exists();
-        $cashier = $open ? max(0, (int) round($balances['main_cashier'] * 100)) : 0;
-        $available = (int) round($balances['main'] * 100) + $cashier;
+        $available = (int) round($balances['main'] * 100);
         $requested = array_sum(array_map(fn ($row) => $this->canonicalSource($row['source']) === 'main' ? (int) round((float) $row['amount'] * 100) : 0, $rows));
         if ($enforceAvailability && $requested > max(0, $available)) {
-            throw ValidationException::withMessages(['funding' => 'Main Account has only Rs. '.number_format(max(0, $available) / 100, 2).' available.']);
+            throw ValidationException::withMessages(['funding' => 'Main Account has only Rs. '.number_format(max(0, $available) / 100, 2).' available outside the cashier.']);
         }
-        $resolved = [];
-        foreach ($rows as $row) {
-            if ($this->canonicalSource($row['source']) !== 'main') {
-                $resolved[] = $row;
-                continue;
-            }
-            $amount = (int) round((float) $row['amount'] * 100);
-            $fromCashier = min($amount, $cashier);
-            foreach (['main_cashier' => $fromCashier, 'main' => $amount - $fromCashier] as $source => $cents) {
-                if ($cents > 0) {
-                    $resolved[] = ['source' => $source, 'amount' => number_format($cents / 100, 2, '.', '')];
-                }
-            }
-            $cashier -= $fromCashier;
-        }
-
-        return $resolved;
+        return array_map(fn ($row) => array_replace($row, [
+            'source' => $this->canonicalSource($row['source']),
+        ]), $rows);
     }
 
     public function post(array $rows, float $amount, string $description, Model $reference, string $method = 'Cash', $date = null, ?string $category = null, ?string $note = null, string $transactionType = 'expense', ?CashierSession $closingSession = null, bool $allowOpenDate = false): void

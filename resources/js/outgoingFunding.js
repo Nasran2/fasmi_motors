@@ -87,7 +87,7 @@ function initializeFunding(root = document) {
                 if (!response.ok || !Array.isArray(data.options)) throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Could not load funding balances.');
                 if (purchaseFunding) panel.dispatchEvent(new CustomEvent('funding-options-loaded', {detail: {options: data.options}}));
                 [...panel.querySelectorAll('[data-funding-source]'), ...form.querySelectorAll('[data-funding-destination]')].forEach(select => {
-                    const value = select.value;
+                    const value = select.value === 'main_cashier' ? 'main' : select.value;
                     select.replaceChildren(new Option(select.matches('[data-funding-destination]') ? 'Select destination' : 'Select payment source', ''), ...data.options.map(item => {
                         const option = new Option(`${item.label} · Rs. ${money(cents(item.balance))}${item.disabled ? ' · ' + (item.disabled_reason || 'Cashier closed') : ''}`, item.value);
                         option.dataset.account = item.account_id;
@@ -164,7 +164,7 @@ function initializeFunding(root = document) {
             const allocations = event.detail?.length ? event.detail : [{source:defaultSource, amount:''}];
             container.replaceChildren(...allocations.map(allocation => {
                 const row = template.cloneNode(true);
-                row.querySelector('[data-funding-source]').value = allocation.source;
+                row.querySelector('[data-funding-source]').value = allocation.source === 'main_cashier' ? 'main' : allocation.source;
                 const amount = row.querySelector('[data-funding-amount]');
                 amount.value = allocation.amount;
                 delete amount.dataset.edited;

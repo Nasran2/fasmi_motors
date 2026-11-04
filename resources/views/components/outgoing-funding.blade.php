@@ -1,13 +1,18 @@
-@props(['default' => 'main_cashier', 'initial' => null, 'amountName' => 'amount', 'quantityName' => '', 'accountId' => null, 'date' => null, 'cashierClosing' => false, 'dateName' => '', 'optionsUrl' => '', 'options' => null])
+@props(['default' => 'main', 'initial' => null, 'amountName' => 'amount', 'quantityName' => '', 'accountId' => null, 'date' => null, 'cashierClosing' => false, 'dateName' => '', 'optionsUrl' => '', 'options' => null])
 @php
     $date ??= today()->toDateString();
     $optionsUrl = $optionsUrl ?: route('funding.options');
-    $fundingOptions = $options ?? app(\App\Services\OutgoingFundingService::class)->options($date, $cashierClosing);
+    $fundingService = app(\App\Services\OutgoingFundingService::class);
+    $default = $fundingService->canonicalSource($default);
+    $fundingOptions = $options ?? $fundingService->options($date, $cashierClosing);
     $fundingRows = old('funding', $initial ?? [['source' => $default, 'amount' => '']]);
+    $fundingRows = array_map(fn ($row) => array_replace($row, [
+        'source' => $fundingService->canonicalSource($row['source'] ?? $default),
+    ]), $fundingRows);
 @endphp
 <div {{ $attributes->class(['space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4']) }} data-outgoing-funding data-amount-name="{{ $amountName }}" data-quantity-name="{{ $quantityName }}" data-default-source="{{ $default }}" data-funding-date="{{ $date }}" data-date-name="{{ $dateName }}" data-options-url="{{ $optionsUrl }}">
     <div class="flex items-center justify-between gap-3"><h3 class="font-bold">Pay from</h3><button type="button" class="btn-secondary text-xs" data-add-funding>＋ Split across accounts</button></div>
-    <p class="text-xs text-slate-600">Main and Spare Parts = current total account balance, excluding the selected date’s cashier funds. Account Cashier = cash for the selected payment date. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
+    <p class="text-xs text-slate-600">Main Account payments use only carried funds outside the cashier. Spare Parts Account excludes cashier funds; choose Spare Parts Account Cashier to use the selected date’s cash. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
     <div class="flex flex-wrap items-center gap-2"><p class="text-xs text-slate-600" data-funding-date-status role="status">Cashier availability and balances follow the payment date.</p><button type="button" class="text-xs font-bold text-blue-700" data-refresh-funding>Refresh balances</button></div>
     <input type="hidden" name="account_id" @if($accountId) id="{{ $accountId }}" @endif value="{{ collect($fundingOptions)->firstWhere('value', $fundingRows[0]['source'] ?? $default)['account_id'] ?? '' }}" data-funding-account>
     <div data-funding-rows>
