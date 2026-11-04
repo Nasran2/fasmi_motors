@@ -20,7 +20,7 @@
             <div class="grid gap-3 sm:grid-cols-2">
                 <label><span class="label">Amount · LKR</span><input name="amount" type="number" step="0.01" min="0.01" max="{{ $totals['balance'] }}" value="{{ $totals['balance'] }}" class="field" required></label>
                 <label><span class="label">Payment date</span><input name="payment_date" type="date" value="{{ today()->toDateString() }}" max="{{ today()->toDateString() }}" class="field" required></label>
-                <x-outgoing-funding default="main_cashier" class="sm:col-span-2"/>
+                <x-outgoing-funding default="main" class="sm:col-span-2"/>
                 <label><span class="label">Payment method</span><select name="payment_method" class="field" required>@foreach(['Cash','Bank Transfer','Card','Online','Other'] as $method)<option>{{ $method }}</option>@endforeach</select></label>
             </div>
             <label class="block"><span class="label">Payment note</span><input name="note" maxlength="1000" class="field"></label>

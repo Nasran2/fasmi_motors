@@ -37,9 +37,19 @@ class AccountTransaction extends Model
         }
 
         $ids = collect(['main', 'spare_parts', 'washing'])->map(fn ($type) => Account::systemAccount($type)?->id)->filter();
+        $mainId = Account::systemAccount('main')?->id;
 
         return $query->whereIn('account_id', $ids)
-            ->where(fn ($funding) => $funding->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
+            ->where(function ($q) use ($mainId) {
+                $q->where(function ($mainQ) use ($mainId) {
+                    $mainQ->where('account_id', $mainId)
+                        ->whereNull('funding_source')
+                        ->where(fn ($sub) => $sub->where('credit', '>', 0)->orWhere('debit', '<=', 0));
+                })->orWhere(function ($otherQ) use ($mainId) {
+                    $otherQ->where('account_id', '!=', $mainId)
+                        ->where(fn ($funding) => $funding->whereNull('funding_source')->orWhere('funding_source', 'spare_parts_cashier'));
+                });
+            })
             ->where(function ($cash) {
                 $cash->where('account_type', 'cash')->orWhere(function ($logical) {
                     $logical->whereIn('account_type', ['main', 'spare_parts', 'washing'])->where('payment_method', 'Cash');

@@ -17,9 +17,22 @@ class CashPositionService
     private function cashQuery(string $type, bool $movementsOnly)
     {
         $bankId = Account::systemAccount('bank')->id;
-        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($type)->id)
-            ->where(fn ($query) => $query->whereNull('funding_source')->orWhereIn('funding_source', ['main_cashier', 'spare_parts_cashier']))
-            ->where(function ($query) use ($bankId) {
+        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($type)->id);
+
+        if ($type === 'main') {
+            // Main account expenses and cashouts always go from the opening balance, never from the cashier.
+            // Cashier drawer movements for Main account only include incoming cash collections.
+            $query->whereNull('funding_source')
+                ->where(function ($query) {
+                    $query->where('credit', '>', 0)
+                        ->orWhere('debit', '<=', 0);
+                });
+        } else {
+            // Spare parts outgoings can go from cashier cash (spare_parts_cashier) or opening balance (spare_parts)
+            $query->where(fn ($query) => $query->whereNull('funding_source')->orWhere('funding_source', 'spare_parts_cashier'));
+        }
+
+        $query->where(function ($query) use ($bankId) {
                 $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
                     ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
                     ->orWhere(function ($query) use ($bankId) {

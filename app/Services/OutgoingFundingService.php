@@ -18,9 +18,9 @@ use Illuminate\Validation\ValidationException;
 class OutgoingFundingService
 {
     public const SOURCES = [
-        'main' => 'Main Account — carried balance excluding cashier',
+        'main' => 'Main Account — opening balance',
         'main_cashier' => 'Main Account Cashier — today’s cash',
-        'spare_parts' => 'Spare Parts Account — total excluding cashier',
+        'spare_parts' => 'Spare Parts Account — opening balance',
         'spare_parts_cashier' => 'Spare Parts Account Cashier — today’s cash',
         'bank' => 'Bank Account',
     ];
@@ -111,6 +111,16 @@ class OutgoingFundingService
     /** Net received cash and cash outgoings for one day's account, without opening funds. */
     public function cashierAmount(Collection $entries, string $type): float
     {
+        if ($type === 'main') {
+            // Main account expenses and cashouts always go from the opening balance, never from the cashier.
+            // Cashier receipts for Main only track cash collected today.
+            $cash = $entries->filter(fn ($entry) => ($entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash'))
+                && $entry->credit > 0
+                && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation'], true));
+
+            return round($cash->sum('credit'), 2);
+        }
+
         $cash = $entries->filter(fn ($entry) => ($entry->funding_source === $type.'_cashier'
                 || ($entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')))
             && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation'], true));
@@ -145,7 +155,7 @@ class OutgoingFundingService
         $available = (int) round($balances['main'] * 100);
         $requested = array_sum(array_map(fn ($row) => $this->canonicalSource($row['source']) === 'main' ? (int) round((float) $row['amount'] * 100) : 0, $rows));
         if ($enforceAvailability && $requested > max(0, $available)) {
-            throw ValidationException::withMessages(['funding' => 'Main Account has only Rs. '.number_format(max(0, $available) / 100, 2).' available outside the cashier.']);
+            throw ValidationException::withMessages(['funding' => 'Main Account opening balance has only Rs. '.number_format(max(0, $available) / 100, 2).' available outside the cashier.']);
         }
         return array_map(fn ($row) => array_replace($row, [
             'source' => $this->canonicalSource($row['source']),

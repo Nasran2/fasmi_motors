@@ -386,7 +386,7 @@
                 </div>
                 <label class="block"><span class="label">Discount · LKR for this line</span><input id="pe-discount" name="discount" type="number" min="0" max="99999999.99" step="0.01" required value="0" class="field" aria-describedby="pe-discount-note"><span id="pe-discount-note" class="mt-1 block text-xs text-slate-500">Deducted once from quantity × unit price. Enter 0 for no discount.</span></label>
                 <p class="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800" aria-live="polite">Line total after discount: <span id="pe-total">Rs. 0.00</span></p>
-                <fieldset id="pe-account-field" hidden disabled><x-outgoing-funding default="main_cashier" amount-name="cost_price" quantity-name="quantity" account-id="pe-account"/></fieldset>
+                <fieldset id="pe-account-field" hidden disabled><x-outgoing-funding default="main" amount-name="cost_price" quantity-name="quantity" account-id="pe-account"/></fieldset>
                 <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                     <button type="button" id="btn-delete-part" class="btn-secondary text-xs text-red-600 border-red-200 bg-red-50 hover:bg-red-100" onclick="workshopConfirm('Are you sure you want to remove this part?').then(ok => { if (ok) document.getElementById('part-delete-form').requestSubmit(); })">🗑 Delete Part</button>
                     <div class="flex gap-2">

@@ -12,7 +12,7 @@
 @endphp
 <div {{ $attributes->class(['space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4']) }} data-outgoing-funding data-amount-name="{{ $amountName }}" data-quantity-name="{{ $quantityName }}" data-default-source="{{ $default }}" data-funding-date="{{ $date }}" data-date-name="{{ $dateName }}" data-options-url="{{ $optionsUrl }}">
     <div class="flex items-center justify-between gap-3"><h3 class="font-bold">Pay from</h3><button type="button" class="btn-secondary text-xs" data-add-funding>＋ Split across accounts</button></div>
-    <p class="text-xs text-slate-600">Main Account payments use only carried funds outside the cashier. Spare Parts Account excludes cashier funds; choose Spare Parts Account Cashier to use the selected date’s cash. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
+    <p class="text-xs text-slate-600">Main Account payments always go from the opening balance outside the cashier. For Spare Parts Account, you can select whether payment goes from the opening balance or today’s cashier cash. Grey cashier choices are unavailable when that date’s cashier is closed.</p>
     <div class="flex flex-wrap items-center gap-2"><p class="text-xs text-slate-600" data-funding-date-status role="status">Cashier availability and balances follow the payment date.</p><button type="button" class="text-xs font-bold text-blue-700" data-refresh-funding>Refresh balances</button></div>
     <input type="hidden" name="account_id" @if($accountId) id="{{ $accountId }}" @endif value="{{ collect($fundingOptions)->firstWhere('value', $fundingRows[0]['source'] ?? $default)['account_id'] ?? '' }}" data-funding-account>
     <div data-funding-rows>

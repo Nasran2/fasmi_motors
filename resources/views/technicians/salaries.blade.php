@@ -749,7 +749,7 @@
           
           <p class="text-sm">Balance after this payment: <strong id="payment-balance-after"></strong></p>
           <fieldset id="salary-payment-funding">
-              <x-outgoing-funding default="main_cashier" account-id="payment-account" date-name="payment_date"/>
+              <x-outgoing-funding default="main" account-id="payment-account" date-name="payment_date"/>
           </fieldset>
 
           <div class="grid grid-cols-2 gap-4">

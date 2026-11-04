@@ -99,6 +99,13 @@ class AccountService
                 - (float) $account->transactions()->posted()->sum('debit');
             $newBalance = round($previousBalance + $credit - $debit, 2);
 
+            if ($fundingSource === 'main_cashier') {
+                $fundingSource = 'main';
+            }
+            if ($accountType === 'main' && $debit > 0 && ! $fundingSource) {
+                $fundingSource = 'main';
+            }
+
             $transaction = AccountTransaction::create([
                 'transaction_no' => 'TRX-'.strtoupper(Str::random(8)),
                 'transaction_date' => $transactionDate ?: now(),

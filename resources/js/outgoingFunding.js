@@ -158,13 +158,14 @@ function initializeFunding(root = document) {
             const container = panel.querySelector('[data-funding-rows]');
             const template = container.firstElementChild.cloneNode(true);
             const selectedAccount = panel.querySelector('[data-funding-account]').value;
-            const defaultSource = event.detail === null
+            const canonicalSource = src => src === 'main_cashier' ? 'main' : (src || 'main');
+            const defaultSource = canonicalSource(event.detail === null
                 ? ([...template.querySelector('[data-funding-source]').options].find(option => option.dataset.account === selectedAccount && !option.value.endsWith('_cashier'))?.value || panel.dataset.defaultSource)
-                : panel.dataset.defaultSource;
+                : panel.dataset.defaultSource);
             const allocations = event.detail?.length ? event.detail : [{source:defaultSource, amount:''}];
             container.replaceChildren(...allocations.map(allocation => {
                 const row = template.cloneNode(true);
-                row.querySelector('[data-funding-source]').value = allocation.source === 'main_cashier' ? 'main' : allocation.source;
+                row.querySelector('[data-funding-source]').value = canonicalSource(allocation.source);
                 const amount = row.querySelector('[data-funding-amount]');
                 amount.value = allocation.amount;
                 delete amount.dataset.edited;
