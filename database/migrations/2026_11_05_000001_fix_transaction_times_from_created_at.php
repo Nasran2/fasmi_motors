@@ -27,3 +27,4 @@ return new class extends Migration
         // Preserving realistic timestamps; down migration does not reintroduce 00:00:00
     }
 };
+

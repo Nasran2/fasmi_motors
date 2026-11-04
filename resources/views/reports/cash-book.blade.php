@@ -1,8 +1,8 @@
 <x-layouts::app title="Daily Cash Book Report">
   <div class="space-y-6">
     @include('reports._filter', [
-      'title' => 'Daily Cash Book Report',
-      'subtitle' => 'Cash received and paid from Main and Spare Parts, in the order entries were added. Each entry shows its running cash balance.',
+    'title' => 'Daily Cash Book Report',
+    'subtitle' => 'Cash received and paid from Main and Spare Parts, in the order entries were added. Each entry shows its running cash balance.',
     ])
 
     <div class="panel border border-slate-200 bg-white">
@@ -21,7 +21,7 @@
 
     @include('reports._stats')
     @if($filtered)
-      <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Showing matching entries. Opening, running and closing balances include all cash entries in this period, including entries hidden by these filters.</p>
+    <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Showing matching entries. Opening, running and closing balances include all cash entries in this period, including entries hidden by these filters.</p>
     @endif
 
     <div class="panel p-0 overflow-hidden border border-slate-200 bg-white">
@@ -42,40 +42,50 @@
               <td class="px-3 py-3">Opening</td>
               <td class="px-3 py-3 whitespace-nowrap">{{ $range === 'all_time' ? 'All time' : $from->format('d M Y') }}</td>
               <td class="px-3 py-3">Main opening amount + earlier cash movements</td>
-              <td></td><td></td><td class="px-3 py-3 text-right">{{ number_format($opening, 2) }}</td>
+              <td></td>
+              <td></td>
+              <td class="px-3 py-3 text-right">{{ number_format($opening, 2) }}</td>
             </tr>
             @forelse($rows as $row)
-              <tr class="hover:bg-slate-50">
-                <td class="px-3 py-3">{{ $row->cash_book_sequence }}</td>
-                <td class="px-3 py-3 whitespace-nowrap">
-                  {{ $row->transaction_date->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->display_time }}</span>
-                  @if($row->created_at?->toDateString() !== $row->transaction_date->toDateString())
-                    <br><span class="text-xs text-slate-500">Recorded: {{ $row->created_at?->format('d M Y h:i A') }}</span>
-                  @endif
-                </td>
-                <td class="px-3 py-3 max-w-sm break-words">
-                  <p class="font-bold">{{ $row->source_number }}</p>
-                  <p>{{ $row->description }}</p>
-                  <p class="mt-1 text-xs text-slate-500">{{ $row->account?->name }} · {{ ucwords(str_replace('_', ' ', $row->transaction_type)) }}{{ $row->status === 'reversed' ? ' (reversed)' : '' }} · Added by {{ $row->creator?->name ?? '—' }}</p>
-                  @if($row->source_number !== $row->transaction_no)<p class="text-xs text-slate-500">{{ $row->transaction_no }}</p>@endif
-                </td>
-                <td class="px-3 py-3 text-right whitespace-nowrap text-green-700">{{ number_format($row->credit, 2) }}</td>
-                <td class="px-3 py-3 text-right whitespace-nowrap text-red-600">{{ number_format($row->debit, 2) }}</td>
-                <td class="px-3 py-3 text-right whitespace-nowrap font-bold">{{ number_format($row->cash_book_balance, 2) }}</td>
-              </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="px-3 py-3">{{ $row->cash_book_sequence }}</td>
+              <td class="px-3 py-3 whitespace-nowrap">
+                {{ $row->transaction_date->format('d M Y') }}<br><span class="text-xs text-slate-500">{{ $row->display_time }}</span>
+                @if($row->created_at?->toDateString() !== $row->transaction_date->toDateString())
+                <br><span class="text-xs text-slate-500">Recorded: {{ $row->created_at?->format('d M Y h:i A') }}</span>
+                @endif
+              </td>
+              <td class="px-3 py-3 max-w-sm break-words">
+                <p class="font-bold">{{ $row->source_number }}</p>
+                <p>{{ $row->description }}</p>
+                <p class="mt-1 text-xs text-slate-500">{{ $row->account?->name }} · {{ ucwords(str_replace('_', ' ', $row->transaction_type)) }}{{ $row->status === 'reversed' ? ' (reversed)' : '' }} · Added by {{ $row->creator?->name ?? '—' }}</p>
+                @if($row->source_number !== $row->transaction_no)<p class="text-xs text-slate-500">{{ $row->transaction_no }}</p>@endif
+              </td>
+              <td class="px-3 py-3 text-right whitespace-nowrap text-green-700">{{ number_format($row->credit, 2) }}</td>
+              <td class="px-3 py-3 text-right whitespace-nowrap text-red-600">{{ number_format($row->debit, 2) }}</td>
+              <td class="px-3 py-3 text-right whitespace-nowrap font-bold">{{ number_format($row->cash_book_balance, 2) }}</td>
+            </tr>
             @empty
-              <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">{{ $filtered ? 'No cash entries match these filters.' : 'No cash entries for this period. The closing balance equals the opening balance.' }}</td></tr>
+            <tr>
+              <td colspan="6" class="px-4 py-8 text-center text-slate-500">{{ $filtered ? 'No cash entries match these filters.' : 'No cash entries for this period. The closing balance equals the opening balance.' }}</td>
+            </tr>
             @endforelse
           </tbody>
           <tfoot class="border-t-2 border-slate-200 bg-slate-50 font-bold">
             <tr>
-              <td class="px-3 py-3">Period totals</td><td></td><td class="px-3 py-3">All cash entries in this period</td>
+              <td class="px-3 py-3">Period totals</td>
+              <td></td>
+              <td class="px-3 py-3">All cash entries in this period</td>
               <td class="px-3 py-3 text-right whitespace-nowrap">{{ number_format($stats['cash_in_amount'], 2) }}</td>
-              <td class="px-3 py-3 text-right whitespace-nowrap">{{ number_format($stats['cash_out_amount'], 2) }}</td><td></td>
+              <td class="px-3 py-3 text-right whitespace-nowrap">{{ number_format($stats['cash_out_amount'], 2) }}</td>
+              <td></td>
             </tr>
             <tr>
-              <td class="px-3 py-4">Closing</td><td class="px-3 py-4 whitespace-nowrap">{{ $range === 'all_time' ? 'All time' : $to->format('d M Y') }}</td>
-              <td class="px-3 py-4">Opening + cash in − cash out</td><td></td><td></td>
+              <td class="px-3 py-4">Closing</td>
+              <td class="px-3 py-4 whitespace-nowrap">{{ $range === 'all_time' ? 'All time' : $to->format('d M Y') }}</td>
+              <td class="px-3 py-4">Opening + cash in − cash out</td>
+              <td></td>
+              <td></td>
               <td class="px-3 py-4 text-right whitespace-nowrap text-lg">{{ number_format($closing, 2) }}</td>
             </tr>
           </tfoot>
