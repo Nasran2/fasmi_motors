@@ -17,7 +17,9 @@ class CashPositionService
     private function cashQuery(string $type, bool $movementsOnly)
     {
         $bankId = Account::systemAccount('bank')->id;
-        $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($type)->id);
+        $query = AccountTransaction::where('status', 'active')
+            ->where('transaction_type', '!=', 'reversal')
+            ->where('account_id', Account::systemAccount($type)->id);
 
         if ($type === 'main') {
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
@@ -33,13 +35,23 @@ class CashPositionService
         }
 
         $query->where(function ($query) use ($bankId) {
-                $query->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
-                    ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation'])
-                    ->orWhere(function ($query) use ($bankId) {
-                        $query->where('reference_type', (new AccountTransfer)->getMorphClass())
-                            ->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'));
+            $query->where(function ($q) use ($bankId) {
+                $q->where(fn ($sub) => $sub->where('payment_method', 'Cash')->orWhere('account_type', 'cash'))
+                    ->where(function ($sub) use ($bankId) {
+                        // If it's an account transfer, it must involve bank or cashier
+                        $sub->where('reference_type', '!=', (new AccountTransfer)->getMorphClass())
+                            ->orWhereNull('reference_type')
+                            ->orWhere(function ($transferQuery) use ($bankId) {
+                                $transferQuery->where('reference_type', (new AccountTransfer)->getMorphClass())
+                                    ->where(function ($tq) use ($bankId) {
+                                        $tq->whereIn('reference_id', AccountTransfer::where(fn ($q) => $q->where('from_account_id', $bankId)->orWhere('to_account_id', $bankId))->select('id'))
+                                            ->orWhere('funding_source', 'spare_parts_cashier');
+                                    });
+                            });
                     });
-            });
+            })
+            ->orWhereIn('category', ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation']);
+        });
         if ($movementsOnly) {
             $query->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', [
                 'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase',

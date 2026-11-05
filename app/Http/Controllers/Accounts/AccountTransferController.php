@@ -94,7 +94,7 @@ class AccountTransferController extends BaseAccountController
             if ($transfer->status !== 'Completed') {
                 return;
             }
-            AccountTransaction::where('reference_type', $transfer->getMorphClass())->where('reference_id', $transfer->id)->where('status', 'active')->get()->each(fn ($t) => $service->reverseTransaction($t, $v['reason']));
+            AccountTransaction::where('reference_type', $transfer->getMorphClass())->where('reference_id', $transfer->id)->where('status', 'active')->get()->each(fn ($t) => $service->reverseTransaction($t, $v['reason'], $transfer->transfer_date));
             $transfer->update(['status' => 'Cancelled', 'cancel_reason' => $v['reason'], 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
         });
 

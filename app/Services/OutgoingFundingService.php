@@ -113,17 +113,21 @@ class OutgoingFundingService
     {
         if ($type === 'main') {
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
-            // Cashier receipts for Main only track cash collected today.
-            $cash = $entries->filter(fn ($entry) => ($entry->funding_source === null || $entry->funding_source === 'main')
+            // Cashier receipts for Main only track active cash collected today from customers.
+            $cash = $entries->filter(fn ($entry) => $entry->status === 'active'
+                && $entry->transaction_type !== 'reversal'
+                && $entry->funding_source === null
                 && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
                 && $entry->credit > 0
-                && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation'], true));
+                && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation', 'transfer'], true));
 
             return round($cash->sum('credit'), 2);
         }
 
-        $cash = $entries->filter(fn ($entry) => ($entry->funding_source === $type.'_cashier'
-                || ($entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')))
+        $cash = $entries->filter(fn ($entry) => $entry->status === 'active'
+            && $entry->transaction_type !== 'reversal'
+            && ($entry->funding_source === $type.'_cashier'
+                || ($entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash') && $entry->category !== 'transfer'))
             && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation'], true));
 
         return round($cash->sum('credit') - $cash->sum('debit'), 2);
