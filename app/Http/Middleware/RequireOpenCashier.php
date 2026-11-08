@@ -22,7 +22,12 @@ class RequireOpenCashier
             if (CashierSession::isOpenToday()) {
                 return $next($request);
             }
-            $message = 'The cashier is closed. Please open the cashier before creating job cards, quick jobs or parts sales. Bike intake is still available.';
+            $active = CashierSession::active();
+            if ($active && ! $active->session_date->isToday()) {
+                $message = 'The cashier for ' . $active->session_date->format('d M Y') . ' is still open from a previous day. Please close that day and open today’s cashier before creating job cards, quick jobs or parts sales.';
+            } else {
+                $message = 'The cashier is closed. Please open the cashier before creating job cards, quick jobs or parts sales. Bike intake is still available.';
+            }
             if ($request->expectsJson()) {
                 return response()->json(['success' => false, 'message' => $message, 'cashier_url' => route('cashier.index')], 423);
             }

@@ -339,11 +339,17 @@ class CashierController extends Controller
             'difference_reason' => 'nullable|string|max:1000', 'balance_version' => 'required|string|size:64',
         ] + OutgoingFundingService::rules());
         $service->close($cashier, $values);
+        $closedPastDate = ! $cashier->session_date->isToday();
+        $redirect = $closedPastDate ? route('cashier.index') : route('cashier.index', ['date' => $cashier->session_date->toDateString()]);
+        $message = $closedPastDate
+            ? 'Cashier for ' . $cashier->session_date->format('d M Y') . ' has been closed. You can now open today’s cashier to begin operations.'
+            : 'Cashier closed. Cash withdrawal and verified cash-in-hand balances have been saved.';
+
         if ($request->expectsJson()) {
-            return response()->json(['success' => true, 'redirect' => route('cashier.index', ['date' => $cashier->session_date->toDateString()])]);
+            return response()->json(['success' => true, 'redirect' => $redirect]);
         }
 
-        return redirect()->route('cashier.index', ['date' => $cashier->session_date->toDateString()])->with('success', 'Cashier closed. Cash withdrawal and verified cash-in-hand balances have been saved.');
+        return redirect($redirect)->with('success', $message);
     }
 
     public function reopen(Request $request, CashierSession $cashier, CashierService $service)
