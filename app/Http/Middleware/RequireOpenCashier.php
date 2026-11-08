@@ -19,7 +19,7 @@ class RequireOpenCashier
         }
 
         $check = function () use ($request, $next) {
-            if (CashierSession::isOpenToday()) {
+            if (CashierSession::hasOpenSession()) {
                 return $next($request);
             }
             $active = CashierSession::active();

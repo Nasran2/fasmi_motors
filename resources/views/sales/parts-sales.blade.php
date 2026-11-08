@@ -1,4 +1,8 @@
 <x-layouts::pos title="POS - Parts Sales">
+@php
+    $activeCashier = \App\Models\CashierSession::active();
+    $defaultCashierDate = $activeCashier?->session_date?->toDateString() ?? today()->toDateString();
+@endphp
     @section('pos-search')
     <div class="relative w-full max-w-2xl" x-data="{ query: '' }">
         <svg class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
@@ -519,6 +523,11 @@
                                 <span class="text-xs font-black uppercase text-slate-500">Total Payable</span>
                                 <span class="text-2xl font-black text-indigo-600" x-text="'Rs. ' + formatNumber(cart.total)"></span>
                             </div>
+                            @if($activeCashier && ! $activeCashier->session_date->isToday())
+                                <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                                    Operating under open cashier session for {{ $activeCashier->session_date->format('d M Y') }}. Bill date and payment date default to {{ $activeCashier->session_date->format('d M Y') }}.
+                                </div>
+                            @endif
                             <div class="grid gap-3 sm:grid-cols-2"><label><span class="label">Bill date</span><input type="date" x-model="billDate" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label><label><span class="label">Payment date</span><input type="date" x-model="paymentDate" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label></div>
                             <label class="block"><span class="label uppercase">Payment Method</span>
                                 <select x-model="paymentMethod" @change="accountId=defaultPaymentAccount(paymentMethod); activePaymentIndex=null" class="field">
@@ -751,7 +760,7 @@
                 accountId: '',
                 paidAmount: 0,
                 activePaymentIndex: null,
-                billDate: @js(today()->toDateString()), paymentDate: @js(today()->toDateString()),
+                billDate: @js($defaultCashierDate), paymentDate: @js($defaultCashierDate),
                 chequeDate: '', chequeNumber: '', chequeBank: '', extraPayments: [],
                 isSubmitting: false,
                 submissionToken: crypto.randomUUID(),

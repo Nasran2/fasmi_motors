@@ -23,7 +23,17 @@
     @if($closing && $closing->cash_actual_balance !== null && $events->contains('action', 'opening_corrected'))
         <section class="panel border border-amber-300"><h2 class="text-lg font-black">Closing reconciliation after opening correction</h2><p class="mt-2 text-sm text-slate-600">Recorded closing cash: Rs. {{ number_format($closing->cash_actual_balance, 2) }} · Expected closing: Rs. {{ number_format($closing->cash_closing_balance, 2) }} · Difference: Rs. {{ number_format($closing->cash_difference, 2) }}. Recorded cash counts and receipts are preserved.</p><div class="mt-3 flex flex-wrap gap-4 text-sm">@foreach($labels as $type => $label)<span>{{ $label }} difference: Rs. {{ number_format($closing->{$type.'_difference'}, 2) }}</span>@endforeach</div></section>
     @endif
-    @if($active && !$active->session_date->isToday())<div role="alert" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">The cashier for {{ $active->session_date->format('d M Y') }} is still open. Close that day before opening today. <button type="button" class="underline" data-cashier-closing="{{ route('cashier.closing-popup', $active) }}">Close previous session</button></div>@endif
+    @if($active && !$active->session_date->isToday())
+        <div role="alert" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <span>The cashier for {{ $active->session_date->format('d M Y') }} is still open. You can complete yesterday’s pending bills and sales now, and then close this session when finished.</span>
+                <div class="flex items-center gap-2">
+                    <a href="{{ route('sales.job-billing') }}" class="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-800 border shadow-sm hover:bg-slate-50">Go to Job Billing</a>
+                    <button type="button" class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700" data-cashier-closing="{{ route('cashier.closing-popup', $active) }}">Close {{ $active->session_date->format('d M') }} Session</button>
+                </div>
+            </div>
+        </div>
+    @endif
     @if($isToday && !$active)
         <section class="panel flex flex-wrap items-center justify-between gap-4 border-2 border-amber-300"><div><h2 class="text-xl font-black">Open Cashier</h2><p class="mt-1 text-sm text-slate-500">Enter the opening cash and select today’s washing person. Open and close as many times as needed today.</p></div><button type="button" data-cashier-open="{{ route('cashier.opening-popup') }}" class="btn-primary">Open Cashier & Start Day</button></section>
         @if($errors->hasAny(['opening_balance', 'opening_reason', 'washing_person_id', 'washing_commission_amount']))<span data-auto-open-cashier="{{ route('cashier.opening-popup') }}"></span>@endif

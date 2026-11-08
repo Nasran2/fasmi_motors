@@ -194,9 +194,18 @@
         @else
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: Math.max(0, jobTotal + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0) - {{ $advanceTotal }})})">
             @csrf<x-submission-token/>
+            @php
+                $activeCashier = \App\Models\CashierSession::active();
+                $defaultCashierDate = $activeCashier?->session_date?->toDateString() ?? today()->toDateString();
+            @endphp
+            @if($activeCashier && ! $activeCashier->session_date->isToday())
+            <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                Operating under open cashier session for {{ $activeCashier->session_date->format('d M Y') }}. Bill date and payment date default to {{ $activeCashier->session_date->format('d M Y') }} so collections credit that open session.
+            </div>
+            @endif
             <div class="grid gap-3 sm:grid-cols-2">
-                <label><span class="label">Bill date</span><input type="date" name="bill_date" value="{{ old('bill_date', $job->bill_date?->toDateString() ?? today()->toDateString()) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
-                <label><span class="label">Payment date</span><input type="date" name="paid_at" value="{{ old('paid_at', today()->toDateString()) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
+                <label><span class="label">Bill date</span><input type="date" name="bill_date" value="{{ old('bill_date', $job->bill_date?->toDateString() ?? $defaultCashierDate) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
+                <label><span class="label">Payment date</span><input type="date" name="paid_at" value="{{ old('paid_at', $defaultCashierDate) }}" min="1900-01-01" max="{{ today()->toDateString() }}" class="field" required></label>
             </div>
             <p class="text-xs text-slate-500">Sales use the bill date. Receipts and cash movements use the payment date.</p>
             @if($job->repair_staff)

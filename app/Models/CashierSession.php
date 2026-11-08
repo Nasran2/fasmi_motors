@@ -38,6 +38,11 @@ class CashierSession extends Model
         return static::where('status', 'open')->oldest('session_date')->first();
     }
 
+    public static function hasOpenSession(): bool
+    {
+        return static::where('status', 'open')->exists();
+    }
+
     public static function isOpenToday(): bool
     {
         return static::where('status', 'open')->whereDate('session_date', today())->exists();
