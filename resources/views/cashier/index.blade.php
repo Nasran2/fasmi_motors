@@ -66,30 +66,42 @@
                             @php
                                 $account = $summary['display_accounts'][$type];
                                 $adjustmentColor = $account['adjustments'] > 0 ? 'text-emerald-700' : ($account['adjustments'] < 0 ? 'text-red-600' : 'text-slate-500');
-                                $washingInformationOnly = $type === 'washing' && $account['opening'] == 0 && $account['income'] == 0 && $account['outgoing'] == 0 && $account['adjustments'] == 0 && $account['closing'] == 0;
                             @endphp
-                                <tr class="{{ $type === 'washing' ? 'bg-blue-50' : '' }}">
+                            @if($type === 'washing')
+                                <tr class="bg-blue-50/60">
                                     <th class="p-4 text-left">
-                                        {{ $type === 'washing' ? 'Washing' : $label }}
-                                        @if($type === 'washing')
-                                            <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'washing']) }}" class="mt-1 block text-xs font-semibold text-blue-700 underline underline-offset-4">Received this date: Rs. {{ number_format($summary['washing_received'], 2) }} · View receipts</button>
-                                            <span class="mt-1 block text-xs font-normal text-slate-600">{{ $washingInformationOnly ? 'Information only · included in Main, excluded from total here.' : 'Columns show earlier Washing ledger entries. Remaining funds are included in the total until transferred to Main.' }}</span>
+                                        <span class="font-bold text-slate-800">Washing</span>
+                                        @if($summary['washing_received'] > 0)
+                                            <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'washing']) }}" class="mt-1 block text-xs font-semibold text-blue-700 underline underline-offset-4">Today’s collection: Rs. {{ number_format($summary['washing_received'], 2) }} · View receipts</button>
+                                        @else
+                                            <span class="mt-1 block text-xs text-slate-400">No washing receipts today</span>
                                         @endif
+                                        <span class="mt-0.5 block text-[11px] text-slate-500">Credited to Main Account instantly</span>
                                     </th>
-                                    @if($washingInformationOnly)
-                                        <td class="p-4">0.00</td>
-                                        <td class="p-4 text-slate-500">—</td>
-                                        <td class="p-4 text-slate-500">—</td>
-                                        <td class="p-4 text-slate-500">—</td>
-                                        <td class="p-4 text-xs text-slate-600">Included in Main</td>
-                                    @else
+                                    <td class="p-4 text-slate-500">0.00</td>
+                                    <td class="p-4 font-bold text-emerald-700">
+                                        @if($summary['washing_received'] > 0)
+                                            <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'washing']) }}" class="rounded px-1 font-bold underline decoration-emerald-300 underline-offset-4 hover:text-emerald-900" aria-label="View washing receipts">
+                                                {{ number_format($summary['washing_received'], 2) }}
+                                            </button>
+                                        @else
+                                            0.00
+                                        @endif
+                                    </td>
+                                    <td class="p-4 text-slate-400">—</td>
+                                    <td class="p-4 text-slate-400">—</td>
+                                    <td class="p-4 text-xs font-bold text-slate-600">Included in Main</td>
+                                </tr>
+                            @else
+                                <tr>
+                                    <th class="p-4 text-left">{{ $label }}</th>
                                     <td class="p-4">{{ number_format($account['opening'], 2) }}</td>
                                     <td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'credit']) }}" class="rounded px-1 font-semibold underline decoration-emerald-200 underline-offset-4 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} credits">{{ number_format($account['income'], 2) }}</button></td>
                                     <td class="p-4 text-red-600"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'debit']) }}" class="rounded px-1 font-semibold underline decoration-red-200 underline-offset-4 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} debits">{{ number_format($account['outgoing'], 2) }}</button></td>
                                     <td class="p-4 {{ $adjustmentColor }}"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'adjustment']) }}" class="rounded px-1 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} adjustments">{{ $account['adjustments'] > 0 ? '+' : '' }}{{ number_format($account['adjustments'], 2) }}</button></td>
                                     <td class="p-4 font-black">{{ number_format($account['closing'], 2) }}</td>
-                                    @endif
                                 </tr>
+                            @endif
                         @endforeach
                     </tbody>
                     <tfoot class="border-t bg-slate-50 font-black">

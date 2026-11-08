@@ -29,6 +29,10 @@ class CashPositionService
                     $query->where('credit', '>', 0)
                         ->orWhere('debit', '<=', 0);
                 });
+        } elseif ($type === 'washing') {
+            // All washing cash receipts are credited to Main Account immediately.
+            // Washing account itself has zero separate drawer cash.
+            return $query->whereRaw('1 = 0');
         } else {
             // Spare parts outgoings can go from cashier cash (spare_parts_cashier) or opening balance (spare_parts)
             $query->where(fn ($query) => $query->whereNull('funding_source')->orWhere('funding_source', 'spare_parts_cashier'));

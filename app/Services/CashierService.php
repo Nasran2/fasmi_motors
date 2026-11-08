@@ -42,7 +42,7 @@ class CashierService
             // Opening corrections belong to opening, rather than today's sales.
             $openingRows = $rows->whereIn('category', ['cashier_opening', 'cashier_account_opening']);
             $opening += $openingRows->sum('credit') - $openingRows->sum('debit');
-            $rows = $rows->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']);
+            $rows = $rows->whereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']);
             $income = (float) $rows->sum('credit');
             $outgoing = (float) $rows->sum('debit');
             $accounts[$type] = [
@@ -55,16 +55,27 @@ class CashierService
 
         $session = CashierSession::whereDate('session_date', $date)->first();
         $collections = app(CollectionReportService::class)->rows($date, $date);
+        $washingReceived = $collections->sum(fn ($receipt) => (int) round(($receipt['components']['washing'] ?? 0) * 100)) / 100;
+
         // The displayed opening is the selected date's confirmed snapshot.
         // Keep the ledger closing intact and expose any reconciliation separately.
         $displayAccounts = $accounts;
         $adjustmentIds = AccountTransaction::whereIn('id', $transactions->modelKeys())
             ->balanceAdjustments()->pluck('id');
         foreach ($displayAccounts as $type => &$account) {
+            if ($type === 'washing') {
+                $account['opening'] = 0.0;
+                $account['income'] = $washingReceived;
+                $account['outgoing'] = 0.0;
+                $account['adjustments'] = 0.0;
+                $account['closing'] = 0.0;
+                $account['reconciliation'] = 0.0;
+                continue;
+            }
             $account['opening'] = (float) ($session?->account_opening_balances[$type] ?? $account['opening']);
             $account['reconciliation'] = round($account['closing'] - $account['opening'] - $account['income'] + $account['outgoing'], 2);
             $adjustments = $transactions->where('account_id', Account::systemAccount($type)->id)
-                ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening'])
+                ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep'])
                 ->whereIn('id', $adjustmentIds);
             $account['income'] = round($account['income'] - $adjustments->sum('credit'), 2);
             $account['outgoing'] = round($account['outgoing'] - $adjustments->sum('debit'), 2);

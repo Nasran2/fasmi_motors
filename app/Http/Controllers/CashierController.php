@@ -62,7 +62,7 @@ class CashierController extends Controller
         $label = CashierService::ACCOUNTS[$values['account']];
         $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($values['account'])->id)
             ->whereDate('transaction_date', $date)
-            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening']));
+            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']));
         $reconciliation = 0;
         $recordedOpening = null;
         $ledgerOpening = null;
