@@ -126,7 +126,11 @@
             <div class="flex justify-between text-xs font-semibold text-violet-700"><dt>Change to return</dt><dd class="font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['change'] }} : {{ $job->invoice->change_amount }})">Rs. {{ number_format($paymentSummary['change'],2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Cheque Hold</dt><dd class="text-amber-600 font-bold" x-text="'Rs. ' + money(includePreviousBalance ? {{ $paymentSummary['hold'] }} : {{ (float) $job->invoice->hold_amount }})">Rs. {{ number_format($paymentSummary['hold'],2) }}</dd></div>
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Due</dt><dd class="text-red-600 font-bold" x-text="'Rs. ' + money(Math.max(0, jobTotal - {{ (float) $job->invoice->paid_amount }} - {{ (float) $job->invoice->hold_amount }}))">Rs. {{ number_format($job->invoice->due_amount,2) }}</dd></div>
-            @php($combinedPaymentStatus = $paymentSummary['hold'] > 0 ? ($paymentSummary['due'] > 0 ? 'Partially Paid / Hold' : 'Hold') : ($paymentSummary['due'] <= 0 ? 'Completed' : ($paymentSummary['paid'] > 0 ? 'Partially Paid' : 'Unpaid')))
+            @php
+                $combinedPaymentStatus = $paymentSummary['hold'] > 0
+                    ? ($paymentSummary['due'] > 0 ? 'Partially Paid / Hold' : 'Hold')
+                    : ($paymentSummary['due'] <= 0 ? 'Completed' : ($paymentSummary['paid'] > 0 ? 'Partially Paid' : 'Unpaid'));
+            @endphp
             <div class="flex justify-between text-xs font-semibold text-slate-500"><dt>Payment status</dt><dd x-text="includePreviousBalance ? @js($combinedPaymentStatus) : @js($job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status)">{{ $job->invoice->status === 'Paid' ? 'Completed' : $job->invoice->status }}</dd></div>
             @endif
             @if($oldDue > 0)
@@ -151,7 +155,7 @@
                 @if(!$job->invoice && $advanceTotal > 0)
                 <p class="text-slate-500">Advance allocation is a preview until billing. New job charges are covered first, then the oldest unpaid bills.</p>
                 @endif
-                @php($earlierDueBeforeRow = 0)
+                @php $earlierDueBeforeRow = 0; @endphp
                 @forelse($previousBalances as $balance)
                     <div class="flex justify-between gap-3">
                         <span>{{ $balance['reference'] }}<span class="block text-slate-500">{{ $balance['date'] }}</span><span class="block text-slate-500">{{ $balance['status'] }}</span></span>
@@ -162,14 +166,16 @@
                             <span @if(!$job->invoice && $advanceTotal > 0) x-show="advanceOnOld <= {{ $earlierDueBeforeRow }}" @endif><x-due-payment-button :invoice-id="$balance['invoice_id']" :due="$balance['amount']" :number="$balance['invoice_number']" :paid="$balance['paid']" :hold="$balance['hold']" class="mt-1"/></span>
                         </div>
                     </div>
-                @php($earlierDueBeforeRow += $balance['amount'])
+                @php $earlierDueBeforeRow += $balance['amount']; @endphp
                 @empty
                     <p class="text-slate-500">No previous unpaid bills.</p>
                 @endforelse
             </div>
         </div>
         @if(auth()->user()->canAccess('job_card.edit') && $job->status !== 'Cancelled' && $job->invoice?->status !== 'Cancelled')
-        @php($previousBalanceLatestDate = min(today()->toDateString(), $job->invoice?->created_at->toDateString() ?? today()->toDateString()))
+        @php
+            $previousBalanceLatestDate = min(today()->toDateString(), $job->invoice?->created_at->toDateString() ?? today()->toDateString());
+        @endphp
         <details class="mt-3 rounded-xl border border-slate-200 p-3" @if($errors->has('previous_balance_amount') || $errors->has('previous_balance_date')) open @endif>
             <summary class="cursor-pointer text-sm font-bold text-blue-600">+ Add opening balance</summary>
             <p class="mt-2 text-xs text-slate-500">Forgot to enter the opening balance when adding the customer or intake? Add only the missing amount here. Existing unpaid bills are included automatically.</p>
@@ -301,7 +307,7 @@
     <div class="flow-root">
         <ul role="list" class="-mb-8">
             @forelse($history as $index => $entry)
-            @php($log = $entry['record'])
+            @php $log = $entry['record']; @endphp
             <li>
                 <div class="relative pb-8">
                     @if($index !== count($history) - 1)
@@ -319,7 +325,7 @@
                                 <p class="text-xs font-bold text-slate-700">Payment corrected by {{ $log->changer?->name ?: 'System' }} · {{ $log->before['invoice_number'] }}</p>
                                 <div class="mt-2 space-y-1 text-xs text-slate-600">
                                     @foreach(['before' => 'Before', 'after' => 'After'] as $key => $label)
-                                    @php($details = $log->$key)
+                                    @php $details = $log->$key; @endphp
                                     <p><b>{{ $label }}:</b> {{ $details['number'] }} · {{ $details['method'] }} · Received Rs. {{ number_format($details['received_amount'], 2) }} · Applied Rs. {{ number_format($details['amount'], 2) }} · Change Rs. {{ number_format($details['change_amount'], 2) }} · {{ $details['paid_at'] }} · {{ $details['account_name'] }}</p>
                                     @if($details['cheque_id'])<p class="text-amber-700">Cheque {{ $details['cheque_number'] }} · {{ $details['bank_name'] }} · {{ $details['cheque_date'] }} · {{ $details['status'] }}</p>@endif
                                     @foreach($details['allocations'] ?? [] as $allocation)
