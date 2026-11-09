@@ -109,6 +109,7 @@ class CashierService
                 ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']);
             $grossDebits = (float) $typeRows->where('debit', '>', 0)->sum('debit');
             $reversedDebits = (float) $typeRows->where('status', 'reversed')->where('debit', '>', 0)->sum('debit');
+            $nonCashIncome = max(0, round($accounts[$type]['income'] - $cashierFunds[$type], 2));
             $allocationAccounts[$type] = [
                 'opening' => $openingContext['accounts'][$type] ?? $accounts[$type]['opening'],
                 'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
@@ -117,6 +118,8 @@ class CashierService
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,
                 'net_debits' => round($grossDebits - $reversedDebits, 2),
+                'expenses' => (float) $accounts[$type]['outgoing'],
+                'non_cash_income' => $nonCashIncome,
             ];
         }
 
