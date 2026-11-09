@@ -97,7 +97,12 @@
                                     <th class="p-4 text-left">{{ $label }}</th>
                                     <td class="p-4">{{ number_format($account['opening'], 2) }}</td>
                                     <td class="p-4 text-emerald-700"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'credit']) }}" class="rounded px-1 font-semibold underline decoration-emerald-200 underline-offset-4 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} credits">{{ number_format($account['income'], 2) }}</button></td>
-                                    <td class="p-4 text-red-600"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'debit']) }}" class="rounded px-1 font-semibold underline decoration-red-200 underline-offset-4 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} debits">{{ number_format($account['outgoing'], 2) }}</button></td>
+                                    <td class="p-4 text-red-600">
+                                        <button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'debit']) }}" class="rounded px-1 font-semibold underline decoration-red-200 underline-offset-4 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} debits">{{ number_format($account['outgoing'], 2) }}</button>
+                                        @if(($summary['allocation_accounts'][$type]['reversed_debits'] ?? 0) > 0)
+                                            <span class="block text-[11px] font-normal text-slate-500">Net: Rs. {{ number_format($summary['allocation_accounts'][$type]['net_debits'], 2) }}</span>
+                                        @endif
+                                    </td>
                                     <td class="p-4 {{ $adjustmentColor }}"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'adjustment']) }}" class="rounded px-1 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} adjustments">{{ $account['adjustments'] > 0 ? '+' : '' }}{{ number_format($account['adjustments'], 2) }}</button></td>
                                     <td class="p-4 font-black">{{ number_format($account['closing'], 2) }}</td>
                                 </tr>

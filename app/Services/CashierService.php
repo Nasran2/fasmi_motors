@@ -105,11 +105,18 @@ class CashierService
             $priorAllocationRows = $transactions->where('account_id', Account::systemAccount($type)->id)->where('category', 'cashier_daily_allocation');
             $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit') - ($openingContext['snapshot']['daily_allocation'][$type] ?? 0), 2);
             $washingToMain = $type === 'main' ? $accounts['washing']['closing'] : 0;
+            $typeRows = $transactions->where('account_id', Account::systemAccount($type)->id)
+                ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']);
+            $grossDebits = (float) $typeRows->where('debit', '>', 0)->sum('debit');
+            $reversedDebits = (float) $typeRows->where('status', 'reversed')->where('debit', '>', 0)->sum('debit');
             $allocationAccounts[$type] = [
                 'opening' => $openingContext['accounts'][$type] ?? $accounts[$type]['opening'],
                 'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
                 'suggested_addition' => max(0, round($cashierFunds[$type] + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
+                'gross_debits' => $grossDebits,
+                'reversed_debits' => $reversedDebits,
+                'net_debits' => round($grossDebits - $reversedDebits, 2),
             ];
         }
 

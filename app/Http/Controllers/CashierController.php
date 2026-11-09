@@ -67,6 +67,8 @@ class CashierController extends Controller
         $recordedOpening = null;
         $ledgerOpening = null;
         $postedAdjustments = 0;
+        $reversedTotal = 0.0;
+        $activeTotal = 0.0;
         if ($side === 'adjustment') {
             $query->balanceAdjustments();
             $postedAdjustments = round((clone $query)->sum('credit') - (clone $query)->sum('debit'), 2);
@@ -85,11 +87,13 @@ class CashierController extends Controller
         } else {
             $query->balanceAdjustments(false)->where($side, '>', 0);
             $total = (float) (clone $query)->sum($side);
+            $reversedTotal = (float) (clone $query)->where('status', 'reversed')->sum($side);
+            $activeTotal = round($total - $reversedTotal, 2);
         }
         $rows = $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate(25)->withQueryString();
         $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
 
-        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reconciliation', 'recordedOpening', 'ledgerOpening', 'postedAdjustments'));
+        return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reversedTotal', 'activeTotal', 'reconciliation', 'recordedOpening', 'ledgerOpening', 'postedAdjustments'));
     }
 
     public function index(Request $request, CashierService $service, AccountService $accounts)

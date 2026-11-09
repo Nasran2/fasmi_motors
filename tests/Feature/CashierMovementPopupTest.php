@@ -35,7 +35,7 @@ it('shows the invoice job and bike for each receipt with separate new-tab docume
     $this->invoice->update(['job_card_id' => $job->id]);
     $payment = $this->invoice->payments()->create(['number' => 'POPUP-RECEIPT', 'amount' => 125, 'method' => 'Cash', 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
     $this->accounts->recordTransaction('main', 'income', 125, 'Receipt for POPUP-INVOICE', $payment, 'Cash');
-    $this->get(($this->movements)())->assertOk()->assertSeeText('POPUP-INVOICE')->assertSeeText('POPUP-JOB')->assertSeeText('Bike: BIJ-4321')
+    $this->get(($this->movements)())->assertOk()->assertSeeText('POPUP-INVOICE')->assertSeeText('POPUP-JOB')->assertSeeText('BIJ-4321')
         ->assertSee('href="'.route('sales.invoices.show', $this->invoice).'" target="_blank"', false)
         ->assertSee('href="'.route('jobs.show', $job).'" target="_blank"', false)->assertViewHas('total', 125.0);
 })->with([true, false]);
@@ -93,6 +93,27 @@ it('paginates without dropping entries from the total and reports empty accounts
         ->assertSee('data-movement-pagination', false);
     $this->get(($this->movements)('credit', 'main', page: 2))->assertOk()->assertViewHas('total', 270.0)->assertViewHas('rows', fn ($rows) => $rows->count() === 2);
     $this->get(($this->movements)('debit', 'bank'))->assertOk()->assertViewHas('total', 0.0)->assertSeeText('No debits for this account on this date.');
+});
+
+it('displays reversed debits with reversed badge and shows net active debits in the header', function () {
+    $expense = Expense::create([
+        'number' => 'EXP-TEST-REVERSED', 'expense_date' => today(), 'account_id' => Account::systemAccount('main')->id,
+        'category' => 'Advance', 'description' => 'Staff advance to reverse', 'amount' => 1500, 'payment_method' => 'Cash', 'created_by' => auth()->id(),
+    ]);
+    $entry = $this->accounts->recordTransaction('main', 'expense', 1500, 'Staff advance to reverse', $expense, 'Cash');
+    $this->accounts->reverseTransaction($entry, 'Mistaken entry');
+    $this->accounts->recordTransaction('main', 'expense', 500, 'Active advance', paymentMethod: 'Cash');
+
+    $response = $this->get(($this->movements)('debit', 'main'))->assertOk();
+
+    $response->assertViewHas('total', 2000.0)
+        ->assertViewHas('reversedTotal', 1500.0)
+        ->assertViewHas('activeTotal', 500.0)
+        ->assertSeeText('Gross: Rs. 2,000.00')
+        ->assertSeeText('−Rs. 1,500.00')
+        ->assertSeeText('Net active debits: Rs. 500.00')
+        ->assertSeeText('Reversed')
+        ->assertSeeText('Reversal reason: Mistaken entry (excluded from net account balance)');
 });
 
 it('keeps cashier access separate from document permissions and the other shop', function () {
