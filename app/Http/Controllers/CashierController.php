@@ -42,8 +42,13 @@ class CashierController extends Controller
         $totals['washing'] = $summary['washing_received'];
         $items = $breakdowns->breakdown($date, $summary, $session, $request->user())[$card];
         $page = $request->integer('page', 1);
-        $rows = new LengthAwarePaginator($items->forPage($page, 25)->values(), $items->count(), 25, $page,
-            ['path' => $request->url(), 'query' => $request->query()]);
+        $rows = new LengthAwarePaginator(
+            $items->forPage($page, 25)->values(),
+            $items->count(),
+            25,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
         $events = $card === 'opening' ? ($session?->events()->with('creator')->whereIn('action', ['opened', 'reopened', 'opening_recorded', 'opening_corrected'])->orderBy('id')->get() ?? collect()) : collect();
 
         return view('cashier.card-details-popup', compact('date', 'card', 'labels', 'totals', 'summary', 'rows', 'events'));
@@ -53,7 +58,7 @@ class CashierController extends Controller
     {
         $values = $request->validate([
             'date' => 'required|date_format:Y-m-d|before_or_equal:today',
-            'account' => 'required|in:'.implode(',', array_keys(CashierService::ACCOUNTS)),
+            'account' => 'required|in:' . implode(',', array_keys(CashierService::ACCOUNTS)),
             'side' => 'required|in:credit,debit,adjustment',
             'page' => 'sometimes|integer|min:1',
         ]);
@@ -62,7 +67,7 @@ class CashierController extends Controller
         $label = CashierService::ACCOUNTS[$values['account']];
         $query = AccountTransaction::posted()->where('account_id', Account::systemAccount($values['account'])->id)
             ->whereDate('transaction_date', $date)
-            ->where(fn ($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']));
+            ->where(fn($query) => $query->whereNull('category')->orWhereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']));
         $reconciliation = 0;
         $recordedOpening = null;
         $ledgerOpening = null;
@@ -91,7 +96,7 @@ class CashierController extends Controller
             $activeTotal = round($total - $reversedTotal, 2);
         }
         $rows = $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate(25)->withQueryString();
-        $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
+        $details = $rows->getCollection()->mapWithKeys(fn($row) => [$row->id => $sources->details($row, $request->user())]);
 
         return view('cashier.movements-popup', compact('date', 'side', 'label', 'rows', 'details', 'total', 'reversedTotal', 'activeTotal', 'reconciliation', 'recordedOpening', 'ledgerOpening', 'postedAdjustments'));
     }
@@ -155,7 +160,7 @@ class CashierController extends Controller
         $liveClosing = $session->status === 'open' && ! $event;
         $summary = $liveClosing ? $service->summary($date) : (($event ? ($event->details['closing_snapshot'] ?? []) : ($session->closing_summary ?? [])));
         $balanceVersion = $liveClosing ? $service->fingerprint($summary) : null;
-        $expectedBalances = $liveClosing ? collect($summary['cash_accounts'])->map(fn ($account) => $account['closing'])->all() : [];
+        $expectedBalances = $liveClosing ? collect($summary['cash_accounts'])->map(fn($account) => $account['closing'])->all() : [];
         if ($liveClosing) {
             foreach (['main', 'spare_parts', 'bank', 'washing'] as $type) {
                 $expectedBalances[$type] = $summary['accounts'][$type]['closing'];
@@ -170,14 +175,14 @@ class CashierController extends Controller
         $closingVersion = app(CashierClosingHistoryService::class)->version($session);
         $canEdit = ! $event && $session->status === 'closed' && $request->user()->canAccess('account.daily_closing');
         $audit = $session->events()->with('creator', 'washingPerson')->whereIn('action', ['closed', 'closing_corrected', 'account_balance_corrected'])->latest('id')->get();
-        $query = AccountTransaction::posted()->whereIn('account_id', collect(CashierService::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date);
+        $query = AccountTransaction::posted()->whereIn('account_id', collect(CashierService::ACCOUNTS)->map(fn($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date);
         if (isset($summary['closing_transaction_ids'])) {
             $query->whereIn('id', $summary['closing_transaction_ids']);
         } elseif (! $liveClosing && ($event?->created_at ?? $session->closed_at)) {
             $query->where('created_at', '<=', $event?->created_at ?? $session->closed_at);
         }
         $rows = $query->with('account')->orderBy('transaction_date')->orderBy('id')->paginate(50)->withQueryString();
-        $details = $rows->getCollection()->mapWithKeys(fn ($row) => [$row->id => $sources->details($row, $request->user())]);
+        $details = $rows->getCollection()->mapWithKeys(fn($row) => [$row->id => $sources->details($row, $request->user())]);
 
         return view('cashier.closing-popup', compact('session', 'date', 'isToday', 'event', 'liveClosing', 'summary', 'balanceVersion', 'expectedBalances', 'closing', 'savedBalances', 'savedCash', 'closingVersion', 'canEdit', 'audit', 'rows', 'details'));
     }
@@ -218,7 +223,8 @@ class CashierController extends Controller
     public function correctClosing(Request $request, CashierSession $cashier, CashierClosingHistoryService $service)
     {
         $values = $request->validate([
-            'closing_version' => 'required|string|size:64', 'reason' => 'required|string|min:3|max:1000',
+            'closing_version' => 'required|string|size:64',
+            'reason' => 'required|string|min:3|max:1000',
             'closing_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'balances' => 'required|array:main,spare_parts,bank,washing',
             'balances.main' => 'required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
@@ -240,20 +246,28 @@ class CashierController extends Controller
 
     public function collections(Request $request)
     {
-        $values = $request->validate(['from' => 'nullable|date_format:Y-m-d|before_or_equal:today',
+        $values = $request->validate([
+            'from' => 'nullable|date_format:Y-m-d|before_or_equal:today',
             'to' => 'nullable|date_format:Y-m-d|after_or_equal:from|before_or_equal:today',
-            'method' => 'nullable|in:all,cash,bank,bank_transfer', 'search' => 'nullable|string|max:200']);
+            'method' => 'nullable|in:all,cash,bank,bank_transfer',
+            'search' => 'nullable|string|max:200'
+        ]);
         $from = $values['from'] ?? today()->toDateString();
         $to = $values['to'] ?? $from;
         $method = $values['method'] ?? 'all';
         $all = app(CollectionReportService::class)->rows($from, $to);
-        $rows = $all->filter(fn ($row) => match ($method) {
-            'cash' => $row['channel'] === 'cash', 'bank' => $row['channel'] === 'bank',
-            'bank_transfer' => $row['channel'] === 'bank' && $row['method'] === 'Bank Transfer', default => true,
-        })->filter(fn ($row) => empty($values['search']) || str_contains(mb_strtolower(implode(' ', [$row['number'], $row['invoice'], $row['customer'], $row['description'], implode(' ', $row['bikes'] ?? [])])), mb_strtolower($values['search'])));
-        $totals = ['cash' => round($all->where('channel', 'cash')->sum('amount'), 2),
-            'bank' => round($all->where('channel', 'bank')->sum('amount'), 2), 'all' => round($all->sum('amount'), 2),
-            'filtered' => round($rows->sum('amount'), 2)];
+        $rows = $all->filter(fn($row) => match ($method) {
+            'cash' => $row['channel'] === 'cash',
+            'bank' => $row['channel'] === 'bank',
+            'bank_transfer' => $row['channel'] === 'bank' && $row['method'] === 'Bank Transfer',
+            default => true,
+        })->filter(fn($row) => empty($values['search']) || str_contains(mb_strtolower(implode(' ', [$row['number'], $row['invoice'], $row['customer'], $row['description'], implode(' ', $row['bikes'] ?? [])])), mb_strtolower($values['search'])));
+        $totals = [
+            'cash' => round($all->where('channel', 'cash')->sum('amount'), 2),
+            'bank' => round($all->where('channel', 'bank')->sum('amount'), 2),
+            'all' => round($all->sum('amount'), 2),
+            'filtered' => round($rows->sum('amount'), 2)
+        ];
 
         return view('cashier.collections', compact('from', 'to', 'method', 'rows', 'totals'));
     }
@@ -280,11 +294,11 @@ class CashierController extends Controller
         $range = $separateCash ? 'between:-999999999999.99,999999999999.99' : 'between:0,999999999999.99';
 
         return [
-            'opening_balances' => 'sometimes|array:'.($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
-            'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
-            'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|'.$range,
-            'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|'.$range,
-            'opening_balances.bank' => 'sometimes|required|numeric|decimal:0,2|'.$range,
+            'opening_balances' => 'sometimes|array:' . ($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
+            'opening_balances.main' => 'required_with:opening_balances|numeric|decimal:0,2|' . $range,
+            'opening_balances.spare_parts' => 'required_with:opening_balances|numeric|decimal:0,2|' . $range,
+            'opening_balances.washing' => 'sometimes|required|numeric|decimal:0,2|' . $range,
+            'opening_balances.bank' => 'sometimes|required|numeric|decimal:0,2|' . $range,
             'balance_version' => 'sometimes|required|string|size:64',
             'separate_cash_balance' => 'nullable|boolean',
         ];
@@ -297,7 +311,7 @@ class CashierController extends Controller
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'required|string|max:1000',
             'recalculate_today' => 'nullable|boolean',
-            'opening_balances' => 'required|array:'.($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
+            'opening_balances' => 'required|array:' . ($separateCash ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
             'balance_version' => 'required|string|size:64',
         ] + $this->openingAllocationRules($separateCash));
         $service->correctOpening($cashier, (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('recalculate_today'), $separateCash);
@@ -314,7 +328,7 @@ class CashierController extends Controller
             'date' => 'required|date_format:Y-m-d|before:today',
             'opening_balance' => 'required|numeric|decimal:0,2|between:0,999999999999.99',
             'opening_reason' => 'required|string|max:1000',
-            'opening_balances' => 'required|array:'.($request->boolean('separate_cash_balance') ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
+            'opening_balances' => 'required|array:' . ($request->boolean('separate_cash_balance') ? 'main,spare_parts,washing,bank' : 'main,spare_parts,washing'),
             'balance_version' => 'required|string|size:64',
         ] + $this->openingAllocationRules($request->boolean('separate_cash_balance')));
         $service->recordHistoricalOpening($values['date'], (float) $values['opening_balance'], $values['opening_balances'], $values['opening_reason'], $values['balance_version'], $request->boolean('separate_cash_balance'));
@@ -340,7 +354,8 @@ class CashierController extends Controller
             'balances.main' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'balances.spare_parts' => 'required_with:balances|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
             'balances.bank' => 'sometimes|required|numeric|decimal:0,2|between:-999999999999.99,999999999999.99',
-            'difference_reason' => 'nullable|string|max:1000', 'balance_version' => 'required|string|size:64',
+            'difference_reason' => 'nullable|string|max:1000',
+            'balance_version' => 'required|string|size:64',
         ] + OutgoingFundingService::rules());
         $service->close($cashier, $values);
         $closedPastDate = ! $cashier->session_date->isToday();
@@ -367,9 +382,14 @@ class CashierController extends Controller
                 throw ValidationException::withMessages(['cashier' => 'Only today’s closed cashier can be reopened, with no other open session.']);
             }
             $cashier->update(['status' => 'open', 'reopen_reason' => $values['reason']]);
-            $cashier->events()->create(['action' => 'reopened', 'cash_amount' => $service->suggestedOpening(),
-                'washing_person_id' => $cashier->washing_person_id, 'washing_commission_amount' => $cashier->washing_commission_amount,
-                'details' => ['reason' => $values['reason']], 'created_by' => auth()->id()]);
+            $cashier->events()->create([
+                'action' => 'reopened',
+                'cash_amount' => $service->suggestedOpening(),
+                'washing_person_id' => $cashier->washing_person_id,
+                'washing_commission_amount' => $cashier->washing_commission_amount,
+                'details' => ['reason' => $values['reason']],
+                'created_by' => auth()->id()
+            ]);
             DailyClosing::whereDate('closing_date', today())->update(['status' => 'reopened', 'reopen_reason' => $values['reason'], 'reopened_by' => auth()->id(), 'reopened_at' => now()]);
         });
 
