@@ -81,6 +81,10 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         closingAccountBalance(type) {
             return (this.cents(this.accountAdditionBase(type)) + this.cents(this.additions[type])) / 100;
         },
+        totalAddition(type) {
+            const nonCash = this.cents(this.allocationConfig?.accounts?.[type]?.non_cash_income || 0);
+            return (this.cents(this.additions[type]) + nonCash) / 100;
+        },
         editAccountTotal(type, button) {
             const form = button.closest('form');
             const params = new URLSearchParams({account:type, account_addition:this.additions[type], owner_withdrawal:this.withdrawal || 0, balance_version:form.elements.namedItem('balance_version').value});

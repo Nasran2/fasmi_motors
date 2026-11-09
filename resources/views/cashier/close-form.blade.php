@@ -37,18 +37,12 @@
                             @endif
                         </span>
                     @endif
-                    @if(($summary['allocation_accounts'][$type]['non_cash_income'] ?? 0) > 0)
-                        <span class="mt-1 block text-sm text-emerald-700">
-                            + Bank / non-cash receipts: <b>Rs. {{ number_format($summary['allocation_accounts'][$type]['non_cash_income'], 2) }}</b>
-                        </span>
-                    @endif
-                    <span class="mt-1 block text-sm text-slate-600" x-show="cents(accountOtherMovements('{{ $type }}')) !== 0 && ({{ ($summary['allocation_accounts'][$type]['non_cash_income'] ?? 0) > 0 ? 1 : 0 }})" x-cloak>
-                        Net movements before cash addition: <b>Rs. <span x-text="money(accountOtherMovements('{{ $type }}'))"></span></b>
+                    <span class="mt-1 block text-sm text-slate-600">
+                        + Added today: <b>Rs. <span x-text="money(totalAddition('{{ $type }}'))"></span></b>
+                        @if(($summary['allocation_accounts'][$type]['non_cash_income'] ?? 0) > 0)
+                            <span class="mt-0.5 block text-xs text-slate-500">(Rs. <span x-text="money(additions.{{ $type }})"></span> cash + Rs. {{ number_format($summary['allocation_accounts'][$type]['non_cash_income'], 2) }} bank transfer)</span>
+                        @endif
                     </span>
-                    <span class="mt-1 block text-sm text-slate-600" x-show="cents(accountOtherMovements('{{ $type }}')) !== 0 && !({{ ($summary['allocation_accounts'][$type]['expenses'] ?? 0) > 0 ? 1 : 0 }} || {{ ($summary['allocation_accounts'][$type]['non_cash_income'] ?? 0) > 0 ? 1 : 0 }})" x-cloak>
-                        Other account movements: <b>Rs. <span x-text="money(accountOtherMovements('{{ $type }}'))"></span></b>
-                    </span>
-                    <span class="mt-1 block text-sm text-slate-600">+ Added today: <b>Rs. <span x-text="money(additions.{{ $type }})"></span></b></span>
                     <span class="mt-3 block rounded-lg bg-emerald-50 p-3 text-base font-black text-emerald-800" aria-live="polite"><span class="flex items-start justify-between gap-2"><span>Account balance after addition: Rs. <span x-text="money(closingAccountBalance('{{ $type }}'))"></span></span>@if(auth()->user()->canAccess('account.daily_closing'))<button type="button" class="rounded-lg border border-emerald-300 bg-white px-3 py-1 text-sm font-bold text-emerald-900 underline" data-account-total-url="{{ route('cashier.account-total-popup', $session) }}" @click.prevent.stop="editAccountTotal('{{ $type }}', $event.currentTarget)">Edit total</button>@endif</span><span x-show="savedAccountCorrections.{{ $type }}" x-cloak class="mt-2 block text-xs font-semibold">Correction saved with its reason. Carries forward.</span></span>
                     <span class="mt-2 block text-xs text-slate-500">Enter only the cash added since this opening. The carried account balance is added automatically.@if($type === 'main') Washing receipts are included in Main automatically.@endif</span>
                 </label>
