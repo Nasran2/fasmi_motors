@@ -44,7 +44,7 @@ class AccountTransaction extends Model
                 $q->where(function ($mainQ) use ($mainId) {
                     $mainQ->where('account_id', $mainId)
                         ->whereNull('funding_source')
-                        ->where(fn ($sub) => $sub->where('credit', '>', 0)->orWhere('debit', '<=', 0));
+                        ->where(fn ($sub) => $sub->where('credit', '>', 0)->orWhere('debit', '<=', 0)->orWhere('category', 'invoice_revision'));
                 })->orWhere(function ($otherQ) use ($mainId) {
                     $otherQ->where('account_id', '!=', $mainId)
                         ->where(fn ($funding) => $funding->whereNull('funding_source')->orWhere('funding_source', 'spare_parts_cashier'));

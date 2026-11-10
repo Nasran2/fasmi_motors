@@ -247,8 +247,8 @@ class SettlementService
                     continue;
                 }
                 if ($status === 'Cleared') {
-                    $advance->update(['status' => 'Completed']);
-                    app(JobAdvanceService::class)->postReceipt($advance, $date ?? today()->toDateString());
+                    $advance->update(['status' => 'Completed', 'spare_parts_to_bank' => ! $cheque->forwarded_supplier_id]);
+                    app(JobAdvanceService::class)->postReceipt($advance, $date ?? today()->toDateString(), ! $cheque->forwarded_supplier_id);
                 } elseif (in_array($status, ['Returned', 'Cancelled'], true)) {
                     AccountTransaction::where('reference_type', $advance->getMorphClass())->where('reference_id', $advance->id)
                         ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()

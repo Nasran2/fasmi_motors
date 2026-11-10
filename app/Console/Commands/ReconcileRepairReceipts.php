@@ -34,7 +34,8 @@ class ReconcileRepairReceipts extends Command
                 $received = (float) $invoice->payments()->whereIn('id', $ids)->sum('amount');
                 $allocation = ['spare_parts' => 0, 'washing' => 0, 'main' => 0];
                 foreach ($service->orderedReceipts($invoice) as $payment) {
-                    foreach ($service->paymentReceiptAllocation($invoice, $payment) as $type => $cents) {
+                    $postBank = ! $payment->cheque_id || ! $payment->cheque?->forwarded_supplier_id;
+                    foreach ($service->expectedAccountAllocation($invoice, $payment, $postBank) as $type => $cents) {
                         $allocation[$type] += $cents;
                     }
                 }

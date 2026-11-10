@@ -19,7 +19,7 @@
                     <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'received']) }}" class="rounded-xl border border-emerald-200 bg-white p-3 text-left hover:bg-blue-50"><span class="block text-xs font-bold text-slate-600">+ Cash collected, including washing</span><span class="mt-1 block text-lg font-black">Rs. {{ number_format($summary['cash_received'], 2) }}</span><span class="mt-2 block text-xs font-bold text-blue-700">View transactions →</span></button>
                     <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => 'paid']) }}" class="rounded-xl border border-emerald-200 bg-white p-3 text-left hover:bg-blue-50"><span class="block text-xs font-bold text-slate-600">− Cash paid out, including this withdrawal</span><span class="mt-1 block text-lg font-black">Rs. <span x-text="money({{ $summary['cash_paid'] }} + cashWithdrawal)">{{ number_format($summary['cash_paid'], 2) }}</span></span><span class="mt-2 block text-xs font-bold text-blue-700">View saved transactions →</span><span x-show="cashWithdrawal > 0" x-cloak class="mt-1 block text-xs text-slate-500">This withdrawal appears in the breakdown after closing is saved.</span></button>
                 </div>
-                @if($summary['cash_other_in'] != 0)<p class="mt-3 text-sm text-emerald-950">Other cash in: Rs. {{ number_format($summary['cash_other_in'], 2) }}.</p>@endif
+                @if($summary['cash_other_in'] != 0)<p class="mt-3 text-sm text-emerald-950">Other cash in: Rs. {{ number_format($summary['cash_other_in'], 2) }}.@if(($summary['bank_to_main_cash'] ?? 0) > 0) (Includes Rs. {{ number_format($summary['bank_to_main_cash'], 2) }} Main cash converted from bank transfer.)@endif</p>@endif
                 @if($summary['drawer_adjustment'] != 0)<p class="mt-3 text-sm text-emerald-950">Recorded cash count adjustment: Rs. {{ number_format($summary['drawer_adjustment'], 2) }}.</p>@endif
                 <p class="mt-3 text-sm text-emerald-950">Opening cashier cash for this date + cash collected + other cash in − cash paid out, with recorded cash count adjustments. New washing receipts credit Main immediately and remain part of physical cashier cash. Main and Spare Parts carried balances and all Bank payments are excluded.</p>
             </section>
@@ -31,25 +31,35 @@
                     $accountMeta = $summary['allocation_accounts'][$type];
                     $otherMovement = round($accountMeta['other_movements'] ?? 0, 2);
                     $nonCashAmount = round($accountMeta['non_cash_income'] ?? 0, 2);
+                    $convertedCash = round($accountMeta['bank_converted_cash'] ?? 0, 2);
+                    $conversionDeduction = round($accountMeta['bank_conversion_deduction'] ?? 0, 2);
+                    $expenseAmount = round($accountMeta['expenses'] ?? 0, 2);
                     $suggestedCash = round($accountMeta['suggested_addition'] ?? 0, 2);
+                    $ssrNote = match (true) {
+                        $convertedCash > 0 && $nonCashAmount == 0 => '(Includes Rs. ' . number_format($convertedCash, 2) . ' converted from bank transfer)',
+                        $nonCashAmount > 0 && $convertedCash == 0 => '(Rs. ' . number_format($suggestedCash, 2) . ' cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
+                        $convertedCash > 0 && $nonCashAmount > 0 => '(Rs. ' . number_format($suggestedCash, 2) . ' cash incl. Rs. ' . number_format($convertedCash, 2) . ' from bank transfer + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
+                        default => '',
+                    };
                 @endphp
                 <label class="rounded-xl border p-4"><span class="label">Today’s addition to {{ $accountLabel }} since opening · LKR</span><input name="account_additions[{{ $type }}]" type="number" step="0.01" min="0" max="999999999999.99" required class="field" x-model="additions.{{ $type }}"><input type="hidden" name="balances[{{ $type }}]" :value="closingAccountBalance('{{ $type }}').toFixed(2)">
                     <span class="mt-3 block text-sm text-slate-600">Opening balance: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].opening)">{{ number_format($accountMeta['opening'], 2) }}</span></b></span>
-                    @if(($accountMeta['expenses'] ?? 0) > 0)
-                        <span class="mt-1 block text-sm text-red-600">
-                            − Expenses / debits: <b>Rs. {{ number_format($accountMeta['expenses'], 2) }}</b>
-                            @if(($accountMeta['reversed_debits'] ?? 0) > 0)
-                                <span class="block text-xs font-normal text-slate-500">(Rs. {{ number_format($accountMeta['reversed_debits'], 2) }} reversed)</span>
-                            @endif
-                        </span>
-                    @endif
+                    <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].expenses || 0) > 0" @if($expenseAmount <= 0) x-cloak @endif>
+                        − Expenses / debits: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].expenses || 0)">{{ number_format($expenseAmount, 2) }}</span></b>
+                        @if(($accountMeta['reversed_debits'] ?? 0) > 0)
+                            <span class="block text-xs font-normal text-slate-500">(Rs. {{ number_format($accountMeta['reversed_debits'], 2) }} reversed)</span>
+                        @endif
+                    </span>
+                    <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0) > 0" @if($conversionDeduction <= 0) x-cloak @endif>
+                        − Bank transfer cash to Main (opening): <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0)">{{ number_format($conversionDeduction, 2) }}</span></b>
+                    </span>
                     <span class="mt-1 block text-sm" :class="(allocationConfig.accounts['{{ $type }}'].other_movements || 0) >= 0 ? 'text-emerald-700' : 'text-red-600'" x-show="cents(allocationConfig.accounts['{{ $type }}'].other_movements || 0) !== 0" @if($otherMovement == 0) x-cloak @endif>
                         <span x-text="(allocationConfig.accounts['{{ $type }}'].other_movements || 0) >= 0 ? '+ Transfers / adjustments:' : '− Transfers / adjustments:'">{{ $otherMovement != 0 ? ($otherMovement > 0 ? '+ Transfers / adjustments:' : '− Transfers / adjustments:') : '' }}</span>
                         <b x-show="cents(allocationConfig.accounts['{{ $type }}'].other_movements || 0) !== 0"><span x-text="'Rs. ' + money(Math.abs(allocationConfig.accounts['{{ $type }}'].other_movements || 0))">{{ $otherMovement != 0 ? 'Rs. ' . number_format(abs($otherMovement), 2) : '' }}</span></b>
                     </span>
                     <span class="mt-1 block text-sm text-slate-600">
                         + Added today: <b>Rs. <span x-text="money(totalAddition('{{ $type }}'))">{{ number_format($suggestedCash + $nonCashAmount, 2) }}</span></b>
-                        <span class="mt-0.5 block text-xs text-slate-500" x-show="(allocationConfig.accounts['{{ $type }}'].non_cash_income || 0) > 0" @if($nonCashAmount <= 0) x-cloak @endif>@if($nonCashAmount > 0)(Rs. <span x-text="money(additions.{{ $type }})">{{ number_format($suggestedCash, 2) }}</span> cash + Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].non_cash_income || 0)">{{ number_format($nonCashAmount, 2) }}</span> bank transfer)@endif</span>
+                        <span class="mt-0.5 block text-xs text-slate-500" x-show="hasAdditionNote('{{ $type }}')" x-text="additionNote('{{ $type }}')" @if($ssrNote === '') x-cloak @endif>{{ $ssrNote }}</span>
                     </span>
                     <span class="mt-3 block rounded-lg bg-emerald-50 p-3 text-base font-black text-emerald-800" aria-live="polite"><span class="flex items-start justify-between gap-2"><span>Account balance after addition: Rs. <span x-text="money(closingAccountBalance('{{ $type }}'))">{{ number_format($accountMeta['base'] + $suggestedCash, 2) }}</span></span>@if(auth()->user()->canAccess('account.daily_closing'))<button type="button" class="rounded-lg border border-emerald-300 bg-white px-3 py-1 text-sm font-bold text-emerald-900 underline" data-account-total-url="{{ route('cashier.account-total-popup', $session) }}" @click.prevent.stop="editAccountTotal('{{ $type }}', $event.currentTarget)">Edit total</button>@endif</span><span x-show="savedAccountCorrections.{{ $type }}" x-cloak class="mt-2 block text-xs font-semibold">Correction saved with its reason. Carries forward.</span></span>
                     <span class="mt-2 block text-xs text-slate-500">Enter only the cash added since this opening. The carried account balance is added automatically.@if($type === 'main') Washing receipts are included in Main automatically.@endif</span>

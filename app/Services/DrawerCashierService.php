@@ -84,12 +84,14 @@ class DrawerCashierService
     public function ledgerSnapshot(Collection $transactions): array
     {
         $funding = app(OutgoingFundingService::class);
-        $snapshot = ['cashier' => [], 'non_cash' => [], 'expenses' => [], 'daily_allocation' => [], 'opening_funding' => [], 'opening_corrections' => []];
+        $snapshot = ['cashier' => [], 'non_cash' => [], 'expenses' => [], 'bank_converted_main' => [], 'bank_conversion_deduction' => [], 'daily_allocation' => [], 'opening_funding' => [], 'opening_corrections' => []];
         foreach (['main', 'spare_parts'] as $type) {
             $rows = $transactions->where('account_id', Account::systemAccount($type)->id);
             $snapshot['cashier'][$type] = $funding->cashierAmount($rows, $type);
             $snapshot['non_cash'][$type] = $funding->nonCashIncome($rows, $type);
             $snapshot['expenses'][$type] = $funding->cycleExpenses($rows, $type);
+            $snapshot['bank_converted_main'][$type] = $type === 'main' ? $funding->bankConvertedMainCash($rows) : 0.0;
+            $snapshot['bank_conversion_deduction'][$type] = $type === 'spare_parts' ? $funding->sparePartsBankConversionDeduction($rows) : 0.0;
             foreach (['daily_allocation' => $rows->where('category', 'cashier_daily_allocation'),
                 'opening_funding' => $rows->where('funding_source', $type)->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']),
                 'opening_corrections' => $rows->whereIn('category', ['cashier_opening', 'cashier_account_opening'])] as $key => $entries) {

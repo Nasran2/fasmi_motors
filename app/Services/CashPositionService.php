@@ -27,7 +27,8 @@ class CashPositionService
             $query->whereNull('funding_source')
                 ->where(function ($query) {
                     $query->where('credit', '>', 0)
-                        ->orWhere('debit', '<=', 0);
+                        ->orWhere('debit', '<=', 0)
+                        ->orWhere('category', 'invoice_revision');
                 });
         } elseif ($type === 'washing') {
             // All washing cash receipts are credited to Main Account immediately.

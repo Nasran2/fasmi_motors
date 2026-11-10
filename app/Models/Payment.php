@@ -64,7 +64,7 @@ class Payment extends Model
 
     protected function casts(): array
     {
-        return ['paid_at' => 'datetime', 'cancelled_at' => 'datetime', 'washing_to_main' => 'boolean', 'opening_due_to_spare_parts' => 'boolean'];
+        return ['paid_at' => 'datetime', 'cancelled_at' => 'datetime', 'washing_to_main' => 'boolean', 'opening_due_to_spare_parts' => 'boolean', 'spare_parts_to_bank' => 'boolean'];
     }
 
     /** @return BelongsTo<Invoice, $this> */

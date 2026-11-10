@@ -43,6 +43,7 @@ class JobAdvanceService
                 'amount' => $row['amount'], 'method' => $row['method'], 'account_id' => $row['account_id'],
                 'cheque_id' => $cheque?->id, 'status' => $cheque ? 'Hold' : 'Completed',
                 'paid_at' => $data['advance_paid_at'], 'send_sms' => $data['send_advance_sms'] ?? false,
+                'spare_parts_to_bank' => $row['method'] !== 'Cash',
                 'note' => $data['advance_note'] ?? null, 'created_by' => auth()->id(),
             ]);
             if (! $cheque) {
@@ -58,13 +59,24 @@ class JobAdvanceService
         });
     }
 
-    public function postReceipt(JobAdvance $advance, ?string $date = null): void
+    public function postReceipt(JobAdvance $advance, ?string $date = null, bool $postBank = true): void
     {
         $accounts = app(AccountService::class);
         $description = "Advance for {$advance->jobCard->number} · {$advance->number}";
-        $accounts->recordTransaction('main', 'income', (float) $advance->amount, $description, $advance, $advance->method, $advance->note, null, $date ?? $advance->paid_at, 'job_advance');
-        if ($advance->method !== 'Cash') {
-            $accounts->recordTransaction('bank', 'income', (float) $advance->amount, $description, $advance, $advance->method, null, null, $date ?? $advance->paid_at, 'job_advance');
+        $effectiveDate = $date ?? $advance->paid_at;
+        $convertedBank = $postBank && $advance->method !== 'Cash' && (bool) $advance->spare_parts_to_bank;
+        if ($convertedBank) {
+            $amount = (float) $advance->amount;
+            $note = trim(($advance->note ? $advance->note.' · ' : '')."Converted from {$advance->method} · Main share taken from Spare Parts opening balance");
+            $accounts->recordTransaction('main', 'income', $amount, $description, $advance, 'Cash', $note, null, $effectiveDate, 'job_advance', convertedFromMethod: $advance->method);
+            $accounts->recordTransaction('spare_parts', 'transfer_out', $amount, "Main cash from {$advance->method} for {$advance->number}", $advance, $advance->method, 'Converted Rs. '.number_format($amount, 2)." from {$advance->method} to Main cashier cash", null, $effectiveDate, 'bank_to_main_cash', 'spare_parts', convertedFromMethod: $advance->method);
+            $accounts->recordTransaction('bank', 'income', $amount, $description, $advance, $advance->method, null, null, $effectiveDate, 'job_advance');
+
+            return;
+        }
+        $accounts->recordTransaction('main', 'income', (float) $advance->amount, $description, $advance, $advance->method, $advance->note, null, $effectiveDate, 'job_advance');
+        if ($postBank && $advance->method !== 'Cash') {
+            $accounts->recordTransaction('bank', 'income', (float) $advance->amount, $description, $advance, $advance->method, null, null, $effectiveDate, 'job_advance');
         }
     }
 
@@ -188,6 +200,7 @@ class JobAdvanceService
             'received_amount' => $amount, 'change_amount' => 0, 'receipt_group_id' => $group,
             'method' => $advance->method, 'account_id' => $advance->account_id, 'cheque_id' => $advance->cheque_id,
             'paid_at' => $advance->paid_at, 'status' => $advance->status, 'source_job_card_id' => $job->id,
+            'washing_to_main' => true, 'spare_parts_to_bank' => (bool) $advance->spare_parts_to_bank,
             'balance_after' => round((float) $invoice->due_amount - $amount, 2),
             'note' => $advance->note, 'created_by' => $advance->created_by,
         ]));

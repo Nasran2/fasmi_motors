@@ -17,7 +17,7 @@ class CollectionReportService
         // Only physical cash entries and the physical BANK ledger are selected.
         // The logical non-cash mirror never becomes a second receipt.
         $entries = AccountTransaction::posted()->whereIn('account_id', $ids)
-            ->where(fn ($q) => $q->where('account_id', $bankId)->orWhere('payment_method', 'Cash'))
+            ->where(fn ($q) => $q->where('account_id', $bankId)->orWhere(fn ($cash) => $cash->where('payment_method', 'Cash')->whereNull('converted_from_method')))
             ->with('reference')->orderBy('transaction_date')->orderBy('id')->get();
         $invoiceRelations = ['customer', 'bike', 'jobCard.intake.bike.customer', 'jobCard.quickBike', 'jobCard.quickCustomer'];
         $entries->loadMorph('reference', [

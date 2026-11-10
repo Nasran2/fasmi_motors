@@ -38,9 +38,10 @@ class AccountService
         ?int $accountId = null,
         CarbonInterface|string|null $transactionDate = null,
         ?string $category = null,
-        ?string $fundingSource = null
+        ?string $fundingSource = null,
+        ?string $convertedFromMethod = null
     ): AccountTransaction {
-        return DB::transaction(function () use ($accountType, $transactionType, $amount, $description, $reference, $paymentMethod, $note, $accountId, $transactionDate, $category, $fundingSource) {
+        return DB::transaction(function () use ($accountType, $transactionType, $amount, $description, $reference, $paymentMethod, $note, $accountId, $transactionDate, $category, $fundingSource, $convertedFromMethod) {
 
             // Determine debit/credit logic based on transaction type and account
             // Income/receipts increase balance
@@ -74,7 +75,7 @@ class AccountService
                 throw ValidationException::withMessages(['account_id' => 'Select an active account and a valid amount.']);
             }
             $accountId = $account->id;
-            if ($reference instanceof Payment && $transactionType === 'income') {
+            if ($reference instanceof Payment && in_array($transactionType, ['income', 'transfer_out'], true)) {
                 $existing = AccountTransaction::where('account_id', $accountId)->where('account_type', $accountType)
                     ->where('reference_type', $reference->getMorphClass())->where('reference_id', $reference->id)
                     ->where('transaction_type', $transactionType)->where('status', 'active')->first();
@@ -102,7 +103,7 @@ class AccountService
             if ($fundingSource === 'main_cashier') {
                 $fundingSource = 'main';
             }
-            if ($accountType === 'main' && $debit > 0 && ! $fundingSource) {
+            if ($accountType === 'main' && $debit > 0 && ! $fundingSource && $category !== 'invoice_revision') {
                 $fundingSource = 'main';
             }
 
@@ -129,6 +130,7 @@ class AccountService
                 'amount' => $amount,
                 'category' => $category,
                 'funding_source' => $fundingSource,
+                'converted_from_method' => $convertedFromMethod,
                 'running_balance' => $newBalance,
                 'payment_method' => $paymentMethod,
                 'reference_type' => $reference?->getMorphClass(),
@@ -181,6 +183,7 @@ class AccountService
                 'amount' => $transaction->amount, 'running_balance' => $previous + (float) $transaction->debit - (float) $transaction->credit,
                 'payment_method' => $transaction->payment_method, 'reference_type' => $transaction->reference_type,
                 'funding_source' => $transaction->funding_source, 'category' => $transaction->category,
+                'converted_from_method' => $transaction->converted_from_method,
                 'reference_id' => $transaction->reference_id, 'description' => "Reversal of {$transaction->transaction_no}",
                 'note' => "Reason: {$reason}", 'status' => 'active', 'created_by' => auth()->id() ?? 1,
             ]);
@@ -227,29 +230,88 @@ class AccountService
         });
     }
 
+    public function usesBankPoolConversion(Payment $payment, bool $postBank = true): bool
+    {
+        return $postBank && $payment->method !== 'Cash' && (bool) $payment->spare_parts_to_bank;
+    }
+
+    /** Expected net cents per logical ledger account for one receipt. */
+    public function expectedAccountAllocation(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): array
+    {
+        $allocation = $this->paymentReceiptAllocation($invoice, $payment, $settledAt);
+        if ($this->usesBankPoolConversion($payment, $postBank)) {
+            $main = (int) ($allocation['main'] ?? 0);
+
+            return ['spare_parts' => -$main, 'washing' => 0, 'main' => $main];
+        }
+
+        return $allocation;
+    }
+
     public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null, bool $reallocate = true): void
     {
         // Preserve the routing of receipts already posted under the old policy.
-        // New receipts credit washing to Main immediately, including bank receipts.
+        // New bank receipts credit the full amount to Bank and convert Main's share
+        // into cashier cash via Spare Parts opening balance.
         $alreadyPosted = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
             ->where('reference_id', $payment->id)->where('transaction_type', 'income')->exists();
         if (! $alreadyPosted) {
             $payment->forceFill([
                 'washing_to_main' => true,
                 'opening_due_to_spare_parts' => $invoice->isOpeningDue(),
+                'spare_parts_to_bank' => $postBank && $payment->method !== 'Cash',
             ])->save();
         }
         $amount = (int) round((float) $payment->amount * 100);
-        foreach ($this->paymentReceiptAllocation($invoice, $payment, $settledAt) as $type => $cents) {
-            if ($cents > 0) {
-                $category = $invoice->isOpeningDue() ? 'opening_due' : match ($type) {
-                    'main' => 'service', 'washing' => 'washing', default => 'parts'
-                };
-                $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at), $category);
+        $effectiveDate = $settledAt ?? $payment->paid_at;
+        $allocation = $this->paymentReceiptAllocation($invoice, $payment, $settledAt);
+
+        if ($this->usesBankPoolConversion($payment, $postBank)) {
+            $mainCents = (int) ($allocation['main'] ?? 0);
+            if ($mainCents > 0) {
+                $mainAmount = $mainCents / 100;
+                $category = $invoice->isOpeningDue() ? 'opening_due' : 'service';
+                $this->recordTransaction(
+                    'main',
+                    'income',
+                    $mainAmount,
+                    "Receipt for {$invoice->number}",
+                    $payment,
+                    'Cash',
+                    "Converted from {$payment->method} · Main share taken from Spare Parts opening balance",
+                    null,
+                    $effectiveDate,
+                    $category,
+                    convertedFromMethod: $payment->method,
+                );
+                $this->recordTransaction(
+                    'spare_parts',
+                    'transfer_out',
+                    $mainAmount,
+                    "Main cash from {$payment->method} for {$invoice->number}",
+                    $payment,
+                    $payment->method,
+                    'Converted Rs. '.number_format($mainAmount, 2)." from {$payment->method} to Main cashier cash",
+                    null,
+                    $effectiveDate,
+                    'bank_to_main_cash',
+                    'spare_parts',
+                    convertedFromMethod: $payment->method,
+                );
             }
-        }
-        if ($postBank && $payment->method !== 'Cash') {
-            $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at));
+            $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, $effectiveDate);
+        } else {
+            foreach ($allocation as $type => $cents) {
+                if ($cents > 0) {
+                    $category = $invoice->isOpeningDue() ? 'opening_due' : match ($type) {
+                        'main' => 'service', 'washing' => 'washing', default => 'parts'
+                    };
+                    $this->recordTransaction($type, 'income', $cents / 100, "Receipt for {$invoice->number}", $payment, $payment->method, null, null, $effectiveDate, $category);
+                }
+            }
+            if ($postBank && $payment->method !== 'Cash') {
+                $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, $effectiveDate);
+            }
         }
         if ($reallocate) {
             $this->reallocateInvoiceReceipts($invoice);
@@ -268,8 +330,13 @@ class AccountService
                 $components[$type] = $cents - $previous[$type];
             }
             $previous = $target;
-            $allocation = array_map(fn ($cents) => $cents / 100,
+            $rawAllocation = array_map(fn ($cents) => $cents / 100,
                 $this->componentAccounts($invoice, $components, (bool) $payment->washing_to_main, (bool) $payment->opening_due_to_spare_parts));
+            $postBank = ! $payment->cheque_id || ! $payment->cheque?->forwarded_supplier_id;
+            $convertedBank = $this->usesBankPoolConversion($payment, $postBank);
+            $allocation = $convertedBank
+                ? ['spare_parts' => -$rawAllocation['main'], 'washing' => 0.0, 'main' => $rawAllocation['main']]
+                : $rawAllocation;
             // Cheques post on clearance; all other receipts post on their selected payment date.
             $effectiveDate = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('transaction_type', 'income')->oldest('transaction_date')->value('transaction_date') ?? $payment->paid_at;
             if ($fromDate && Carbon::parse($effectiveDate)->lt($fromDate)) {
@@ -280,7 +347,14 @@ class AccountService
                 $actual = (float) (clone $entries)->sum('credit') - (float) (clone $entries)->sum('debit');
                 $difference = round($expected - $actual, 2);
                 if ($difference != 0) {
-                    $this->recordTransaction($type, $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease', abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $correctionDate ?? $effectiveDate, 'invoice_revision');
+                    $adjType = $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease';
+                    if ($convertedBank && $type === 'main') {
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, 'Cash', "Adjusted {$payment->method} Main cash conversion", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
+                    } elseif ($convertedBank && $type === 'spare_parts') {
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts opening deduction for {$payment->method} Main conversion", null, $correctionDate ?? $effectiveDate, 'invoice_revision', 'spare_parts', convertedFromMethod: $payment->method);
+                    } else {
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $correctionDate ?? $effectiveDate, 'invoice_revision');
+                    }
                 }
             }
         }

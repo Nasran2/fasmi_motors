@@ -11,7 +11,7 @@ class JobAdvance extends Model
 
     protected function casts(): array
     {
-        return ['amount' => 'decimal:2', 'paid_at' => 'date', 'send_sms' => 'boolean'];
+        return ['amount' => 'decimal:2', 'paid_at' => 'date', 'send_sms' => 'boolean', 'spare_parts_to_bank' => 'boolean'];
     }
 
     public function jobCard(): BelongsTo

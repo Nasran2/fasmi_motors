@@ -112,9 +112,16 @@ class CashierService
             $reversedDebits = (float) $typeRows->where('status', 'reversed')->where('debit', '>', 0)->sum('debit');
             $cycleExpenses = round(max(0.0, $funding->cycleExpenses($accountTransactions, $type) - ($openingContext['snapshot']['expenses'][$type] ?? 0)), 2);
             $nonCashIncome = round(max(0.0, $funding->nonCashIncome($accountTransactions, $type) - ($openingContext['snapshot']['non_cash'][$type] ?? 0)), 2);
+            $bankConvertedCash = $type === 'main'
+                ? round(max(0.0, $funding->bankConvertedMainCash($accountTransactions) - ($openingContext['snapshot']['bank_converted_main'][$type] ?? 0)), 2)
+                : 0.0;
+            $bankConversionDeduction = $type === 'spare_parts'
+                ? round($funding->sparePartsBankConversionDeduction($accountTransactions) - ($openingContext['snapshot']['bank_conversion_deduction'][$type] ?? 0), 2)
+                : 0.0;
+            $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
             $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
-            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'base' => $base,
@@ -125,6 +132,8 @@ class CashierService
                 'net_debits' => round($grossDebits - $reversedDebits, 2),
                 'expenses' => $cycleExpenses,
                 'non_cash_income' => $nonCashIncome,
+                'bank_converted_cash' => $bankConvertedCash,
+                'bank_conversion_deduction' => $shownDeduction,
                 'other_movements' => $otherMovements,
             ];
         }
@@ -132,7 +141,7 @@ class CashierService
         return [
             'separate_cash_balance' => $independent, 'drawer_adjustment' => (float) ($session?->drawer_adjustment ?? 0),
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
-            'display_accounts' => $displayAccounts, 'washing_received' => $washingReceived,
+            'display_accounts' => $displayAccounts, 'washing_received' => $washingReceived, 'bank_to_main_cash' => $allocationAccounts['main']['bank_converted_cash'] ?? 0.0,
             'opening_context' => $openingContext, 'account_opening_balances' => $session?->account_opening_balances,
             'cashier_cycle' => ['income' => round($collections->where('channel', 'cash')->sum('amount') + collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']) - ($openingContext['cash_movements']['income'] ?? 0), 2),
                 'paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) - ($openingContext['cash_movements']['paid'] ?? 0), 2)],
