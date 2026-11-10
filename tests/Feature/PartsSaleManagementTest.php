@@ -144,7 +144,7 @@ test('repeated fractional returns refund exact original cents and keep service i
     expect((float) $sale->fresh()->return_amount)->toBe(0.94)->and((float) $sale->fresh()->total)->toBe(0.0)->and(($this->ledgerBalance)('SPARE'))->toBe(0.0);
     $mixed = ($this->makeSale)(['charges' => [['type' => 'service', 'description' => 'Installation', 'amount' => 100]], 'paid_amount' => 300, 'payment_method' => 'Card']);
     $this->post(route('sales.parts.return.store', $mixed), ['quantities' => [$mixed->items()->first()->id => 1], 'reason' => 'Keep service charges'])->assertSessionHasNoErrors();
-    expect((float) $mixed->fresh()->total)->toBe(200.0)->and(($this->ledgerBalance)('MAIN'))->toBe(100.0)->and(($this->ledgerBalance)('SPARE'))->toBe(100.0)->and(($this->ledgerBalance)('BANK'))->toBe(200.0);
+    expect((float) $mixed->fresh()->total)->toBe(200.0)->and(($this->ledgerBalance)('MAIN'))->toBe(100.0)->and(($this->ledgerBalance)('SPARE'))->toBe(-100.0)->and(($this->ledgerBalance)('BANK'))->toBe(200.0);
 });
 
 test('edit preview calculates refund and removed stock without changing anything', function () {
@@ -226,7 +226,7 @@ test('applying a bank payment refund to dues keeps bank receipts unchanged and p
     $data = ($this->editPayload)($sale);
     $data['refund_action'] = 'offset_due';
     ($this->confirmEdit)($sale, $data)->assertSessionHasNoErrors();
-    expect((float) $due->fresh()->due_amount)->toBe(100.0)->and(($this->ledgerBalance)('BANK'))->toBe(200.0)->and(($this->ledgerBalance)('SPARE'))->toBe(200.0);
+    expect((float) $due->fresh()->due_amount)->toBe(100.0)->and(($this->ledgerBalance)('BANK'))->toBe(200.0)->and(($this->ledgerBalance)('SPARE'))->toBe(0.0);
     $data = ($this->editPayload)($sale, 0);
     $data['refund_action'] = 'offset_due';
     ($this->confirmEdit)($sale, $data)->assertSessionHasNoErrors();

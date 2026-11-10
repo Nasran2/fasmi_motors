@@ -322,7 +322,14 @@ class AccountService
     {
         $cumulative = 0;
         $previous = $this->receiptComponentAllocation($invoice, 0);
-        foreach ($this->orderedReceipts($invoice) as $payment) {
+        $payments = $this->orderedReceipts($invoice);
+        $postedIds = AccountTransaction::posted()
+            ->where('reference_type', (new Payment)->getMorphClass())
+            ->whereIn('reference_id', $payments->modelKeys())
+            ->where('transaction_type', 'income')
+            ->pluck('reference_id')
+            ->flip();
+        foreach ($payments as $payment) {
             $cumulative += (int) round((float) $payment->amount * 100);
             $target = $this->receiptComponentAllocation($invoice, $cumulative);
             $components = [];
@@ -330,6 +337,9 @@ class AccountService
                 $components[$type] = $cents - $previous[$type];
             }
             $previous = $target;
+            if (! $postedIds->has($payment->id)) {
+                continue;
+            }
             $rawAllocation = array_map(fn ($cents) => $cents / 100,
                 $this->componentAccounts($invoice, $components, (bool) $payment->washing_to_main, (bool) $payment->opening_due_to_spare_parts));
             $postBank = ! $payment->cheque_id || ! $payment->cheque?->forwarded_supplier_id;

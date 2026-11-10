@@ -48,7 +48,7 @@ test('payment correction reverses and replaces the receipt with mandatory histor
         ->and($replacement->note)->toBe('Original note')->and($log->before['method'])->toBe('Cash')
         ->and((float) $log->before['received_amount'])->toBe(1000.0)->and((float) $log->after['received_amount'])->toBe(500.0)
         ->and($log->changed_by)->toBe($this->user->id)->and($this->job->fresh()->status)->toBe('Billed')
-        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-500.0)
         ->and(Account::systemAccount('bank')->balance)->toBe(500.0);
     expect(AccountTransaction::where('reference_id', $this->receipt->id)->where('status', 'reversed')->count())->toBe(2);
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Status History & Change Logs')
@@ -168,7 +168,7 @@ test('mixed receipts keep all other payments and allocation totals when one amou
     $this->put(route('jobs.payments.update', [$this->job, $cash]), array_replace($this->correction, ['amount' => 200]))->assertSessionHasNoErrors();
     expect((float) $this->invoice->fresh()->paid_amount)->toBe(500.0)->and((float) $this->invoice->fresh()->due_amount)->toBe(500.0)
         ->and($this->invoice->fresh()->payment_method)->toBe('Mixed')->and($card->fresh()->status)->toBe('Completed')->and((float) $card->fresh()->amount)->toBe(300.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-300.0)
         ->and(Account::systemAccount('bank')->balance)->toBe(300.0);
 });
 

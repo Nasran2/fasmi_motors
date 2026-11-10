@@ -42,11 +42,13 @@ test('full repair receipts allocate each component and reverse exact postings', 
     $job = financialAuditJob($parts, $service);
     $invoice = app(WorkshopService::class)->invoice($job, $parts + $service, $method, Account::systemAccount('main')->id);
     expect(Account::systemAccount('main')->balance)->toBe(100000.0 + $service)
-        ->and(Account::systemAccount('spare_parts')->balance)->toBe(100000.0 + $parts);
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(100000.0 + ($method === 'Cash' ? $parts : -$service))
+        ->and(Account::systemAccount('bank')->balance)->toBe(100000.0 + ($method === 'Cash' ? 0.0 : $parts + $service));
     $payment = $invoice->payments()->firstOrFail();
     $this->delete(route('sales.payments.cancel', $payment), ['reason' => 'Audit cancellation'])->assertSessionHasNoErrors();
     expect(Account::systemAccount('main')->balance)->toBe(100000.0)
         ->and(Account::systemAccount('spare_parts')->balance)->toBe(100000.0)
+        ->and(Account::systemAccount('bank')->balance)->toBe(100000.0)
         ->and($invoice->fresh()->due_amount)->toEqual($parts + $service);
     $count = AccountTransaction::count();
     $this->delete(route('sales.payments.cancel', $payment), ['reason' => 'Audit repeated cancellation']);

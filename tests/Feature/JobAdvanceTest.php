@@ -75,7 +75,7 @@ test('bank advances are deducted once and bank ledger is not posted twice', func
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect(Account::systemAccount('bank')->balance)->toBe(1000.0)
         ->and((float) $this->job->fresh()->invoice->due_amount)->toBe(4000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-1000.0);
 });
 
 test('cheque advance remains held on invoice and clears or returns using normal cheque rules', function () {
@@ -102,7 +102,7 @@ test('cheque cleared before billing transfers its existing receipt without doubl
     expect(JobAdvance::sole()->status)->toBe('Completed')->and(Account::systemAccount('main')->balance)->toBe(1000.0);
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect((float) $this->job->fresh()->invoice->paid_amount)->toBe(1000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-1000.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
 });
 
 test('future cheques cannot clear early and returned unbilled advances are not deducted', function () {
