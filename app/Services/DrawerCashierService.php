@@ -83,10 +83,13 @@ class DrawerCashierService
 
     public function ledgerSnapshot(Collection $transactions): array
     {
-        $snapshot = ['cashier' => [], 'daily_allocation' => [], 'opening_funding' => [], 'opening_corrections' => []];
+        $funding = app(OutgoingFundingService::class);
+        $snapshot = ['cashier' => [], 'non_cash' => [], 'expenses' => [], 'daily_allocation' => [], 'opening_funding' => [], 'opening_corrections' => []];
         foreach (['main', 'spare_parts'] as $type) {
             $rows = $transactions->where('account_id', Account::systemAccount($type)->id);
-            $snapshot['cashier'][$type] = app(OutgoingFundingService::class)->cashierAmount($rows, $type);
+            $snapshot['cashier'][$type] = $funding->cashierAmount($rows, $type);
+            $snapshot['non_cash'][$type] = $funding->nonCashIncome($rows, $type);
+            $snapshot['expenses'][$type] = $funding->cycleExpenses($rows, $type);
             foreach (['daily_allocation' => $rows->where('category', 'cashier_daily_allocation'),
                 'opening_funding' => $rows->where('funding_source', $type)->whereNotIn('category', ['cashier_opening', 'cashier_account_opening']),
                 'opening_corrections' => $rows->whereIn('category', ['cashier_opening', 'cashier_account_opening'])] as $key => $entries) {

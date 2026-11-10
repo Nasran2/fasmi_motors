@@ -102,24 +102,30 @@ class CashierService
         $cashierFunds['total'] = array_sum(array_map(fn ($amount) => (int) round($amount * 100), $cashierFunds)) / 100;
         $allocationAccounts = [];
         foreach (['main', 'spare_parts'] as $type) {
-            $priorAllocationRows = $transactions->where('account_id', Account::systemAccount($type)->id)->where('category', 'cashier_daily_allocation');
+            $accountTransactions = $transactions->where('account_id', Account::systemAccount($type)->id);
+            $priorAllocationRows = $accountTransactions->where('category', 'cashier_daily_allocation');
             $priorAllocation = round($priorAllocationRows->sum('credit') - $priorAllocationRows->sum('debit') - ($openingContext['snapshot']['daily_allocation'][$type] ?? 0), 2);
             $washingToMain = $type === 'main' ? $accounts['washing']['closing'] : 0;
-            $typeRows = $transactions->where('account_id', Account::systemAccount($type)->id)
+            $typeRows = $accountTransactions
                 ->whereNotIn('category', ['cashier_opening', 'cashier_account_opening', 'cashier_washing_sweep']);
             $grossDebits = (float) $typeRows->where('debit', '>', 0)->sum('debit');
             $reversedDebits = (float) $typeRows->where('status', 'reversed')->where('debit', '>', 0)->sum('debit');
-            $nonCashIncome = max(0, round($accounts[$type]['income'] - $cashierFunds[$type], 2));
+            $cycleExpenses = round(max(0.0, $funding->cycleExpenses($accountTransactions, $type) - ($openingContext['snapshot']['expenses'][$type] ?? 0)), 2);
+            $nonCashIncome = round(max(0.0, $funding->nonCashIncome($accountTransactions, $type) - ($openingContext['snapshot']['non_cash'][$type] ?? 0)), 2);
+            $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
+            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome, 2);
             $allocationAccounts[$type] = [
-                'opening' => $openingContext['accounts'][$type] ?? $accounts[$type]['opening'],
-                'base' => round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2),
+                'opening' => $openingBalance,
+                'base' => $base,
                 'suggested_addition' => max(0, round($cashierFunds[$type] + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,
                 'net_debits' => round($grossDebits - $reversedDebits, 2),
-                'expenses' => (float) $accounts[$type]['outgoing'],
+                'expenses' => $cycleExpenses,
                 'non_cash_income' => $nonCashIncome,
+                'other_movements' => $otherMovements,
             ];
         }
 

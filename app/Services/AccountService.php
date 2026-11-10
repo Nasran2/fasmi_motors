@@ -227,7 +227,7 @@ class AccountService
         });
     }
 
-    public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): void
+    public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null, bool $reallocate = true): void
     {
         // Preserve the routing of receipts already posted under the old policy.
         // New receipts credit washing to Main immediately, including bank receipts.
@@ -251,7 +251,9 @@ class AccountService
         if ($postBank && $payment->method !== 'Cash') {
             $this->recordTransaction('bank', 'income', $amount / 100, "Bank receipt for {$invoice->number}", $payment, $payment->method, null, null, ($settledAt ?? $payment->paid_at));
         }
-        $this->reallocateInvoiceReceipts($invoice);
+        if ($reallocate) {
+            $this->reallocateInvoiceReceipts($invoice);
+        }
     }
 
     public function reallocateInvoiceReceipts(Invoice $invoice, CarbonInterface|string|null $fromDate = null, CarbonInterface|string|null $correctionDate = null): void

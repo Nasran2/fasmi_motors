@@ -170,7 +170,7 @@ class PartsSaleController extends Controller
             foreach ($refundRows as $row) {
                 $payment = $invoice->payments()->findOrFail($row['payment_id']);
                 if ($payment->amount > 0) {
-                    $accounts->receiveInvoicePayment($invoice, $payment, settledAt: now());
+                    $accounts->receiveInvoicePayment($invoice, $payment, settledAt: now(), reallocate: false);
                 }
             }
             $accounts->reallocateInvoiceReceipts($invoice);

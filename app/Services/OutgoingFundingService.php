@@ -133,6 +133,51 @@ class OutgoingFundingService
         return round($cash->sum('credit') - $cash->sum('debit'), 2);
     }
 
+    /** Active non-cash customer/sale receipts (Bank Transfer, Card, QR, Cheque) credited to an account. */
+    public function nonCashIncome(Collection $entries, string $type): float
+    {
+        $excludedCategories = [
+            'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation',
+            'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation',
+            'cashier_account_balance_correction', 'cashier_closing_correction', 'cashier_daily_allocation',
+            'cashier_washing_sweep', 'transfer', 'closing_adjustment', 'closing_deduction',
+        ];
+        $isNonCash = fn ($entry) => $entry->status === 'active'
+            && $entry->transaction_type !== 'reversal'
+            && $entry->transaction_type !== 'owner_capital'
+            && ! ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
+            && ! in_array($entry->payment_method, ['Adjustment', 'Manual'], true)
+            && ! in_array($entry->reference_type, [SupplierPayment::class, \App\Models\PurchaseReturn::class], true)
+            && ! in_array($entry->category, $excludedCategories, true);
+
+        $credits = $entries->filter(fn ($entry) => $isNonCash($entry)
+            && $entry->funding_source === null
+            && $entry->credit > 0)->sum('credit');
+        $revisionDebits = $entries->filter(fn ($entry) => $isNonCash($entry)
+            && $entry->category === 'invoice_revision'
+            && $entry->transaction_type === 'adjustment_decrease'
+            && $entry->debit > 0)->sum('debit');
+
+        return round(max(0.0, (float) $credits - (float) $revisionDebits), 2);
+    }
+
+    /** Active account-funded expenses and debits (excluding reversals, adjustments, and cashier-funded payouts). */
+    public function cycleExpenses(Collection $entries, string $type): float
+    {
+        $debits = $entries->filter(fn ($entry) => $entry->status === 'active'
+            && ! in_array($entry->transaction_type, ['reversal', 'adjustment_increase', 'adjustment_decrease'], true)
+            && $entry->funding_source !== $type.'_cashier'
+            && $entry->debit > 0
+            && ! in_array($entry->category, [
+                'opening_balance', 'cashier_opening', 'cashier_cash_reconciliation',
+                'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation',
+                'cashier_account_balance_correction', 'cashier_closing_correction', 'cashier_daily_allocation',
+                'cashier_washing_sweep', 'closing_adjustment',
+            ], true));
+
+        return round($debits->sum('debit'), 2);
+    }
+
     public static function rules(): array
     {
         return ['funding' => 'nullable|array|min:1|max:5', 'funding.*' => 'required|array:source,amount',

@@ -183,7 +183,7 @@ class PartsSaleEditService
         foreach ($refundRows as $row) {
             $payment = $invoice->payments()->findOrFail($row['payment_id']);
             if ((float) $payment->amount > 0) {
-                $this->accounts->receiveInvoicePayment($invoice, $payment, settledAt: now());
+                $this->accounts->receiveInvoicePayment($invoice, $payment, settledAt: now(), reallocate: false);
             }
         }
         $allocations = [];
