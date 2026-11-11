@@ -50,7 +50,8 @@ class CashierClosingHistoryService
             $expectedCash = (float) ($closing?->cash_closing_balance ?? $summary['cash_in_hand'] ?? 0);
             $allocated = (float) ($summary['closing_allocated_today'] ?? 0);
             $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
-            $previousDrawerAllocated = round((float) ($summary['closing_drawer_allocated_today'] ?? ($allocated - $bankFundedMain)), 2);
+            $sparePartsOpeningCash = round((float) ($summary['closing_spare_parts_opening_cash'] ?? ($summary['allocation_accounts']['spare_parts']['opening_cash'] ?? 0)), 2);
+            $previousDrawerAllocated = round((float) ($summary['closing_drawer_allocated_today'] ?? ($allocated - $bankFundedMain + $sparePartsOpeningCash)), 2);
             $drawerAllocated = $previousDrawerAllocated;
             if ($allocationMode) {
                 $allocated = 0.0;
@@ -62,7 +63,7 @@ class CashierClosingHistoryService
                     }
                     $allocated += $additions[$type];
                 }
-                $drawerAllocated = round($allocated - $bankFundedMain, 2);
+                $drawerAllocated = round($allocated - $bankFundedMain + $sparePartsOpeningCash, 2);
                 $available = round(($summary['cashier_funds']['total'] ?? 0) - ($summary['closing_cash_withdrawal'] ?? 0), 2);
                 if ((int) round($drawerAllocated * 100) > (int) round($available * 100)) {
                     throw ValidationException::withMessages(['account_additions' => 'The account additions exceed the cashier cash available at this closing.']);

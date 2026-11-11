@@ -24,7 +24,7 @@
                 <p class="mt-3 text-sm text-emerald-950">Opening cashier cash for this date + cash collected + other cash in − cash paid out, with recorded cash count adjustments. New washing receipts credit Main immediately and remain part of physical cashier cash. Main and Spare Parts carried balances and all Bank payments are excluded.</p>
             </section>
             <p x-show="withdrawalTooHigh" x-cloak role="alert" class="text-sm font-bold text-red-600">Withdrawal exceeds a selected account balance or the available cashier cash.</p>
-            <label class="block rounded-xl border border-blue-200 bg-blue-50 p-5"><span class="mb-2 block text-xs font-black uppercase tracking-wide text-blue-800">Physical cashier cash</span><span class="label">Closing balance in cashier · LKR</span><input name="closing_balance" type="number" min="0" max="999999999999.99" step="0.01" required class="field text-xl font-bold" x-model="closingBalance" placeholder="Enter the cash you counted"><span class="mt-2 block text-xs text-slate-600">Cash left = available cashier cash − drawer cash sent to Main and Spare Parts. Spare Parts defaults to include any carried opening cashier cash so Closing balance starts at 0.00. Reduce Main or Spare Parts below to leave cash in the cashier, or enter the counted cash directly.</span></label>
+            <label class="block rounded-xl border border-blue-200 bg-blue-50 p-5"><span class="mb-2 block text-xs font-black uppercase tracking-wide text-blue-800">Physical cashier cash</span><span class="label">Closing balance in cashier · LKR</span><input name="closing_balance" type="number" min="0" max="999999999999.99" step="0.01" required class="field text-xl font-bold" x-model="closingBalance" placeholder="Enter the cash you counted"><span class="mt-2 block text-xs text-slate-600">Cash left = available cashier cash − drawer cash sent to Main and Spare Parts. Carried opening cashier cash is included in Spare Parts’ opening balance so Closing balance starts at 0.00. Reduce Main or Spare Parts below to leave cash in the cashier, or enter the counted cash directly.</span></label>
             <div class="grid gap-4 md:grid-cols-3">
                 @foreach(['main' => 'Main Account', 'spare_parts' => 'Spare Parts Account'] as $type => $accountLabel)
                 @php
@@ -37,9 +37,7 @@
                     $expenseAmount = round($accountMeta['expenses'] ?? 0, 2);
                     $suggestedCash = round($accountMeta['suggested_addition'] ?? 0, 2);
                     $directCash = max(0.0, round($suggestedCash - $convertedCash, 2));
-                    $todayPartsCash = max(0.0, round($suggestedCash - $openingCashPart, 2));
                     $ssrNote = match (true) {
-                        $openingCashPart > 0 => '(Rs. ' . number_format($todayPartsCash, 2) . ' today’s cash + Rs. ' . number_format($openingCashPart, 2) . ' opening cashier cash)',
                         $convertedCash > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' bank transfer from Spare Parts opening)',
                         $nonCashAmount > 0 && $convertedCash == 0 => '(Rs. ' . number_format($suggestedCash, 2) . ' cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
                         $convertedCash > 0 && $nonCashAmount > 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' from bank transfer + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
@@ -47,7 +45,11 @@
                     };
                 @endphp
                 <label class="rounded-xl border p-4"><span class="label">Today’s addition to {{ $accountLabel }} since opening · LKR</span><input name="account_additions[{{ $type }}]" type="number" step="0.01" min="0" max="999999999999.99" required class="field" x-model="additions.{{ $type }}"><input type="hidden" name="balances[{{ $type }}]" :value="closingAccountBalance('{{ $type }}').toFixed(2)">
-                    <span class="mt-3 block text-sm text-slate-600">Opening balance: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].opening)">{{ number_format($accountMeta['opening'], 2) }}</span></b></span>
+                    <span class="mt-3 block text-sm text-slate-600">Opening balance: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].opening)">{{ number_format($accountMeta['opening'], 2) }}</span></b>
+                        @if($openingCashPart > 0)
+                            <span class="block text-xs font-normal text-slate-500">(Includes Rs. {{ number_format($openingCashPart, 2) }} opening cashier cash)</span>
+                        @endif
+                    </span>
                     <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].expenses || 0) > 0" @if($expenseAmount <= 0) x-cloak @endif>
                         − Expenses / debits: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].expenses || 0)">{{ number_format($expenseAmount, 2) }}</span></b>
                         @if(($accountMeta['reversed_debits'] ?? 0) > 0)
