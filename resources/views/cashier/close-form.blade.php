@@ -35,7 +35,13 @@
                     $conversionDeduction = round($accountMeta['bank_conversion_deduction'] ?? 0, 2);
                     $expenseAmount = round($accountMeta['expenses'] ?? 0, 2);
                     $suggestedCash = round($accountMeta['suggested_addition'] ?? 0, 2);
-                    $ssrNote = $nonCashAmount > 0 ? '(Rs. ' . number_format($suggestedCash, 2) . ' cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)' : '';
+                    $directCash = max(0.0, round($suggestedCash - $convertedCash, 2));
+                    $ssrNote = match (true) {
+                        $convertedCash > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' bank transfer from Spare Parts opening)',
+                        $nonCashAmount > 0 && $convertedCash == 0 => '(Rs. ' . number_format($suggestedCash, 2) . ' cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
+                        $convertedCash > 0 && $nonCashAmount > 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' from bank transfer + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
+                        default => '',
+                    };
                 @endphp
                 <label class="rounded-xl border p-4"><span class="label">Today’s addition to {{ $accountLabel }} since opening · LKR</span><input name="account_additions[{{ $type }}]" type="number" step="0.01" min="0" max="999999999999.99" required class="field" x-model="additions.{{ $type }}"><input type="hidden" name="balances[{{ $type }}]" :value="closingAccountBalance('{{ $type }}').toFixed(2)">
                     <span class="mt-3 block text-sm text-slate-600">Opening balance: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].opening)">{{ number_format($accountMeta['opening'], 2) }}</span></b></span>
@@ -44,9 +50,6 @@
                         @if(($accountMeta['reversed_debits'] ?? 0) > 0)
                             <span class="block text-xs font-normal text-slate-500">(Rs. {{ number_format($accountMeta['reversed_debits'], 2) }} reversed)</span>
                         @endif
-                    </span>
-                    <span class="mt-1 block text-sm text-emerald-700" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0) > 0" @if($convertedCash <= 0) x-cloak @endif>
-                        + Bank transfer to Main (Spare Parts opening): <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0)">{{ number_format($convertedCash, 2) }}</span></b>
                     </span>
                     <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0) > 0" @if($conversionDeduction <= 0) x-cloak @endif>
                         − Bank transfer to Main (opening): <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0)">{{ number_format($conversionDeduction, 2) }}</span></b>
@@ -65,7 +68,7 @@
                 @endforeach
                 <label class="rounded-xl border border-blue-200 bg-blue-50 p-4"><span class="label">Bank Account closing balance · LKR</span><input name="balances[bank]" type="number" step="0.01" min="-999999999999.99" max="999999999999.99" required class="field" x-model="balances.bank"><span class="mt-2 block text-xs text-slate-500">Automatic bank balance: Rs. <span x-text="money(expectedBalance('bank'))"></span>. Change if needed. Excluded from cash in the drawer.</span></label>
             </div>
-            <p class="text-sm font-bold" aria-live="polite">Today’s total added to Main + Spare Parts: Rs. <span x-text="money(allocatedCashTotal)"></span><span class="mt-1 block text-xs font-normal text-slate-500">Only these daily additions are separated into Main and Spare Parts. The amount left stays in the cashier and becomes the next opening cashier balance. Bank is excluded.</span></p>
+            <p class="text-sm font-bold" aria-live="polite">Today’s total added to Main + Spare Parts: Rs. <span x-text="money(allocatedCashTotal)"></span><span x-show="bankFundedMainCents > 0" x-cloak class="ml-2 text-xs font-semibold text-slate-600">(Drawer cash separated: Rs. <span x-text="money(drawerAllocatedCashTotal)"></span>)</span><span class="mt-1 block text-xs font-normal text-slate-500">Only these daily additions are separated into Main and Spare Parts. The amount left stays in the cashier and becomes the next opening cashier balance. Bank is excluded.</span></p>
             <p x-show="additionsTooHigh" x-cloak role="alert" class="text-sm font-bold text-red-600">Today’s account additions exceed the available cashier cash. Reduce the daily additions.</p>
             <div x-show="hasCount" x-cloak class="rounded-xl bg-emerald-50 p-4 font-black" aria-live="polite">Counted closing balance: Rs. <span x-text="money(countedCashTotal)"></span><span x-show="hasDifference" class="ml-3 text-sm text-amber-800">Difference from expected cash left: Rs. <span x-text="money(cashDifference)"></span></span></div>
             <label class="block"><span class="label">Reason for changed closing balances <span x-show="hasDifference" class="text-red-600">(required)</span></span><textarea name="difference_reason" maxlength="1000" class="field" :required="hasDifference" rows="2">{{ old('difference_reason') }}</textarea></label>

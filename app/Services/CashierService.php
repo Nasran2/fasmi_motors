@@ -120,12 +120,12 @@ class CashierService
                 : 0.0;
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
-            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
-            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome - $bankConvertedCash + $shownDeduction, 2);
+            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $bankConvertedCash - $priorAllocation, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'base' => $base,
-                'suggested_addition' => max(0, round($cashierFunds[$type] + $priorAllocation, 2)),
+                'suggested_addition' => max(0, round($cashierFunds[$type] + $bankConvertedCash + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,
@@ -533,6 +533,8 @@ class CashierService
             $dailyAdditions = $values['account_additions'] ?? null;
             $allocationBases = [];
             $allocatedToday = 0.0;
+            $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
+            $drawerAllocatedToday = 0.0;
             $verified = $expected;
             if ($dailyAdditions !== null) {
                 foreach (['main', 'spare_parts'] as $type) {
@@ -549,7 +551,8 @@ class CashierService
                     $allocatedToday += $addition;
                 }
                 $allocatedToday = round($allocatedToday, 2);
-                if ((int) round($allocatedToday * 100) > (int) round(($summary['cashier_funds']['total'] - $cashWithdrawal) * 100)) {
+                $drawerAllocatedToday = round($allocatedToday - $bankFundedMain, 2);
+                if ((int) round($drawerAllocatedToday * 100) > (int) round(($summary['cashier_funds']['total'] - $cashWithdrawal) * 100)) {
                     throw ValidationException::withMessages(['account_additions' => 'Today’s account additions exceed the available cashier cash.']);
                 }
             } elseif (isset($values['balances'])) {
@@ -567,7 +570,7 @@ class CashierService
                 $differences[$type] = round($verified[$type] - $expected[$type], 2);
             }
             $drawerExpected = $dailyAdditions !== null
-                ? round($summary['cashier_funds']['total'] - $cashWithdrawal - $allocatedToday, 2)
+                ? round($summary['cashier_funds']['total'] - $cashWithdrawal - $drawerAllocatedToday, 2)
                 : ($independent ? round($summary['cash_in_hand'] - $cashWithdrawal, 2) : round(array_sum($expected), 2));
             $drawerDifference = $independent ? round($counted - $drawerExpected, 2) : array_sum($differences);
             $drawerAdjustmentDelta = $independent ? round($counted - ($summary['cash_in_hand'] - $cashWithdrawal), 2) : 0;
@@ -628,12 +631,12 @@ class CashierService
                 'cash_actual_balance' => $counted, 'cash_difference' => $drawerDifference];
             if ($dailyAdditions !== null) {
                 $closingData['cash_income'] = $summary['cash_received'] + $summary['cash_other_in'] + max(0, -$washingCashTransfer);
-                $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $allocatedToday + max(0, $washingCashTransfer);
+                $closingData['cash_expense'] = $summary['cash_paid'] + $cashWithdrawal + $drawerAllocatedToday + max(0, $washingCashTransfer);
                 if ($summary['opening_context'] !== null) {
                     $cycleWashing = $washingCashTransfer - ($summary['opening_context']['cash_movements']['washing_cash'] ?? 0);
                     $closingData['cash_opening_balance'] = $summary['cashier_funds']['opening'];
                     $closingData['cash_income'] = $summary['cashier_cycle']['income'] + max(0, -$cycleWashing);
-                    $closingData['cash_expense'] = $summary['cashier_cycle']['paid'] + $cashWithdrawal + $allocatedToday + max(0, $cycleWashing);
+                    $closingData['cash_expense'] = $summary['cashier_cycle']['paid'] + $cashWithdrawal + $drawerAllocatedToday + max(0, $cycleWashing);
                 }
             }
             DailyClosing::updateOrCreate(['closing_date' => $date], $closingData);
@@ -647,6 +650,7 @@ class CashierService
             $summary['closing_account_additions'] = $dailyAdditions;
             $summary['closing_allocation_bases'] = $allocationBases;
             $summary['closing_allocated_today'] = $allocatedToday;
+            $summary['closing_drawer_allocated_today'] = $drawerAllocatedToday;
             $closingRows = AccountTransaction::posted()->whereIn('account_id', collect(self::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date)->get();
             $summary['closing_ledger_snapshot'] = app(DrawerCashierService::class)->ledgerSnapshot($closingRows);
             foreach (self::ACCOUNTS as $type => $label) {

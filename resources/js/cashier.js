@@ -14,9 +14,10 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         ? (type === 'spare_parts' ? cents(initialWithdrawal) : 0)
         : initialWithdrawalFunding.filter(row => row.source === `${type}_cashier`).reduce((sum,row) => sum + cents(row.amount),0);
     const additions = Object.fromEntries(['main','spare_parts'].map(type => [type, String(allocationConfig?.additions?.[type] ?? Math.max(0, (cents(allocationConfig?.accounts?.[type]?.suggested_addition) - pendingCashier(type)) / 100))]));
+    const bankFundedMain = cents(allocationConfig?.accounts?.main?.bank_converted_cash || 0);
     const firstCount = allocationConfig === null
         ? ((totalBeforeSeparation - cents(main) - cents(spareParts)) / 100).toFixed(2)
-        : ((cents(cashierFunds?.total) - pendingCashier('main') - pendingCashier('spare_parts') - cents(additions.main) - cents(additions.spare_parts)) / 100).toFixed(2);
+        : ((cents(cashierFunds?.total) - pendingCashier('main') - pendingCashier('spare_parts') - (cents(additions.main) - bankFundedMain + cents(additions.spare_parts))) / 100).toFixed(2);
     return {
         expected,
         drawerExpected,
@@ -87,14 +88,24 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         },
         hasAdditionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
-            return this.cents(meta.non_cash_income || 0) > 0;
+            return this.cents(meta.bank_converted_cash || 0) > 0 || this.cents(meta.non_cash_income || 0) > 0;
         },
         additionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
-            const nonCash = this.cents(meta.non_cash_income || 0) / 100;
-            const cashAdded = this.cents(this.additions[type] || 0) / 100;
-            if (nonCash > 0) {
-                return `(Rs. ${this.money(cashAdded)} cash + Rs. ${this.money(nonCash)} bank transfer)`;
+            const nonCashCents = this.cents(meta.non_cash_income || 0);
+            const convertedCents = this.cents(meta.bank_converted_cash || 0);
+            const cashAddedCents = this.cents(this.additions[type] || 0);
+            const directCash = Math.max(0, cashAddedCents - convertedCents) / 100;
+            const converted = convertedCents / 100;
+            const nonCash = nonCashCents / 100;
+            if (convertedCents > 0 && nonCashCents === 0) {
+                return `(Rs. ${this.money(directCash)} cash + Rs. ${this.money(converted)} bank transfer from Spare Parts opening)`;
+            }
+            if (nonCashCents > 0 && convertedCents === 0) {
+                return `(Rs. ${this.money(cashAddedCents / 100)} cash + Rs. ${this.money(nonCash)} bank transfer)`;
+            }
+            if (convertedCents > 0 && nonCashCents > 0) {
+                return `(Rs. ${this.money(directCash)} cash + Rs. ${this.money(converted)} from bank transfer + Rs. ${this.money(nonCash)} bank transfer)`;
             }
             return '';
         },
@@ -143,9 +154,11 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
                 } else if (next[type] !== previous[type]) this.balances[type] = ((this.cents(this.balances[type]) + previous[type] - next[type]) / 100).toFixed(2);
             }
         },
+        get bankFundedMainCents() { return this.dailyAdditionsMode ? this.cents(this.allocationConfig?.accounts?.main?.bank_converted_cash || 0) : 0; },
         get allocatedCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.additions.main) + this.cents(this.additions.spare_parts)) / 100 : (this.cents(this.balances.main) + this.cents(this.balances.spare_parts)) / 100; },
+        get drawerAllocatedCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.additions.main) - this.bankFundedMainCents + this.cents(this.additions.spare_parts)) / 100 : this.allocatedCashTotal; },
         get separationCashTotal() { return this.dailyAdditionsMode ? (this.cents(this.cashierFunds?.opening) + this.cents(this.currentCashierAmount('main')) + this.cents(this.currentCashierAmount('spare_parts'))) / 100 : (this.cents(this.expectedBalance('main')) + this.cents(this.expectedBalance('spare_parts'))) / 100; },
-        get remainingCashTotal() { return (this.cents(this.separationCashTotal) - this.cents(this.allocatedCashTotal)) / 100; },
+        get remainingCashTotal() { return (this.cents(this.separationCashTotal) - this.cents(this.drawerAllocatedCashTotal)) / 100; },
         get additionsTooHigh() { return this.dailyAdditionsMode && this.cents(this.remainingCashTotal) < 0; },
         get cashMatchesAccounts() { return this.hasCount && (this.dailyAdditionsMode ? !this.additionsTooHigh : (this.independent || this.cents(this.closingBalance) === this.cents(this.allocatedCashTotal))); },
         get expectedCashTotal() { return this.dailyAdditionsMode ? this.remainingCashTotal : (this.independent ? (this.cents(this.drawerExpected) - this.cents(this.cashWithdrawal)) / 100 : (['main', 'washing', 'spare_parts'].reduce((sum, type) => sum + this.cents(this.expected[type]), 0) - this.cents(this.withdrawal)) / 100); },
@@ -369,7 +382,7 @@ export async function openCashierClosing(url, initialContent = null) {
             total += cents(addition.value);
             form.elements.namedItem(`balances[${addition.dataset.type}]`).value = ((cents(addition.dataset.base) + cents(addition.value)) / 100).toFixed(2);
         });
-        const remaining = (cents(form.dataset.available) - total) / 100;
+        const remaining = (cents(form.dataset.available) - (total - cents(form.dataset.bankFundedMain || 0))) / 100;
         form.elements.namedItem('closing_balance').value = remaining.toFixed(2);
         form.querySelector('[data-closing-edit-total]').textContent = `Cash left after these additions: Rs. ${remaining.toLocaleString('en-LK', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
     });

@@ -49,6 +49,9 @@ class CashierClosingHistoryService
             }
             $expectedCash = (float) ($closing?->cash_closing_balance ?? $summary['cash_in_hand'] ?? 0);
             $allocated = (float) ($summary['closing_allocated_today'] ?? 0);
+            $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
+            $previousDrawerAllocated = round((float) ($summary['closing_drawer_allocated_today'] ?? ($allocated - $bankFundedMain)), 2);
+            $drawerAllocated = $previousDrawerAllocated;
             if ($allocationMode) {
                 $allocated = 0.0;
                 foreach (['main', 'spare_parts'] as $type) {
@@ -59,11 +62,12 @@ class CashierClosingHistoryService
                     }
                     $allocated += $additions[$type];
                 }
+                $drawerAllocated = round($allocated - $bankFundedMain, 2);
                 $available = round(($summary['cashier_funds']['total'] ?? 0) - ($summary['closing_cash_withdrawal'] ?? 0), 2);
-                if ((int) round($allocated * 100) > (int) round($available * 100)) {
+                if ((int) round($drawerAllocated * 100) > (int) round($available * 100)) {
                     throw ValidationException::withMessages(['account_additions' => 'The account additions exceed the cashier cash available at this closing.']);
                 }
-                $expectedCash = round($available - $allocated, 2);
+                $expectedCash = round($available - $drawerAllocated, 2);
             }
             $cash = round((float) $values['closing_balance'], 2);
             $cashChange = round($cash - (float) ($previous['cash'] ?? $current['cash_in_hand']), 2);
@@ -102,7 +106,7 @@ class CashierClosingHistoryService
                     $closing->{$type.'_difference'} = round($amount - (float) $closing->{$type.'_closing_balance'}, 2);
                 }
                 if ($allocationMode) {
-                    $closing->cash_expense = round((float) $closing->cash_expense + $allocated - ($summary['closing_allocated_today'] ?? 0), 2);
+                    $closing->cash_expense = round((float) $closing->cash_expense + $drawerAllocated - $previousDrawerAllocated, 2);
                 }
                 $closing->cash_closing_balance = $expectedCash;
                 $closing->cash_actual_balance = $cash;

@@ -50,7 +50,7 @@ it('converts bank transfer main share to cashier cash without duplicating collec
 
     expect($main['opening'])->toBe(68578.0)
         ->and($main['expenses'])->toBe(4620.0)
-        ->and($main['suggested_addition'])->toBe(30750.0)
+        ->and($main['suggested_addition'])->toBe(39750.0)
         ->and($main['bank_converted_cash'])->toBe(9000.0)
         ->and($main['non_cash_income'])->toBe(0.0)
         ->and($main['other_movements'])->toBe(0.0)
@@ -72,11 +72,12 @@ it('converts bank transfer main share to cashier cash without duplicating collec
     $this->get(route('cashier.index'))->assertOk()
         ->assertSeeText('Opening balance: Rs. 68,578.00')
         ->assertSeeText('Rs. 4,620.00')
-        ->assertSeeText('+ Bank transfer to Main (Spare Parts opening):')
-        ->assertSeeText('+ Added today: Rs. 30,750.00')
+        ->assertSeeText('+ Added today: Rs. 39,750.00')
+        ->assertSeeText('(Rs. 30,750.00 cash + Rs. 9,000.00 bank transfer from Spare Parts opening)')
         ->assertSeeText('Bank transfer to Main (opening):')
         ->assertSeeText('Rs. 9,000.00')
         ->assertSeeText('Account balance after addition: Rs. 103,708.00')
+        ->assertDontSeeText('+ Bank transfer to Main (Spare Parts opening):')
         ->assertDontSeeText('Transfers / adjustments');
 });
 
@@ -190,7 +191,7 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
         ->and($summary['cash_accounts']['main']['other_in'])->toBe(0.0)
         ->and($summary['cash_accounts']['spare_parts']['closing'])->toBe(100000.0)
         ->and($summary['cash_in_hand'])->toBe(5000.0)
-        ->and($summary['allocation_accounts']['main']['suggested_addition'])->toEqual(0.0)
+        ->and($summary['allocation_accounts']['main']['suggested_addition'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
         ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toEqual(0.0)
@@ -203,7 +204,7 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
         ->and($collections->first()['amount'])->toBe(12960.0);
 
     $this->get(route('cashier.index'))->assertOk()
-        ->assertSeeText('+ Bank transfer to Main (Spare Parts opening):')
+        ->assertSeeText('(Rs. 0.00 cash + Rs. 5,500.00 bank transfer from Spare Parts opening)')
         ->assertSeeText('Bank transfer to Main (opening):')
         ->assertSeeText('Rs. 5,500.00')
         ->assertDontSeeText('Other cash in:');
@@ -251,7 +252,7 @@ it('does not deduct spare parts for parts-only bank transfers and cleanly revers
 
     $summaryBeforeClose = $this->service->summary(today()->toDateString());
     expect($summaryBeforeClose['allocation_accounts']['main']['bank_converted_cash'])->toBe(1500.0)
-        ->and($summaryBeforeClose['allocation_accounts']['main']['suggested_addition'])->toBe(4000.0)
+        ->and($summaryBeforeClose['allocation_accounts']['main']['suggested_addition'])->toBe(5500.0)
         ->and($summaryBeforeClose['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(1500.0)
         ->and($summaryBeforeClose['cash_in_hand'])->toBe(9000.0);
 
@@ -259,7 +260,7 @@ it('does not deduct spare parts for parts-only bank transfers and cleanly revers
         'owner_withdrawal' => 0,
         'closing_balance' => 5000,
         'separate_cash_balance' => 1,
-        'account_additions' => ['main' => 4000, 'spare_parts' => 0],
+        'account_additions' => ['main' => 5500, 'spare_parts' => 0],
         'balances' => ['bank' => 66420],
         'balance_version' => $this->service->fingerprint($summaryBeforeClose),
     ]);
@@ -273,7 +274,7 @@ it('does not deduct spare parts for parts-only bank transfers and cleanly revers
         ->and($cycle2['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(0.0);
 });
 
-it('keeps actual drawer cash at 60825 when 9400 bank share transfers from spare parts opening to main outside cashier and closes with zero difference', function () {
+it('puts 27400 inside Main addition box (18000 cash plus 9400 bank share) while keeping drawer cash at 65325 and closing balance at 10225', function () {
     Account::systemAccount('main')->update(['opening_balance' => 94708]);
     Account::systemAccount('spare_parts')->update(['opening_balance' => 470154.21]);
     Account::systemAccount('bank')->update(['opening_balance' => 101697.58]);
@@ -284,11 +285,11 @@ it('keeps actual drawer cash at 60825 when 9400 bank share transfers from spare 
 
     $invoice = Invoice::create([
         'number' => 'INV-NOV11-001', 'invoice_type' => 'Job Card Bill',
-        'service_amount' => 22900, 'parts_amount' => 46450, 'subtotal' => 69350, 'total' => 69350,
-        'due_amount' => 0, 'paid_amount' => 69350, 'status' => 'Paid',
+        'service_amount' => 27400, 'parts_amount' => 46450, 'subtotal' => 73850, 'total' => 73850,
+        'due_amount' => 0, 'paid_amount' => 73850, 'status' => 'Paid',
         'created_by' => auth()->id(), 'public_token' => 'inv-nov11-001',
     ]);
-    $mainCash = $invoice->payments()->create(['number' => 'PAY-1', 'amount' => 13500, 'method' => 'Cash', 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
+    $mainCash = $invoice->payments()->create(['number' => 'PAY-1', 'amount' => 18000, 'method' => 'Cash', 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
     $bank = $invoice->payments()->create(['number' => 'PAY-2', 'amount' => 18750, 'method' => 'Bank Transfer', 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
     $partsCash = $invoice->payments()->create(['number' => 'PAY-3', 'amount' => 37100, 'method' => 'Cash', 'paid_at' => now(), 'status' => 'Completed', 'created_by' => auth()->id()]);
     $this->accounts->receiveInvoicePayment($invoice, $mainCash);
@@ -298,21 +299,22 @@ it('keeps actual drawer cash at 60825 when 9400 bank share transfers from spare 
     $expense = Expense::create([
         'number' => 'EXP-NOV11-1', 'expense_date' => today(), 'category' => 'Workshop',
         'description' => 'Workshop expense', 'account_id' => Account::systemAccount('main')->id,
-        'amount' => 700, 'payment_method' => 'Cash', 'created_by' => auth()->id(),
+        'amount' => 3680, 'payment_method' => 'Cash', 'created_by' => auth()->id(),
     ]);
-    app(OutgoingFundingService::class)->post([['source' => 'main', 'amount' => 700]], 700, 'Workshop expense', $expense, 'Cash', today()->toDateString(), 'Workshop');
+    app(OutgoingFundingService::class)->post([['source' => 'main', 'amount' => 3680]], 3680, 'Workshop expense', $expense, 'Cash', today()->toDateString(), 'Workshop');
 
     $summary = $this->service->summary(today()->toDateString());
     expect($summary['cash_opening'])->toBe(10225.0)
-        ->and($summary['cash_received'])->toBe(50600.0)
+        ->and($summary['cash_received'])->toBe(55100.0)
         ->and($summary['cash_other_in'])->toBe(0.0)
         ->and($summary['cash_paid'])->toBe(0.0)
-        ->and($summary['cash_in_hand'])->toBe(60825.0)
-        ->and($summary['accounts']['main']['closing'])->toBe(116908.0)
+        ->and($summary['cash_in_hand'])->toBe(65325.0)
+        ->and($summary['accounts']['main']['closing'])->toBe(118428.0)
         ->and($summary['accounts']['spare_parts']['closing'])->toBe(497854.21)
         ->and($summary['accounts']['bank']['closing'])->toBe(120447.58)
-        ->and($summary['allocation_accounts']['main']['suggested_addition'])->toBe(13500.0)
+        ->and($summary['allocation_accounts']['main']['suggested_addition'])->toBe(27400.0)
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(9400.0)
+        ->and($summary['allocation_accounts']['main']['base'])->toBe(91028.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
         ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(37100.0)
         ->and($summary['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(9400.0)
@@ -322,13 +324,25 @@ it('keeps actual drawer cash at 60825 when 9400 bank share transfers from spare 
         'owner_withdrawal' => 0,
         'closing_balance' => 10225,
         'separate_cash_balance' => 1,
-        'account_additions' => ['main' => 13500, 'spare_parts' => 37100],
+        'account_additions' => ['main' => 27400, 'spare_parts' => 37100],
         'balances' => ['bank' => 120447.58],
         'balance_version' => $this->service->fingerprint($summary),
     ]);
 
     expect($session->fresh()->status)->toBe('closed')
-        ->and((float) $session->fresh()->drawer_closing_balance)->toBe(10225.0);
+        ->and((float) $session->fresh()->drawer_closing_balance)->toBe(10225.0)
+        ->and((float) $session->fresh()->actual_balances['main'])->toBe(118428.0)
+        ->and((float) $session->fresh()->actual_balances['spare_parts'])->toBe(497854.21);
+
+    $historyService = app(\App\Services\CashierClosingHistoryService::class);
+    $historyService->correct($session->fresh(), [
+        'closing_version' => $historyService->version($session->fresh()),
+        'reason' => 'Confirm closing history edit preserves drawer math',
+        'closing_balance' => 10225,
+        'account_additions' => ['main' => 27400, 'spare_parts' => 37100],
+        'balances' => ['main' => 118428, 'spare_parts' => 497854.21, 'bank' => 120447.58, 'washing' => 0],
+    ]);
+    expect((float) $session->fresh()->drawer_closing_balance)->toBe(10225.0);
 });
 
 it('migrates already-posted open session converted bank rows out of cashier cash without altering closed historical sessions', function () {
