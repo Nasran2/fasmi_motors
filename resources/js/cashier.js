@@ -87,21 +87,14 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         },
         hasAdditionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
-            return this.cents(meta.bank_converted_cash || 0) > 0 || this.cents(meta.non_cash_income || 0) > 0;
+            return this.cents(meta.non_cash_income || 0) > 0;
         },
         additionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
             const nonCash = this.cents(meta.non_cash_income || 0) / 100;
-            const converted = this.cents(meta.bank_converted_cash || 0) / 100;
             const cashAdded = this.cents(this.additions[type] || 0) / 100;
-            if (converted > 0 && nonCash === 0) {
-                return `(Includes Rs. ${this.money(converted)} converted from bank transfer)`;
-            }
-            if (nonCash > 0 && converted === 0) {
+            if (nonCash > 0) {
                 return `(Rs. ${this.money(cashAdded)} cash + Rs. ${this.money(nonCash)} bank transfer)`;
-            }
-            if (converted > 0 && nonCash > 0) {
-                return `(Rs. ${this.money(cashAdded)} cash incl. Rs. ${this.money(converted)} from bank transfer + Rs. ${this.money(nonCash)} bank transfer)`;
             }
             return '';
         },

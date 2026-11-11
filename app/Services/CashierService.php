@@ -121,7 +121,7 @@ class CashierService
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
             $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
-            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome - $bankConvertedCash + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'base' => $base,

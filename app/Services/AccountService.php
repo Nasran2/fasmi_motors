@@ -277,8 +277,8 @@ class AccountService
                     $mainAmount,
                     "Receipt for {$invoice->number}",
                     $payment,
-                    'Cash',
-                    "Converted from {$payment->method} · Main share taken from Spare Parts opening balance",
+                    $payment->method,
+                    "Main share for {$payment->method} · Taken from Spare Parts opening balance",
                     null,
                     $effectiveDate,
                     $category,
@@ -288,10 +288,10 @@ class AccountService
                     'spare_parts',
                     'transfer_out',
                     $mainAmount,
-                    "Main cash from {$payment->method} for {$invoice->number}",
+                    "Bank transfer Main share for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    'Converted Rs. '.number_format($mainAmount, 2)." from {$payment->method} to Main cashier cash",
+                    'Transferred Rs. '.number_format($mainAmount, 2)." to Main Account for {$payment->method} share",
                     null,
                     $effectiveDate,
                     'bank_to_main_cash',
@@ -359,9 +359,9 @@ class AccountService
                 if ($difference != 0) {
                     $adjType = $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease';
                     if ($convertedBank && $type === 'main') {
-                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, 'Cash', "Adjusted {$payment->method} Main cash conversion", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
                     } elseif ($convertedBank && $type === 'spare_parts') {
-                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts opening deduction for {$payment->method} Main conversion", null, $correctionDate ?? $effectiveDate, 'invoice_revision', 'spare_parts', convertedFromMethod: $payment->method);
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts opening deduction for {$payment->method} Main share", null, $correctionDate ?? $effectiveDate, 'invoice_revision', 'spare_parts', convertedFromMethod: $payment->method);
                     } else {
                         $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, null, null, $correctionDate ?? $effectiveDate, 'invoice_revision');
                     }

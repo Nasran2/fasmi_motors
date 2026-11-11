@@ -96,7 +96,7 @@ $totalColor = $isAdjustment ? ($total > 0 ? 'text-emerald-700' : ($total < 0 ? '
                         @if($source['bike'] || ($source['bike_name'] ?? null))<div class="font-semibold">Bike: {{ $source['bike_name'] ?? '' }} {{ $source['bike'] }}</div>@endif
                         @unless($source['invoice'] || $source['job'])<a href="{{ $source['url'] }}" target="_blank" rel="noopener" class="text-blue-700 underline underline-offset-2">{{ $source['number'] ?: 'View transaction details' }}</a>@endunless
                     </td>
-                    <td class="p-3 align-top">{{ $row->payment_method ?: '—' }}@if($row->converted_from_method && $row->funding_source === null)<span class="mt-0.5 block text-xs text-slate-500">Converted from {{ $row->converted_from_method }}</span>@endif</td>
+                    <td class="p-3 align-top">{{ $row->payment_method ?: '—' }}@if($row->converted_from_method && $row->funding_source === null)<span class="mt-0.5 block text-xs text-slate-500">From Spare Parts opening</span>@endif</td>
                     <td class="p-3 text-right align-top font-bold {{ $amountColor }}">
                         @if($isReversed)
                         <span class="line-through text-slate-400">{{ number_format($amount, 2) }}</span>

@@ -67,9 +67,9 @@ class JobAdvanceService
         $convertedBank = $postBank && $advance->method !== 'Cash' && (bool) $advance->spare_parts_to_bank;
         if ($convertedBank) {
             $amount = (float) $advance->amount;
-            $note = trim(($advance->note ? $advance->note.' · ' : '')."Converted from {$advance->method} · Main share taken from Spare Parts opening balance");
-            $accounts->recordTransaction('main', 'income', $amount, $description, $advance, 'Cash', $note, null, $effectiveDate, 'job_advance', convertedFromMethod: $advance->method);
-            $accounts->recordTransaction('spare_parts', 'transfer_out', $amount, "Main cash from {$advance->method} for {$advance->number}", $advance, $advance->method, 'Converted Rs. '.number_format($amount, 2)." from {$advance->method} to Main cashier cash", null, $effectiveDate, 'bank_to_main_cash', 'spare_parts', convertedFromMethod: $advance->method);
+            $note = trim(($advance->note ? $advance->note.' · ' : '')."Main share for {$advance->method} · Taken from Spare Parts opening balance");
+            $accounts->recordTransaction('main', 'income', $amount, $description, $advance, $advance->method, $note, null, $effectiveDate, 'job_advance', convertedFromMethod: $advance->method);
+            $accounts->recordTransaction('spare_parts', 'transfer_out', $amount, "Bank transfer Main share for {$advance->number}", $advance, $advance->method, 'Transferred Rs. '.number_format($amount, 2)." to Main Account for {$advance->method} share", null, $effectiveDate, 'bank_to_main_cash', 'spare_parts', convertedFromMethod: $advance->method);
             $accounts->recordTransaction('bank', 'income', $amount, $description, $advance, $advance->method, null, null, $effectiveDate, 'job_advance');
 
             return;

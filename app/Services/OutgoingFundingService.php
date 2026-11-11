@@ -152,6 +152,7 @@ class OutgoingFundingService
         $isNonCash = fn ($entry) => $entry->status === 'active'
             && $entry->transaction_type !== 'reversal'
             && $entry->transaction_type !== 'owner_capital'
+            && $entry->converted_from_method === null
             && ! ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
             && ! in_array($entry->payment_method, ['Adjustment', 'Manual'], true)
             && ! in_array($entry->reference_type, [SupplierPayment::class, \App\Models\PurchaseReturn::class], true)
@@ -169,21 +170,19 @@ class OutgoingFundingService
         return round(max(0.0, (float) $credits - (float) $revisionDebits), 2);
     }
 
-    /** Bank-transfer / non-cash Main share converted into Main cashier cash. */
+    /** Bank-transfer / non-cash Main share transferred from Spare Parts opening balance (outside cashier cash). */
     public function bankConvertedMainCash(Collection $entries): float
     {
         $credits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->transaction_type !== 'reversal'
             && $entry->funding_source === null
             && $entry->converted_from_method !== null
-            && $entry->payment_method === 'Cash'
             && $entry->credit > 0)->sum('credit');
         $debits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->category === 'invoice_revision'
             && $entry->transaction_type === 'adjustment_decrease'
             && $entry->funding_source === null
             && $entry->converted_from_method !== null
-            && $entry->payment_method === 'Cash'
             && $entry->debit > 0)->sum('debit');
 
         return round(max(0.0, (float) $credits - (float) $debits), 2);

@@ -65,7 +65,7 @@
                 <button type="button" data-cashier-movements="{{ route('cashier.card-details', ['date' => $date, 'card' => $card]) }}" aria-label="View {{ $label }} breakdown" class="panel cursor-pointer text-left transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600"><span class="block text-xs font-bold uppercase tracking-wide text-slate-500">{{ $label }}</span><span class="mt-2 block text-2xl font-black text-[#0b2447]">Rs. {{ number_format($value, 2) }}</span><span class="mt-3 block text-xs font-semibold text-blue-700">View breakdown →</span></button>
                 @endforeach
             </div>
-            <p class="text-sm text-slate-600">Cash in hand includes cash received for washing. Bank payments and carried Main / Spare Parts account balances are excluded.@if($summary['cash_other_in'] != 0) Other cash in: Rs. {{ number_format($summary['cash_other_in'], 2) }}@if(($summary['bank_to_main_cash'] ?? 0) > 0) (includes Rs. {{ number_format($summary['bank_to_main_cash'], 2) }} Main cash converted from bank transfer)@endif.@endif</p>
+            <p class="text-sm text-slate-600">Cash in hand includes cash received for washing. Bank payments and carried Main / Spare Parts account balances are excluded.@if($summary['cash_other_in'] != 0) Other cash in: Rs. {{ number_format($summary['cash_other_in'], 2) }}.@endif</p>
             @if($independent)
             <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b p-5">
