@@ -120,12 +120,14 @@ class CashierService
                 : 0.0;
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
+            $openingCash = ($type === 'spare_parts' && $session?->status !== 'closed') ? round((float) ($cashierFunds['opening'] ?? 0), 2) : 0.0;
             $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $bankConvertedCash - $priorAllocation, 2);
             $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
+                'opening_cash' => $openingCash,
                 'base' => $base,
-                'suggested_addition' => max(0, round($cashierFunds[$type] + $bankConvertedCash + $priorAllocation, 2)),
+                'suggested_addition' => max(0, round($cashierFunds[$type] + $openingCash + $bankConvertedCash + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,

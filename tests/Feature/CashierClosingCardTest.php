@@ -148,11 +148,12 @@ it('does not double count cashier-funded spare parts payouts in card expenses', 
     $parts = $summary['allocation_accounts']['spare_parts'];
 
     expect($parts['opening'])->toBe(100000.0)
+        ->and($parts['opening_cash'])->toBe(5000.0)
         ->and($parts['expenses'])->toBe(5000.0)
-        ->and($parts['suggested_addition'])->toBe(18000.0)
+        ->and($parts['suggested_addition'])->toBe(23000.0)
         ->and($parts['non_cash_income'])->toBe(0.0)
         ->and($parts['other_movements'])->toBe(0.0)
-        ->and(round($parts['base'] + $parts['suggested_addition'], 2))->toBe(113000.0);
+        ->and(round($parts['base'] + $parts['suggested_addition'], 2))->toBe(118000.0);
 });
 
 it('posts full mixed bank transfer to bank, converts main share to cash from spare parts opening balance, and keeps spare parts drawer cash untouched', function () {
@@ -194,7 +195,8 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
         ->and($summary['allocation_accounts']['main']['suggested_addition'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
-        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toEqual(0.0)
+        ->and($summary['allocation_accounts']['spare_parts']['opening_cash'])->toBe(5000.0)
+        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(5000.0)
         ->and($summary['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['spare_parts']['base'])->toBe(94500.0);
 
@@ -205,6 +207,7 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
 
     $this->get(route('cashier.index'))->assertOk()
         ->assertSeeText('(Rs. 0.00 cash + Rs. 5,500.00 bank transfer from Spare Parts opening)')
+        ->assertSeeText('(Rs. 0.00 today’s cash + Rs. 5,000.00 opening cashier cash)')
         ->assertSeeText('Bank transfer to Main (opening):')
         ->assertSeeText('Rs. 5,500.00')
         ->assertDontSeeText('Other cash in:');
@@ -274,7 +277,7 @@ it('does not deduct spare parts for parts-only bank transfers and cleanly revers
         ->and($cycle2['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(0.0);
 });
 
-it('puts 27400 inside Main addition box (18000 cash plus 9400 bank share) while keeping drawer cash at 65325 and closing balance at 10225', function () {
+it('includes opening cashier cash in Spare Parts addition so closing balance starts at 0 and any reduction stays in cashier closing balance', function () {
     Account::systemAccount('main')->update(['opening_balance' => 94708]);
     Account::systemAccount('spare_parts')->update(['opening_balance' => 470154.21]);
     Account::systemAccount('bank')->update(['opening_balance' => 101697.58]);
@@ -316,33 +319,42 @@ it('puts 27400 inside Main addition box (18000 cash plus 9400 bank share) while 
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(9400.0)
         ->and($summary['allocation_accounts']['main']['base'])->toBe(91028.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
-        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(37100.0)
+        ->and($summary['allocation_accounts']['spare_parts']['opening_cash'])->toBe(10225.0)
+        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(47325.0)
         ->and($summary['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(9400.0)
         ->and($summary['allocation_accounts']['spare_parts']['other_movements'])->toBe(0.0);
 
+    $this->get(route('cashier.index'))->assertOk()
+        ->assertSeeText('(Rs. 37,100.00 today’s cash + Rs. 10,225.00 opening cashier cash)')
+        ->assertSeeText('Account balance after addition: Rs. 508,079.21');
+
     $this->service->close($session, [
         'owner_withdrawal' => 0,
-        'closing_balance' => 10225,
+        'closing_balance' => 0,
         'separate_cash_balance' => 1,
-        'account_additions' => ['main' => 27400, 'spare_parts' => 37100],
+        'account_additions' => ['main' => 27400, 'spare_parts' => 47325],
         'balances' => ['bank' => 120447.58],
         'balance_version' => $this->service->fingerprint($summary),
     ]);
 
     expect($session->fresh()->status)->toBe('closed')
-        ->and((float) $session->fresh()->drawer_closing_balance)->toBe(10225.0)
+        ->and((float) $session->fresh()->drawer_closing_balance)->toBe(0.0)
         ->and((float) $session->fresh()->actual_balances['main'])->toBe(118428.0)
-        ->and((float) $session->fresh()->actual_balances['spare_parts'])->toBe(497854.21);
+        ->and((float) $session->fresh()->actual_balances['spare_parts'])->toBe(508079.21);
 
     $historyService = app(\App\Services\CashierClosingHistoryService::class);
     $historyService->correct($session->fresh(), [
         'closing_version' => $historyService->version($session->fresh()),
-        'reason' => 'Confirm closing history edit preserves drawer math',
-        'closing_balance' => 10225,
-        'account_additions' => ['main' => 27400, 'spare_parts' => 37100],
-        'balances' => ['main' => 118428, 'spare_parts' => 497854.21, 'bank' => 120447.58, 'washing' => 0],
+        'reason' => 'Keep Rs. 3,805 in cashier by lowering Spare Parts addition',
+        'closing_balance' => 3805,
+        'account_additions' => ['main' => 27400, 'spare_parts' => 43520],
+        'balances' => ['main' => 118428, 'spare_parts' => 504274.21, 'bank' => 120447.58, 'washing' => 0],
     ]);
-    expect((float) $session->fresh()->drawer_closing_balance)->toBe(10225.0);
+    expect((float) $session->fresh()->drawer_closing_balance)->toBe(3805.0)
+        ->and((float) $session->fresh()->actual_balances['spare_parts'])->toBe(504274.21);
+
+    $this->travel(1)->days();
+    expect($this->service->suggestedOpening())->toBe(3805.0);
 });
 
 it('migrates already-posted open session converted bank rows out of cashier cash without altering closed historical sessions', function () {

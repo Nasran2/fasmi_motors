@@ -88,13 +88,28 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         },
         hasAdditionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
+            const openingCashCents = this.cents(meta.opening_cash || 0);
+            if (openingCashCents > 0) {
+                const todayCashDefaultCents = Math.max(0, this.cents(meta.suggested_addition || 0) - openingCashCents);
+                return this.cents(this.additions[type] || 0) > todayCashDefaultCents;
+            }
             return this.cents(meta.bank_converted_cash || 0) > 0 || this.cents(meta.non_cash_income || 0) > 0;
         },
         additionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
+            const openingCashCents = this.cents(meta.opening_cash || 0);
+            const cashAddedCents = this.cents(this.additions[type] || 0);
+            if (openingCashCents > 0) {
+                const todayCashDefaultCents = Math.max(0, this.cents(meta.suggested_addition || 0) - openingCashCents);
+                const allocatedOpeningCents = Math.max(0, cashAddedCents - todayCashDefaultCents);
+                if (allocatedOpeningCents > 0) {
+                    const todayCash = Math.max(0, cashAddedCents - allocatedOpeningCents) / 100;
+                    const openingPart = allocatedOpeningCents / 100;
+                    return `(Rs. ${this.money(todayCash)} today’s cash + Rs. ${this.money(openingPart)} opening cashier cash)`;
+                }
+            }
             const nonCashCents = this.cents(meta.non_cash_income || 0);
             const convertedCents = this.cents(meta.bank_converted_cash || 0);
-            const cashAddedCents = this.cents(this.additions[type] || 0);
             const directCash = Math.max(0, cashAddedCents - convertedCents) / 100;
             const converted = convertedCents / 100;
             const nonCash = nonCashCents / 100;
