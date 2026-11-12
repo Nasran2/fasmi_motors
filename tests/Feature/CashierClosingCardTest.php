@@ -55,11 +55,11 @@ it('converts bank transfer main share to cashier cash without duplicating collec
         ->and($main['non_cash_income'])->toBe(0.0)
         ->and($main['other_movements'])->toBe(0.0)
         ->and(round($main['base'] + $main['suggested_addition'], 2))->toBe(103708.0)
-        ->and($parts['opening'])->toBe(105000.0)
+        ->and($parts['opening'])->toBe(100000.0)
         ->and($parts['opening_cash'])->toBe(5000.0)
-        ->and($parts['suggested_addition'])->toBe(0.0)
+        ->and($parts['suggested_addition'])->toBe(5000.0)
         ->and($parts['bank_conversion_deduction'])->toBe(9000.0)
-        ->and($parts['base'])->toBe(96000.0)
+        ->and($parts['base'])->toBe(91000.0)
         ->and($summary['cash_received'])->toBe(30750.0)
         ->and($summary['bank_received'])->toBe(9000.0)
         ->and($summary['cash_accounts']['main']['other_in'])->toBe(0.0)
@@ -74,8 +74,9 @@ it('converts bank transfer main share to cashier cash without duplicating collec
 
     $this->get(route('cashier.index'))->assertOk()
         ->assertSeeText('Opening balance: Rs. 68,578.00')
-        ->assertSeeText('Opening balance: Rs. 105,000.00')
-        ->assertSeeText('(Includes Rs. 5,000.00 opening cashier cash)')
+        ->assertSeeText('Opening balance: Rs. 100,000.00')
+        ->assertSeeText('(Rs. 0.00 today’s cash + Rs. 5,000.00 opening cashier cash)')
+        ->assertDontSeeText('Includes Rs. 5,000.00 opening cashier cash')
         ->assertSeeText('Rs. 4,620.00')
         ->assertSeeText('+ Added today: Rs. 39,750.00')
         ->assertSeeText('(Rs. 30,750.00 cash + Rs. 9,000.00 bank transfer from Spare Parts opening)')
@@ -98,7 +99,7 @@ it('does not count prior-cycle cash or reversed entries or transfers as bank tra
     $summaryBeforeClose = $this->service->summary(today()->toDateString());
     $this->service->close($session, [
         'owner_withdrawal' => 0,
-        'closing_balance' => 0,
+        'closing_balance' => 5000,
         'separate_cash_balance' => 1,
         'account_additions' => ['main' => 9000, 'spare_parts' => 0],
         'balances' => ['bank' => 50500],
@@ -106,7 +107,7 @@ it('does not count prior-cycle cash or reversed entries or transfers as bank tra
     ]);
 
     // Reopen same day.
-    $this->service->open(0, 'Afternoon reopen', separateCash: true, allocations: ['main' => 77878, 'spare_parts' => 105000, 'bank' => 50500, 'washing' => 0]);
+    $this->service->open(5000, 'Afternoon reopen', separateCash: true, allocations: ['main' => 77878, 'spare_parts' => 100000, 'bank' => 50500, 'washing' => 0]);
 
     // Cycle 2: 3,000 cash + reversed 1,000 cash + reversed 400 expense + 1,500 transfer from Spare Parts.
     $this->accounts->recordTransaction('main', 'income', 3000, 'Cycle 2 cash', paymentMethod: 'Cash');
@@ -152,10 +153,10 @@ it('does not double count cashier-funded spare parts payouts in card expenses', 
     $summary = $this->service->summary(today()->toDateString());
     $parts = $summary['allocation_accounts']['spare_parts'];
 
-    expect($parts['opening'])->toBe(105000.0)
+    expect($parts['opening'])->toBe(100000.0)
         ->and($parts['opening_cash'])->toBe(5000.0)
         ->and($parts['expenses'])->toBe(5000.0)
-        ->and($parts['suggested_addition'])->toBe(18000.0)
+        ->and($parts['suggested_addition'])->toBe(23000.0)
         ->and($parts['non_cash_income'])->toBe(0.0)
         ->and($parts['other_movements'])->toBe(0.0)
         ->and(round($parts['base'] + $parts['suggested_addition'], 2))->toBe(118000.0);
@@ -200,11 +201,11 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
         ->and($summary['allocation_accounts']['main']['suggested_addition'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(5500.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
-        ->and($summary['allocation_accounts']['spare_parts']['opening'])->toBe(105000.0)
+        ->and($summary['allocation_accounts']['spare_parts']['opening'])->toBe(100000.0)
         ->and($summary['allocation_accounts']['spare_parts']['opening_cash'])->toBe(5000.0)
-        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(0.0)
+        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(5000.0)
         ->and($summary['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(5500.0)
-        ->and($summary['allocation_accounts']['spare_parts']['base'])->toBe(99500.0);
+        ->and($summary['allocation_accounts']['spare_parts']['base'])->toBe(94500.0);
 
     $collections = app(CollectionReportService::class)->rows(today()->toDateString(), today()->toDateString());
     expect($collections)->toHaveCount(1)
@@ -213,8 +214,8 @@ it('posts full mixed bank transfer to bank, converts main share to cash from spa
 
     $this->get(route('cashier.index'))->assertOk()
         ->assertSeeText('(Rs. 0.00 cash + Rs. 5,500.00 bank transfer from Spare Parts opening)')
-        ->assertSeeText('Opening balance: Rs. 105,000.00')
-        ->assertSeeText('(Includes Rs. 5,000.00 opening cashier cash)')
+        ->assertSeeText('Opening balance: Rs. 100,000.00')
+        ->assertSeeText('(Rs. 0.00 today’s cash + Rs. 5,000.00 opening cashier cash)')
         ->assertSeeText('Bank transfer to Main (opening):')
         ->assertSeeText('Rs. 5,500.00')
         ->assertDontSeeText('Other cash in:');
@@ -268,15 +269,15 @@ it('does not deduct spare parts for parts-only bank transfers and cleanly revers
 
     $this->service->close($session, [
         'owner_withdrawal' => 0,
-        'closing_balance' => 0,
+        'closing_balance' => 5000,
         'separate_cash_balance' => 1,
         'account_additions' => ['main' => 5500, 'spare_parts' => 0],
         'balances' => ['bank' => 66420],
         'balance_version' => $this->service->fingerprint($summaryBeforeClose),
     ]);
 
-    $this->service->open(0, 'Reopen same day', separateCash: true, allocations: [
-        'main' => 74078, 'spare_parts' => 103500, 'bank' => 66420, 'washing' => 0,
+    $this->service->open(5000, 'Reopen same day', separateCash: true, allocations: [
+        'main' => 74078, 'spare_parts' => 98500, 'bank' => 66420, 'washing' => 0,
     ]);
     $cycle2 = $this->service->summary(today()->toDateString());
     expect($cycle2['allocation_accounts']['main']['opening'])->toBe(74078.0)
@@ -326,23 +327,23 @@ it('includes opening cashier cash in Spare Parts addition so closing balance sta
         ->and($summary['allocation_accounts']['main']['bank_converted_cash'])->toBe(9400.0)
         ->and($summary['allocation_accounts']['main']['base'])->toBe(91028.0)
         ->and($summary['allocation_accounts']['main']['other_movements'])->toBe(0.0)
-        ->and($summary['allocation_accounts']['spare_parts']['opening'])->toBe(480379.21)
+        ->and($summary['allocation_accounts']['spare_parts']['opening'])->toBe(470154.21)
         ->and($summary['allocation_accounts']['spare_parts']['opening_cash'])->toBe(10225.0)
-        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(37100.0)
+        ->and($summary['allocation_accounts']['spare_parts']['suggested_addition'])->toBe(47325.0)
         ->and($summary['allocation_accounts']['spare_parts']['bank_conversion_deduction'])->toBe(9400.0)
         ->and($summary['allocation_accounts']['spare_parts']['other_movements'])->toBe(0.0);
 
     $this->get(route('cashier.index'))->assertOk()
-        ->assertSeeText('Opening balance: Rs. 480,379.21')
-        ->assertSeeText('(Includes Rs. 10,225.00 opening cashier cash)')
+        ->assertSeeText('Opening balance: Rs. 470,154.21')
+        ->assertSeeText('(Rs. 37,100.00 today’s cash + Rs. 10,225.00 opening cashier cash)')
         ->assertSeeText('Account balance after addition: Rs. 508,079.21')
-        ->assertDontSeeText('today’s cash + Rs. 10,225.00 opening cashier cash');
+        ->assertDontSeeText('Includes Rs. 10,225.00 opening cashier cash');
 
     $this->service->close($session, [
         'owner_withdrawal' => 0,
         'closing_balance' => 0,
         'separate_cash_balance' => 1,
-        'account_additions' => ['main' => 27400, 'spare_parts' => 37100],
+        'account_additions' => ['main' => 27400, 'spare_parts' => 47325],
         'balances' => ['bank' => 120447.58],
         'balance_version' => $this->service->fingerprint($summary),
     ]);
@@ -357,7 +358,7 @@ it('includes opening cashier cash in Spare Parts addition so closing balance sta
         'closing_version' => $historyService->version($session->fresh()),
         'reason' => 'Keep Rs. 3,805 in cashier by lowering Spare Parts addition',
         'closing_balance' => 3805,
-        'account_additions' => ['main' => 27400, 'spare_parts' => 33295],
+        'account_additions' => ['main' => 27400, 'spare_parts' => 43520],
         'balances' => ['main' => 118428, 'spare_parts' => 504274.21, 'bank' => 120447.58, 'washing' => 0],
     ]);
     expect((float) $session->fresh()->drawer_closing_balance)->toBe(3805.0)

@@ -120,14 +120,14 @@ class CashierService
                 : 0.0;
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingCash = ($type === 'spare_parts' && $session?->status !== 'closed') ? round((float) ($cashierFunds['opening'] ?? 0), 2) : 0.0;
-            $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']) + $openingCash, 2);
-            $base = round($accounts[$type]['closing'] + $washingToMain + $openingCash - $cashierFunds[$type] - $bankConvertedCash - $priorAllocation, 2);
+            $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
+            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $bankConvertedCash - $priorAllocation, 2);
             $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'opening_cash' => $openingCash,
                 'base' => $base,
-                'suggested_addition' => max(0.0, round($cashierFunds[$type] + $bankConvertedCash + $priorAllocation, 2)),
+                'suggested_addition' => max(0.0, round($cashierFunds[$type] + $openingCash + $bankConvertedCash + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,
@@ -536,7 +536,6 @@ class CashierService
             $allocationBases = [];
             $allocatedToday = 0.0;
             $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
-            $sparePartsOpeningCash = round((float) ($summary['allocation_accounts']['spare_parts']['opening_cash'] ?? 0), 2);
             $drawerAllocatedToday = 0.0;
             $verified = $expected;
             if ($dailyAdditions !== null) {
@@ -554,7 +553,7 @@ class CashierService
                     $allocatedToday += $addition;
                 }
                 $allocatedToday = round($allocatedToday, 2);
-                $drawerAllocatedToday = round($allocatedToday - $bankFundedMain + $sparePartsOpeningCash, 2);
+                $drawerAllocatedToday = round($allocatedToday - $bankFundedMain, 2);
                 if ((int) round($drawerAllocatedToday * 100) > (int) round(($summary['cashier_funds']['total'] - $cashWithdrawal) * 100)) {
                     throw ValidationException::withMessages(['account_additions' => 'Today’s account additions exceed the available cashier cash.']);
                 }
@@ -654,7 +653,6 @@ class CashierService
             $summary['closing_allocation_bases'] = $allocationBases;
             $summary['closing_allocated_today'] = $allocatedToday;
             $summary['closing_drawer_allocated_today'] = $drawerAllocatedToday;
-            $summary['closing_spare_parts_opening_cash'] = $sparePartsOpeningCash;
             $closingRows = AccountTransaction::posted()->whereIn('account_id', collect(self::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date)->get();
             $summary['closing_ledger_snapshot'] = app(DrawerCashierService::class)->ledgerSnapshot($closingRows);
             foreach (self::ACCOUNTS as $type => $label) {

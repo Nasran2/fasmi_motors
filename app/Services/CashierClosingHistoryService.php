@@ -50,7 +50,7 @@ class CashierClosingHistoryService
             $expectedCash = (float) ($closing?->cash_closing_balance ?? $summary['cash_in_hand'] ?? 0);
             $allocated = (float) ($summary['closing_allocated_today'] ?? 0);
             $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
-            $sparePartsOpeningCash = round((float) ($summary['closing_spare_parts_opening_cash'] ?? ($summary['allocation_accounts']['spare_parts']['opening_cash'] ?? 0)), 2);
+            $sparePartsOpeningCash = round((float) ($summary['closing_spare_parts_opening_cash'] ?? 0), 2);
             $previousDrawerAllocated = round((float) ($summary['closing_drawer_allocated_today'] ?? ($allocated - $bankFundedMain + $sparePartsOpeningCash)), 2);
             $drawerAllocated = $previousDrawerAllocated;
             if ($allocationMode) {
