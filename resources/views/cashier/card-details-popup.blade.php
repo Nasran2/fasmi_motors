@@ -15,9 +15,9 @@
 @endif
 <p class="mb-4 text-sm text-slate-600">
     @if($card === 'opening') This is the recorded physical opening cash. Main, Spare Parts and Bank account balances are separate. Opening history below is an audit trail; its counts are not added together.
-    @elseif($card === 'received') {{ $rows->total() }} cash receipt(s). Each receipt is counted once, including washing. Bank receipts are excluded.
+    @elseif($card === 'received') {{ $rows->total() }} receipt(s) taken into the cashier drawer, counted once per receipt.
     @elseif($card === 'paid') {{ $rows->total() }} cash payment allocation(s). Split payments show the amount taken from each cashier account. Reversed entries are netted; internal washing settlement is excluded.
-    @elseif($card === 'washing') Washing portions of received payments, including cash and bank. New receipts credit Main immediately. This information total is already included in the account balances and must not be added again.
+    @elseif($card === 'washing') Washing portions of received payments, including cash and bank. These amounts are already included in their receipt totals.
     @else All physical cash movements for this date, including washing. Bank and carried account balances are excluded.
     @endif
     Select a source link to open it in a new tab.

@@ -109,7 +109,7 @@ class CashierController extends Controller
         $session = CashierSession::whereDate('session_date', $date)->first();
         $summary = $service->summary($date);
         $balanceVersion = $service->fingerprint($summary);
-        $transactions = $summary['collections']->where('channel', 'cash');
+        $transactions = $summary['collections']->where('in_drawer', true);
         $suggestedOpening = $service->suggestedOpening();
         $events = $session?->events()->with('washingPerson', 'creator')->latest('id')->get() ?? collect();
         $canCorrectOpening = $service->canCorrectOpening($session);

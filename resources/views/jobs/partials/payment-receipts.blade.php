@@ -18,7 +18,7 @@
         <div class="rounded-xl border border-slate-200 p-3 text-xs">
             <div class="flex justify-between gap-3"><span class="font-semibold">{{ $receipt->number ?: 'Legacy receipt' }}</span><span class="font-bold">Rs. {{ number_format($receipt->method === 'Salary Deduction' ? $snapshot['amount'] : $snapshot['received_amount'], 2) }}</span></div>
             <p class="mt-1 text-slate-500">{{ $paymentInvoice->number }} · {{ $receipt->paid_at->format('d M Y') }}</p>
-            <p class="mt-1">{{ $receipt->method }} · {{ $receipt->status }} · {{ $receipt->account?->name }}</p>
+            <p class="mt-1">{{ $receipt->method }} · {{ $receipt->status }} · {{ $receipt->receiving_account_label }}</p>
             @if($receipt->method === 'Salary Deduction' && $receipt->salarySheet)
             <p class="mt-2 rounded-lg bg-emerald-50 p-2 font-bold text-emerald-800">Rs. {{ number_format($receipt->amount,2) }} deducted from salary <a href="{{ route('technicians.salaries.slip',$receipt->salarySheet) }}#staff-bike-repair-deductions" class="underline">{{ $receipt->salarySheet->number }}</a></p>
             @if($receipt->status === 'Completed' && auth()->user()->canAccess('technician.salaries'))<a class="mt-2 inline-block font-bold text-blue-700 underline" href="{{ route('technicians.salaries.repairs.edit',$receipt) }}">Correct deduction with reason</a>@endif
@@ -34,7 +34,7 @@
                 @if(!$blockedReason)
                 @php($editData = [
                     'number' => $receipt->number ?: 'Legacy receipt', 'method' => $receipt->method,
-                    'amount' => $snapshot['received_amount'], 'account_id' => $receipt->account_id,
+                    'amount' => $snapshot['received_amount'], 'account_id' => $receipt->account_id, 'receiving_account' => $receipt->receiving_account ?? '',
                     'paid_at' => $receipt->paid_at->toDateString(), 'cheque_date' => $receipt->cheque?->cheque_date->toDateString() ?? '',
                     'cheque_number' => $receipt->cheque?->cheque_number ?? '', 'bank_name' => $receipt->cheque?->bank_name ?? '',
                     'available' => round($currentAvailable, 2), 'previous_available' => round($previousAvailable, 2),

@@ -55,6 +55,7 @@ class CashierService
 
         $session = CashierSession::whereDate('session_date', $date)->first();
         $collections = app(CollectionReportService::class)->rows($date, $date);
+        $drawerReceipts = round($collections->where('in_drawer', true)->sum('amount'), 2);
         $washingReceived = $collections->sum(fn ($receipt) => (int) round(($receipt['components']['washing'] ?? 0) * 100)) / 100;
 
         // The displayed opening is the selected date's confirmed snapshot.
@@ -121,13 +122,13 @@ class CashierService
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingCash = ($type === 'spare_parts' && $session?->status !== 'closed') ? round((float) ($cashierFunds['opening'] ?? 0), 2) : 0.0;
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
-            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $bankConvertedCash - $priorAllocation, 2);
-            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome + $shownDeduction, 2);
+            $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome - $bankConvertedCash + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'opening_cash' => $openingCash,
                 'base' => $base,
-                'suggested_addition' => max(0.0, round($cashierFunds[$type] + $openingCash + $bankConvertedCash + $priorAllocation, 2)),
+                'suggested_addition' => max(0.0, round($cashierFunds[$type] + $openingCash + $priorAllocation, 2)),
                 'prior_allocation' => $priorAllocation,
                 'gross_debits' => $grossDebits,
                 'reversed_debits' => $reversedDebits,
@@ -145,14 +146,14 @@ class CashierService
             'accounts' => $accounts, 'transactions' => $transactions, 'cash_accounts' => $cashAccounts, 'collections' => $collections,
             'display_accounts' => $displayAccounts, 'washing_received' => $washingReceived, 'bank_to_main_cash' => $allocationAccounts['main']['bank_converted_cash'] ?? 0.0,
             'opening_context' => $openingContext, 'account_opening_balances' => $session?->account_opening_balances,
-            'cashier_cycle' => ['income' => round($collections->where('channel', 'cash')->sum('amount') + collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']) - ($openingContext['cash_movements']['income'] ?? 0), 2),
+            'cashier_cycle' => ['income' => round($drawerReceipts + collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']) - ($openingContext['cash_movements']['income'] ?? 0), 2),
                 'paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) - ($openingContext['cash_movements']['paid'] ?? 0), 2)],
             'cashier_funds' => $cashierFunds, 'allocation_accounts' => $allocationAccounts,
             'cash_opening' => $cashOpening,
             'cash_in_hand' => $cashClosing,
             'cash_paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']), 2),
             'cash_other_in' => round(collect($cashMovements)->sum(fn ($account) => $account['other_in'] - $account['internal_in']), 2),
-            'cash_received' => round($collections->where('channel', 'cash')->sum('amount'), 2),
+            'cash_received' => $drawerReceipts,
             'bank_received' => round($collections->where('channel', 'bank')->sum('amount'), 2),
             'total_received' => round($collections->sum('amount'), 2),
             'total_paid' => round(collect($cashMovements)->sum(fn ($account) => $account['outgoing'] - $account['internal_out']) + ($accounts['bank']['outgoing'] ?? 0), 2),
@@ -535,7 +536,6 @@ class CashierService
             $dailyAdditions = $values['account_additions'] ?? null;
             $allocationBases = [];
             $allocatedToday = 0.0;
-            $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
             $drawerAllocatedToday = 0.0;
             $verified = $expected;
             if ($dailyAdditions !== null) {
@@ -553,7 +553,7 @@ class CashierService
                     $allocatedToday += $addition;
                 }
                 $allocatedToday = round($allocatedToday, 2);
-                $drawerAllocatedToday = round($allocatedToday - $bankFundedMain, 2);
+                $drawerAllocatedToday = $allocatedToday;
                 if ((int) round($drawerAllocatedToday * 100) > (int) round(($summary['cashier_funds']['total'] - $cashWithdrawal) * 100)) {
                     throw ValidationException::withMessages(['account_additions' => 'Today’s account additions exceed the available cashier cash.']);
                 }
@@ -653,6 +653,7 @@ class CashierService
             $summary['closing_allocation_bases'] = $allocationBases;
             $summary['closing_allocated_today'] = $allocatedToday;
             $summary['closing_drawer_allocated_today'] = $drawerAllocatedToday;
+            $summary['closing_additions_are_drawer_cash'] = true;
             $closingRows = AccountTransaction::posted()->whereIn('account_id', collect(self::ACCOUNTS)->map(fn ($label, $type) => Account::systemAccount($type)->id))->whereDate('transaction_date', $date)->get();
             $summary['closing_ledger_snapshot'] = app(DrawerCashierService::class)->ledgerSnapshot($closingRows);
             foreach (self::ACCOUNTS as $type => $label) {
@@ -683,6 +684,6 @@ class CashierService
 
     public function fingerprint(array $summary): string
     {
-        return hash('sha256', json_encode([$summary['cash_opening'], $summary['cash_in_hand'], $summary['drawer_adjustment'], $summary['accounts'], $summary['cash_accounts'], $summary['transactions']->map(fn ($row) => [$row->id, $row->status, $row->credit, $row->debit])->all()]));
+        return hash('sha256', json_encode([$summary['cash_opening'], $summary['cash_in_hand'], $summary['drawer_adjustment'], $summary['accounts'], $summary['cash_accounts'], $summary['allocation_accounts'], $summary['transactions']->map(fn ($row) => [$row->id, $row->status, $row->credit, $row->debit])->all()]));
     }
 }

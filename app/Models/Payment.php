@@ -12,7 +12,19 @@ use Illuminate\Support\Carbon;
  */
 class Payment extends Model
 {
+    public const RECEIVING_ACCOUNTS = [
+        'main' => 'Main Account',
+        'spare_parts_cashier' => 'Spare Parts Cash',
+        'spare_parts' => 'Spare Parts Opening Balance',
+        'bank' => 'Bank Account',
+    ];
+
     protected $guarded = [];
+
+    public function getReceivingAccountLabelAttribute(): ?string
+    {
+        return self::RECEIVING_ACCOUNTS[$this->receiving_account] ?? $this->account?->name;
+    }
 
     /** @return BelongsTo<TechnicianSalarySheet, $this> */
     public function salarySheet(): BelongsTo

@@ -14,7 +14,6 @@ class CollectionReportService
     {
         $ids = collect(['main', 'washing', 'spare_parts', 'bank'])->map(fn ($type) => Account::systemAccount($type)->id);
         $bankId = Account::systemAccount('bank')->id;
-        // Only physical cash entries and the physical BANK ledger are selected.
         // The logical non-cash mirror never becomes a second receipt.
         $entries = AccountTransaction::posted()->whereIn('account_id', $ids)
             ->where(fn ($q) => $q->where('account_id', $bankId)->orWhere(fn ($cash) => $cash->where('payment_method', 'Cash')->whereNull('converted_from_method')))
@@ -86,6 +85,8 @@ class CollectionReportService
                 'description' => $income->description, 'method' => $income->payment_method ?: 'Cash',
                 'source_transaction_ids' => $group->pluck('id')->all(),
                 'channel' => $income->account_id === $bankId ? 'bank' : 'cash', 'amount' => $amount,
+                'in_drawer' => $income->account_id !== $bankId && ! ($income->category === 'customer_receipt'
+                    && in_array($income->funding_source, ['main', 'spare_parts'], true)),
                 'components' => array_map(fn ($cents) => $cents / 100, $components),
             ]);
         }

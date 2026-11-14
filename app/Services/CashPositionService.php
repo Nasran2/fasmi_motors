@@ -25,6 +25,7 @@ class CashPositionService
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
             // Cashier drawer movements for Main account only include incoming cash collections.
             $query->whereNull('funding_source')
+                ->whereNull('converted_from_method')
                 ->where(function ($query) {
                     $query->where('credit', '>', 0)
                         ->orWhere('debit', '<=', 0)
@@ -82,7 +83,7 @@ class CashPositionService
     /** The exact net cash movements used in accounts(), with their source entries. */
     public function movementDetails(string $date, ?CashierSession $session, Collection $collections): Collection
     {
-        $paymentIds = $collections->where('channel', 'cash')->pluck('payment_ids')->flatten()->all();
+        $paymentIds = $collections->where('in_drawer', true)->pluck('payment_ids')->flatten()->all();
         $result = collect();
         foreach (self::ACCOUNTS as $type => $label) {
             $rows = $this->cashQuery($type, $session?->drawer_opening_balance !== null)
@@ -104,7 +105,7 @@ class CashPositionService
     {
         $start = Carbon::parse($date)->startOfDay();
         $collections ??= app(CollectionReportService::class)->rows($date, $through ?? $date);
-        $collectedPaymentIds = $collections->where('channel', 'cash')->pluck('payment_ids')->flatten()->all();
+        $collectedPaymentIds = $collections->where('in_drawer', true)->pluck('payment_ids')->flatten()->all();
         $result = [];
         foreach (self::ACCOUNTS as $type => $label) {
             $account = Account::systemAccount($type);

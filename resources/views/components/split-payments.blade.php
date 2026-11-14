@@ -4,7 +4,8 @@
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode($purchase ? 'spare_parts' : 'main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
     $bankAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('bank'))?->id ?? $accounts->firstWhere('type', 'bank')?->id ?? $cashAccountId;
     $fundingOptions = $purchase ? app(\App\Services\OutgoingFundingService::class)->options() : [];
-    $initial = old('payments', [['method'=>'Cash','source'=>($purchase ? 'spare_parts' : null),'amount'=>0,'account_id'=>$cashAccountId,'cheque_date'=>'','cheque_number'=>'','bank_name'=>'','party_cheque_id'=>'']]);
+    $initial = collect(old('payments', [['method'=>'Cash','source'=>($purchase ? 'spare_parts' : null),'amount'=>0,'account_id'=>$cashAccountId,'cheque_date'=>'','cheque_number'=>'','bank_name'=>'','party_cheque_id'=>'']]))
+        ->filter(fn ($row) => is_array($row))->map(fn ($row) => $row + ['receiving_account' => ''])->values();
     $chequeOptions = collect($partyCheques)->map(fn($c)=>['id'=>$c->id,'amount'=>(float)$c->amount])->values();
 @endphp
 <div class="space-y-3 text-slate-800" @if($purchase) data-purchase-funding data-options-url="{{ route('funding.options') }}" data-date-name="{{ $fundingDateName }}" data-funding-date="{{ today()->toDateString() }}" @funding-options-loaded="applyFundingOptions($event.detail.options)" @funding-date-state="fundingState=$event.detail.state" @endif x-data="{
@@ -41,7 +42,7 @@
         this.invoiceTotal = Math.max(0, Math.round(({{ (float) $partsTotal }} + amount('service_total') + amount('labor_total') + amount('washing_total') + amount('other_total') - amount('discount') + amount('tax')) * 100) / 100) + previous;
     },
     defaultAccount(method) { return ['Cheque','Card','Bank Transfer','QR'].includes(method) ? {{ Illuminate\Support\Js::from($bankAccountId) }} : {{ Illuminate\Support\Js::from($cashAccountId) }}; },
-    add() { this.rows.push({method:'Cash',source:{{ $purchase ? "'spare_parts'" : 'null' }},amount:0,account_id:this.defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}); },
+    add() { this.rows.push({method:'Cash',source:{{ $purchase ? "'spare_parts'" : 'null' }},receiving_account:'',amount:0,account_id:this.defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}); },
     total() { return Math.round(this.rows.reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
     hold() { return Math.round(this.rows.filter(r=>['Cheque','Party Cheque'].includes(r.method)).reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
     nonCash() { return Math.round(this.rows.filter(r=>r.method!=='Cash').reduce((n,r)=>n+Number(r.amount||0),0)*100)/100; },
@@ -52,7 +53,7 @@
         if ($event.detail.reset || $event.detail.paid !== undefined) existingPaid = Number($event.detail.paid) || 0;
         if ($event.detail.reset || $event.detail.hold !== undefined) existingHold = Number($event.detail.hold) || 0;
         if ($event.detail.reset) {
-            rows = [{method:'Cash',source:{{ $purchase ? "'spare_parts'" : 'null' }},amount:0,account_id:defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}];
+            rows = [{method:'Cash',source:{{ $purchase ? "'spare_parts'" : 'null' }},receiving_account:'',amount:0,account_id:defaultAccount('Cash'),cheque_date:'',cheque_number:'',bank_name:'',party_cheque_id:''}];
         }
     }" @endif>
     <div class="flex items-center justify-between gap-3">
@@ -67,7 +68,7 @@
                 <button type="button" class="font-bold text-red-600 hover:text-red-700" x-show="rows.length>1" @click="rows.splice(index,1); $dispatch('split-payment-change')">Remove</button>
             </div>
             <div class="payment-fields">
-                <label><span class="label">Method</span><select class="field" x-model="row.method" @change="row.account_id=defaultAccount(row.method); row.source=row.method==='Cash' ? 'spare_parts' : 'bank'" :name="`payments[${index}][method]`">@foreach($methods as $method)<option>{{ $method }}</option>@endforeach</select></label>
+                <label><span class="label">Method</span><select class="field" x-model="row.method" @change="row.account_id=defaultAccount(row.method); row.source=row.method==='Cash' ? 'spare_parts' : 'bank'; row.receiving_account=''" :name="`payments[${index}][method]`">@foreach($methods as $method)<option>{{ $method }}</option>@endforeach</select></label>
                 <label><span class="label" @if($changeTotal !== null && $allowCashChange) x-text="row.method === 'Cash' ? 'Cash received' : 'Amount'" @endif>Amount</span><input class="field" type="number" min="0" step=".01" x-model.number="row.amount" :readonly="row.method==='Party Cheque'" :name="`payments[${index}][amount]`" required></label>
                 @if($purchase)
                 <label x-show="row.method !== 'Party Cheque'"><span class="label">Paid from source</span><select class="field" x-model="row.source" :disabled="fundingState!=='ready'" :name="`payments[${index}][source]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'" @change="row.account_id=$event.target.selectedOptions[0].dataset.account; if (row.source==='bank' && row.method==='Cash') row.method='Bank Transfer'">
@@ -75,7 +76,9 @@
                     <template x-for="option in fundingOptions" :key="option.value"><option :value="option.value" :data-account="option.account_id" :disabled="option.disabled || (row.method !== 'Cash' && option.value !== 'bank')" :class="option.disabled ? 'bg-slate-200 text-slate-400' : ''" x-text="fundingLabel(option)"></option></template>
                 </select><input type="hidden" x-model="row.account_id" :name="`payments[${index}][account_id]`"></label>
                 @else
-                <label x-show="row.method !== 'Party Cheque'"><span class="label">{{ $purchase ? 'Paid From Account' : 'Receiving Account' }}</span><select class="field" x-model="row.account_id" :name="`payments[${index}][account_id]`" :required="Number(row.amount)>0 && row.method!=='Party Cheque'"><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
+                <label><span class="label">Receiving Account</span><select class="field" x-model="row.receiving_account" :name="`payments[${index}][receiving_account]`"><x-receiving-account-options method="row.method" /></select><input type="hidden" x-model="row.account_id" :name="`payments[${index}][account_id]`">
+                    <span class="mt-1 block text-xs text-slate-500" x-show="row.method === 'Cash'">Choose Spare Parts Cash if the customer’s cash went into the drawer.</span>
+                </label>
                 @endif
             </div>
             <template x-if="row.method==='Cheque'">

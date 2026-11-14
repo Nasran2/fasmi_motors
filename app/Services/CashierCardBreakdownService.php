@@ -20,7 +20,7 @@ class CashierCardBreakdownService
 
     public function breakdown(string $date, array $summary, ?CashierSession $session, User $user): array
     {
-        $collections = $summary['collections']->where('channel', 'cash')->values();
+        $collections = $summary['collections']->where('in_drawer', true)->values();
         $sourceIds = $summary['collections']->pluck('source_transaction_ids')->flatten()->unique();
         $entries = AccountTransaction::posted()->whereIn('id', $sourceIds)->get()->keyBy('id');
         $receiptKeys = [];

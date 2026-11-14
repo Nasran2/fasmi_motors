@@ -25,6 +25,7 @@ class SettlementService
             'method' => $input['method'] ?? $input['payment_method'] ?? 'Cash',
             'amount' => $input['amount'] ?? $input['paid_amount'] ?? 0,
             'account_id' => $input['account_id'] ?? null,
+            'receiving_account' => $input['receiving_account'] ?? null,
             'cheque_date' => $input['cheque_date'] ?? null,
             'cheque_number' => $input['cheque_number'] ?? null,
             'bank_name' => $input['bank_name'] ?? null,
@@ -42,6 +43,7 @@ class SettlementService
             'payments.*.method' => 'required|in:'.$methods,
             'payments.*.amount' => 'required|numeric|min:0|decimal:0,2',
             'payments.*.account_id' => 'nullable|integer',
+            'payments.*.receiving_account' => ['nullable', Rule::in(array_keys(Payment::RECEIVING_ACCOUNTS))],
             'payments.*.source' => ['nullable', Rule::in(array_keys(OutgoingFundingService::SOURCES))],
             'payments.*.cheque_date' => 'nullable|date_format:Y-m-d',
             'payments.*.cheque_number' => 'nullable|string|max:80',
@@ -51,6 +53,14 @@ class SettlementService
             'payments.*.note' => 'nullable|string|max:1000',
         ])->validate();
         foreach ($v['payments'] as $i => $row) {
+            if (! $purchase && ! empty($row['receiving_account'])) {
+                $destination = $row['receiving_account'];
+                if (($destination === 'bank') !== ($row['method'] !== 'Cash')) {
+                    throw ValidationException::withMessages(["payments.$i.receiving_account" => 'Choose a cash account for Cash or Bank Account for bank, card, QR or cheque payments.']);
+                }
+                $row['account_id'] = Account::systemAccount(app(OutgoingFundingService::class)->type($destination))->id;
+                $v['payments'][$i] = $row;
+            }
             if ($purchase && $row['method'] !== 'Party Cheque') {
                 $row['source'] ??= $row['method'] === 'Cash' ? 'spare_parts' : 'bank';
                 if ($row['method'] !== 'Cash' && $row['source'] !== 'bank') {
@@ -118,6 +128,7 @@ class SettlementService
                 'number' => 'RCPT-'.Str::upper(Str::random(12)), 'amount' => $row['amount'], 'method' => $row['method'],
                 'received_amount' => $received, 'change_amount' => $change,
                 'account_id' => $row['account_id'] ?? null, 'cheque_id' => $cheque?->id,
+                'receiving_account' => $row['receiving_account'] ?? null,
                 'paid_at' => $effectiveDate, 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $invoice->due_amount - (float) $row['amount'], 2),
                 'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),

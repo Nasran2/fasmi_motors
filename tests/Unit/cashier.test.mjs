@@ -123,3 +123,24 @@ test('an explicitly entered cashier count including zero wins over automatic fil
     const form = cashierClosing({main:1000, spare_parts:500}, '', 0, {main:'0.10', spare_parts:'0.20'}, 500, true);
     assert.equal(form.closingBalance, '0.30');
 });
+
+test('cashier additions exclude posted bank movements and preserve a manual count', () => {
+    const accounts = {
+        main: {base:105218, bank_converted_cash:14000, suggested_addition:4200},
+        spare_parts: {base:145600, suggested_addition:22175},
+    };
+    const funds = {opening:7775, main:4200, spare_parts:14400, total:26375};
+    const form = cashierClosing({main:109418, spare_parts:160000, bank:64000}, '', 0, {}, 26375, true, [], funds, {accounts});
+
+    form.additions.spare_parts = '15500';
+    form.updateClosingBalance();
+    assert.equal(form.closingBalance, '6675.00');
+    assert.equal(form.allocatedCashTotal, 19700);
+    assert.equal(form.closingAccountBalance('main'), 109418);
+
+    form.countEntered = true;
+    form.additions.spare_parts = '15000';
+    form.updateClosingBalance();
+    assert.equal(form.closingBalance, '6675.00');
+    assert.equal(form.cashDifference, -500);
+});

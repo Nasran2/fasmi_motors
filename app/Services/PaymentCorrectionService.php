@@ -95,7 +95,7 @@ class PaymentCorrectionService
             'number' => $payment->number, 'invoice_number' => $payment->invoice->number,
             'method' => $payment->method, 'amount' => (float) $payment->amount,
             'received_amount' => (float) ($payment->received_amount ?? $payment->amount), 'change_amount' => (float) $payment->change_amount,
-            'paid_at' => $payment->paid_at->toDateString(), 'account_id' => $payment->account_id, 'account_name' => $payment->account?->name,
+            'paid_at' => $payment->paid_at->toDateString(), 'account_id' => $payment->account_id, 'account_name' => $payment->receiving_account_label,
             'status' => $payment->status, 'cheque_id' => $payment->cheque_id,
             'cheque_date' => $payment->cheque?->cheque_date->toDateString(), 'cheque_number' => $payment->cheque?->cheque_number,
             'bank_name' => $payment->cheque?->bank_name,

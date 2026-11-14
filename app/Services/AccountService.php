@@ -136,7 +136,9 @@ class AccountService
                 'reference_type' => $reference?->getMorphClass(),
                 'reference_id' => $reference?->getKey(),
                 'description' => $description,
-                'note' => $fundingSource ? trim(($note ? $note.' · ' : '').'Source: '.OutgoingFundingService::SOURCES[$fundingSource]) : $note,
+                'note' => $fundingSource && $category !== 'customer_receipt'
+                    ? trim(($note ? $note.' · ' : '').'Source: '.OutgoingFundingService::SOURCES[$fundingSource])
+                    : $note,
                 'status' => 'active',
                 'created_by' => auth()->id() ?? 1,
             ]);
@@ -238,6 +240,11 @@ class AccountService
     /** Expected net cents per logical ledger account for one receipt. */
     public function expectedAccountAllocation(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null): array
     {
+        if ($payment->receiving_account && $postBank) {
+            $type = app(OutgoingFundingService::class)->type($payment->receiving_account);
+
+            return $type === 'bank' ? [] : [$type => (int) round((float) $payment->amount * 100)];
+        }
         $allocation = $this->paymentReceiptAllocation($invoice, $payment, $settledAt);
         if ($this->usesBankPoolConversion($payment, $postBank)) {
             $main = (int) ($allocation['main'] ?? 0);
@@ -250,6 +257,18 @@ class AccountService
 
     public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null, bool $reallocate = true): void
     {
+        if ($payment->receiving_account && $postBank) {
+            $type = app(OutgoingFundingService::class)->type($payment->receiving_account);
+            $this->recordTransaction($type, 'income', (float) $payment->amount, "Receipt for {$invoice->number}",
+                $payment, $payment->method, "Received into {$payment->receiving_account_label}",
+                transactionDate: $settledAt ?? $payment->paid_at, category: 'customer_receipt',
+                fundingSource: $type === 'bank' ? null : $payment->receiving_account);
+            if ($reallocate) {
+                $this->reallocateInvoiceReceipts($invoice);
+            }
+
+            return;
+        }
         // Preserve the routing of receipts already posted under the old policy.
         // New bank receipts credit the full amount to Bank and convert Main's share
         // into cashier cash via Spare Parts opening balance.
@@ -337,7 +356,7 @@ class AccountService
                 $components[$type] = $cents - $previous[$type];
             }
             $previous = $target;
-            if (! $postedIds->has($payment->id)) {
+            if (! $postedIds->has($payment->id) || ($payment->receiving_account && ! $payment->cheque?->forwarded_supplier_id)) {
                 continue;
             }
             $rawAllocation = array_map(fn ($cents) => $cents / 100,

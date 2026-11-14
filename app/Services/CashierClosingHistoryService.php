@@ -49,7 +49,7 @@ class CashierClosingHistoryService
             }
             $expectedCash = (float) ($closing?->cash_closing_balance ?? $summary['cash_in_hand'] ?? 0);
             $allocated = (float) ($summary['closing_allocated_today'] ?? 0);
-            $bankFundedMain = round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
+            $bankFundedMain = ! empty($summary['closing_additions_are_drawer_cash']) ? 0.0 : round((float) ($summary['allocation_accounts']['main']['bank_converted_cash'] ?? 0), 2);
             $sparePartsOpeningCash = round((float) ($summary['closing_spare_parts_opening_cash'] ?? 0), 2);
             $previousDrawerAllocated = round((float) ($summary['closing_drawer_allocated_today'] ?? ($allocated - $bankFundedMain + $sparePartsOpeningCash)), 2);
             $drawerAllocated = $previousDrawerAllocated;
@@ -137,6 +137,7 @@ class CashierClosingHistoryService
             if ($allocationMode) {
                 $summary['closing_account_additions'] = $additions;
                 $summary['closing_allocated_today'] = $allocated;
+                $summary['closing_drawer_allocated_today'] = $drawerAllocated;
             }
             $session->update(['closing_summary' => $summary, 'actual_balances' => $balances,
                 'drawer_closing_balance' => $cash,

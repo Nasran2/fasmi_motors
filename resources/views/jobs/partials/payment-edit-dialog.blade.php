@@ -1,6 +1,6 @@
 <dialog id="edit-payment-dialog" class="m-auto w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl" aria-labelledby="edit-payment-title"
     x-data="{
-        edit: {number:'',method:'Cash',amount:0,account_id:'',paid_at:'',cheque_date:'',cheque_number:'',bank_name:'',available:0,other_paid:0,other_hold:0},
+        edit: {number:'',method:'Cash',amount:0,account_id:'',receiving_account:'',paid_at:'',cheque_date:'',cheque_number:'',bank_name:'',available:0,other_paid:0,other_hold:0},
         reason: '', includePrevious: true,
         available() { return Number(this.edit.available || 0) + (this.includePrevious ? Number(this.edit.previous_available || 0) : 0); },
         remaining() { return Math.max(0, Math.round((this.available() - Number(this.edit.amount || 0)) * 100) / 100); },
@@ -21,9 +21,9 @@
         <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" name="include_previous_balance" value="1" x-model="includePrevious" checked>Include old balances in this payment</label>
         <p class="text-xs text-slate-500">Replaces the whole receipt, pays this bill first, then earlier balances. The preview includes the original payment being reversed.</p>
         <div class="grid gap-3 sm:grid-cols-2">
-            <label><span class="label">Payment method</span><select name="method" x-model="edit.method" class="field">@foreach(['Cash','Card','Bank Transfer','Cheque','QR'] as $method)<option>{{ $method }}</option>@endforeach</select></label>
+            <label><span class="label">Payment method</span><select name="method" x-model="edit.method" @change="edit.receiving_account = ''" class="field">@foreach(['Cash','Card','Bank Transfer','Cheque','QR'] as $method)<option>{{ $method }}</option>@endforeach</select></label>
             <label><span class="label" x-text="edit.method === 'Cash' ? 'Cash received (LKR)' : 'Amount (LKR)'">Amount (LKR)</span><input type="number" name="amount" x-model.number="edit.amount" min="0.01" max="999999999999.99" step="0.01" class="field" required></label>
-            <label><span class="label">Receiving account</span><select name="account_id" x-model="edit.account_id" class="field" required><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
+            <label><span class="label">Receiving account</span><select name="receiving_account" x-model="edit.receiving_account" class="field"><x-receiving-account-options method="edit.method" /></select><input type="hidden" name="account_id" :value="edit.account_id"></label>
             <label><span class="label">Payment date</span><input type="date" name="paid_at" x-model="edit.paid_at" max="{{ today()->toDateString() }}" class="field" required></label>
         </div>
         <template x-if="edit.method === 'Cheque'">

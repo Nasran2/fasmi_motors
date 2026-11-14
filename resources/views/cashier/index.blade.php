@@ -70,7 +70,7 @@
             <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b p-5">
                     <h2 class="text-lg font-black">Account balances · separate from cashier cash</h2>
-                    <p class="mt-1 text-sm text-slate-500">Opening balance + credits − debits + adjustments = balance. Opening balances are the saved amounts for this date. Select an adjustment to see its entries and opening reconciliation. New washing receipts go directly to Main; the Washing row shows receipts for reference and any earlier Washing ledger funds separately.</p>
+                    <p class="mt-1 text-sm text-slate-500">Opening balance + credits − debits + adjustments = balance. Opening balances are the saved amounts for this date. Select an adjustment to see its entries and opening reconciliation. The Washing row shows the washing portion of receipts for reference.</p>
                 </div>
                 <div class="overflow-auto">
                     <table class="w-full text-right text-sm">
@@ -99,7 +99,7 @@
                                     @else
                                     <span class="mt-1 block text-xs text-slate-400">No washing receipts today</span>
                                     @endif
-                                    <span class="mt-0.5 block text-[11px] text-slate-500">Credited to Main Account instantly</span>
+                                    <span class="mt-0.5 block text-[11px] text-slate-500">Posted with the receipt</span>
                                 </th>
                                 <td class="p-4 text-slate-500">0.00</td>
                                 <td class="p-4 font-bold text-emerald-700">
@@ -113,7 +113,7 @@
                                 </td>
                                 <td class="p-4 text-slate-400">—</td>
                                 <td class="p-4 text-slate-400">—</td>
-                                <td class="p-4 text-xs font-bold text-slate-600">Included in Main</td>
+                                <td class="p-4 text-xs font-bold text-slate-600">Included in receipts</td>
                                 </tr>
                                 @else
                                 <tr>
