@@ -3,12 +3,12 @@
     $dialogId = $editingAdvance ? 'job-advance-edit-'.$editingAdvance->id : 'job-advance-dialog';
     $isThisAdvanceForm = (string) old('_advance_id', '') === (string) ($editingAdvance?->id ?? '') && !old('_advance_delete_id');
     $advanceValue = fn($field, $fallback = null) => $isThisAdvanceForm ? old($field, $fallback) : $fallback;
-    $advanceMainAccount = $accounts->firstWhere('code', App\Models\Account::systemCode('main'))?->id;
+    $advanceCashAccount = $accounts->firstWhere('code', App\Models\Account::systemCode('spare_parts'))?->id;
     $advanceBankAccount = $accounts->firstWhere('code', App\Models\Account::systemCode('bank'))?->id;
     $advanceErrors = $isThisAdvanceForm && collect($errors->keys())->contains(fn($key) => str_starts_with($key, 'advance_') || $key === 'send_advance_sms');
 @endphp
 <dialog id="{{ $dialogId }}" class="m-auto w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl" aria-labelledby="{{ $dialogId }}-title"
-    x-data="{ method: @js($advanceValue('advance_method', $editingAdvance?->method ?? 'Cash')), account: @js($advanceValue('advance_account_id', $editingAdvance?->account_id ?? $advanceMainAccount)) }"
+    x-data="{ method: @js($advanceValue('advance_method', $editingAdvance?->method ?? 'Cash')) }"
     @if($advanceErrors) x-init="$nextTick(() => $el.showModal())" @endif>
     <form method="POST" action="{{ $editingAdvance ? route('jobs.advances.update', [$job, $editingAdvance]) : route('jobs.advances.store', $job) }}" class="space-y-4 p-6">
         @csrf<x-submission-token/>
@@ -18,13 +18,13 @@
             <button type="button" class="btn-secondary" onclick="document.getElementById('{{ $dialogId }}').close()" aria-label="Close advance popup">×</button>
         </div>
         @if($advanceErrors)<div role="alert" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-        <p class="text-sm text-slate-500">{{ $editingAdvance ? 'Correct this advance. Its original values and your reason remain in the change history.' : 'The advance covers this job first, then old balances. Allocation updates as job charges change and is finalized when billing.' }}</p>
+        <p class="text-sm text-slate-500">{{ $editingAdvance ? 'Correct this advance. Its original values and your reason remain in the change history.' : 'The advance covers Spare Parts first, then Main when this job is billed. Any excess can cover earlier balances.' }}</p>
         @if($editingAdvance)<label class="block"><span class="label">Reason for correction *</span><textarea name="advance_reason" rows="2" minlength="5" maxlength="500" class="field" required>{{ $advanceValue('advance_reason') }}</textarea></label>@endif
         <div class="grid gap-4 sm:grid-cols-2">
             <label><span class="label">Advance amount (LKR) *</span><input name="advance_amount" type="number" min="0.01" max="999999999999.99" step="0.01" value="{{ $advanceValue('advance_amount', $editingAdvance?->amount) }}" placeholder="0.00" class="field" required></label>
             <label><span class="label">Payment date *</span><input name="advance_paid_at" type="date" value="{{ $advanceValue('advance_paid_at', $editingAdvance?->paid_at->toDateString() ?? today()->toDateString()) }}" max="{{ today()->toDateString() }}" class="field" required></label>
-            <label><span class="label">Payment method *</span><select name="advance_method" x-model="method" @change="account = method === 'Cash' ? @js($advanceMainAccount) : @js($advanceBankAccount)" class="field">@foreach(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR'] as $method)<option @selected($advanceValue('advance_method', $editingAdvance?->method ?? 'Cash') === $method)>{{ $method }}</option>@endforeach</select></label>
-            <label><span class="label">Receiving account *</span><select name="advance_account_id" x-model="account" class="field" required><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
+            <label><span class="label">Payment method *</span><select name="advance_method" x-model="method" class="field">@foreach(['Cash', 'Card', 'Bank Transfer', 'Cheque', 'QR'] as $method)<option @selected($advanceValue('advance_method', $editingAdvance?->method ?? 'Cash') === $method)>{{ $method }}</option>@endforeach</select></label>
+            <div><span class="label">Receiving account</span><p class="field" x-text="method === 'Cash' ? 'Spare Parts Cash' : 'Bank Account'"></p><input type="hidden" name="advance_account_id" :value="method === 'Cash' ? @js($advanceCashAccount) : @js($advanceBankAccount)"></div>
         </div>
         <fieldset x-show="method === 'Cheque'" :disabled="method !== 'Cheque'" x-cloak class="space-y-3 rounded-xl border border-slate-200 p-3">
             <div class="grid gap-3 sm:grid-cols-2">

@@ -24,6 +24,7 @@ class JobAdvanceService
             if ($job->invoice || in_array($job->status, ['Cancelled', 'Delivered'], true)) {
                 throw ValidationException::withMessages(['advance_amount' => 'Advances can only be added before billing an active job. Use Pay Due for an existing invoice.']);
             }
+            $accountId = Account::systemAccount($row['method'] === 'Cash' ? 'spare_parts' : 'bank')->id;
             $cheque = null;
             if ($row['method'] === 'Cheque') {
                 $customer = $job->customer;
@@ -34,13 +35,13 @@ class JobAdvanceService
                     'cheque_type' => 'Received', 'party_type' => $customer->getMorphClass(), 'party_id' => $customer->id,
                     'party_name' => $customer->name, 'reference_type' => $job->getMorphClass(), 'reference_id' => $job->id,
                     'related_reference' => $job->number, 'cheque_number' => $row['cheque_number'], 'bank_name' => $row['bank_name'],
-                    'cheque_date' => $row['cheque_date'], 'amount' => $row['amount'], 'bank_account_id' => $row['account_id'],
+                    'cheque_date' => $row['cheque_date'], 'amount' => $row['amount'], 'bank_account_id' => $accountId,
                     'status' => 'Pending', 'created_by' => auth()->id(), 'updated_by' => auth()->id(),
                 ]);
             }
             $advance = JobAdvance::create([
                 'job_card_id' => $job->id, 'number' => 'ADV-'.Str::upper(Str::random(12)),
-                'amount' => $row['amount'], 'method' => $row['method'], 'account_id' => $row['account_id'],
+                'amount' => $row['amount'], 'method' => $row['method'], 'account_id' => $accountId,
                 'cheque_id' => $cheque?->id, 'status' => $cheque ? 'Hold' : 'Completed',
                 'paid_at' => $data['advance_paid_at'], 'send_sms' => $data['send_advance_sms'] ?? false,
                 'spare_parts_to_bank' => $row['method'] !== 'Cash',
@@ -64,20 +65,11 @@ class JobAdvanceService
         $accounts = app(AccountService::class);
         $description = "Advance for {$advance->jobCard->number} · {$advance->number}";
         $effectiveDate = $date ?? $advance->paid_at;
-        $convertedBank = $postBank && $advance->method !== 'Cash' && (bool) $advance->spare_parts_to_bank;
-        if ($convertedBank) {
-            $amount = (float) $advance->amount;
-            $note = trim(($advance->note ? $advance->note.' · ' : '')."Main share for {$advance->method} · Taken from Spare Parts opening balance");
-            $accounts->recordTransaction('main', 'income', $amount, $description, $advance, $advance->method, $note, null, $effectiveDate, 'job_advance', convertedFromMethod: $advance->method);
-            $accounts->recordTransaction('spare_parts', 'transfer_out', $amount, "Bank transfer Main share for {$advance->number}", $advance, $advance->method, 'Transferred Rs. '.number_format($amount, 2)." to Main Account for {$advance->method} share", null, $effectiveDate, 'bank_to_main_cash', 'spare_parts', convertedFromMethod: $advance->method);
-            $accounts->recordTransaction('bank', 'income', $amount, $description, $advance, $advance->method, null, null, $effectiveDate, 'job_advance');
-
-            return;
-        }
-        $accounts->recordTransaction('main', 'income', (float) $advance->amount, $description, $advance, $advance->method, $advance->note, null, $effectiveDate, 'job_advance');
-        if ($postBank && $advance->method !== 'Cash') {
-            $accounts->recordTransaction('bank', 'income', (float) $advance->amount, $description, $advance, $advance->method, null, null, $effectiveDate, 'job_advance');
-        }
+        // The Main share is determined from the finalized invoice. Until then
+        // cash is held in Spare Parts and electronic receipts stay in Bank.
+        $type = $postBank && $advance->method !== 'Cash' ? 'bank' : 'spare_parts';
+        $accounts->recordTransaction($type, 'income', (float) $advance->amount, $description, $advance, $advance->method,
+            $advance->note, transactionDate: $effectiveDate, category: 'job_advance');
     }
 
     public function correct(JobCard $job, JobAdvance $advance, array $data, array $row): JobAdvance
@@ -197,10 +189,10 @@ class JobAdvanceService
         // Allocation of an existing advance must not send a new payment SMS.
         return Payment::withoutEvents(fn () => $invoice->payments()->create([
             'number' => $first ? $advance->number : 'RCPT-'.Str::upper(Str::random(12)), 'amount' => $amount,
-            'received_amount' => $amount, 'change_amount' => 0, 'receipt_group_id' => $group,
+            'received_amount' => $amount, 'change_amount' => 0, 'receipt_group_id' => $group, 'job_advance_id' => $advance->id,
             'method' => $advance->method, 'account_id' => $advance->account_id, 'cheque_id' => $advance->cheque_id,
             'paid_at' => $advance->paid_at, 'status' => $advance->status, 'source_job_card_id' => $job->id,
-            'washing_to_main' => true, 'spare_parts_to_bank' => (bool) $advance->spare_parts_to_bank,
+            'washing_to_main' => true, 'opening_due_to_spare_parts' => $invoice->isOpeningDue(), 'spare_parts_to_bank' => (bool) $advance->spare_parts_to_bank,
             'balance_after' => round((float) $invoice->due_amount - $amount, 2),
             'note' => $advance->note, 'created_by' => $advance->created_by,
         ]));

@@ -47,6 +47,7 @@ class PaymentCorrectionService
                 throw ValidationException::withMessages(['amount' => 'Enter one positive replacement payment amount.']);
             }
             $row = $rows[0];
+            $row['job_advance_id'] = $payment->job_advance_id;
             $before = $this->receiptSnapshot($receipts);
             $accounts = app(AccountService::class);
             foreach ($receipts->pluck('cheque_id')->filter()->unique() as $chequeId) {

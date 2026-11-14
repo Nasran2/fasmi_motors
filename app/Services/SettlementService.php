@@ -129,6 +129,7 @@ class SettlementService
                 'received_amount' => $received, 'change_amount' => $change,
                 'account_id' => $row['account_id'] ?? null, 'cheque_id' => $cheque?->id,
                 'receiving_account' => $row['receiving_account'] ?? null,
+                'job_advance_id' => $row['job_advance_id'] ?? null,
                 'paid_at' => $effectiveDate, 'status' => $cheque ? 'Hold' : 'Completed',
                 'balance_after' => round((float) $invoice->due_amount - (float) $row['amount'], 2),
                 'reference' => $row['reference'] ?? null, 'note' => $row['note'] ?? null, 'created_by' => auth()->id(),

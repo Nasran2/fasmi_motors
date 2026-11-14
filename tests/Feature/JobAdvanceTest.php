@@ -14,6 +14,8 @@ use App\Models\Setting;
 use App\Models\SmsLog;
 use App\Models\SmsSetting;
 use App\Models\User;
+use App\Services\AccountService;
+use App\Services\CollectionReportService;
 use App\Services\OpeningBalanceService;
 use App\Services\SettlementService;
 use Illuminate\Support\Facades\DB;
@@ -42,7 +44,8 @@ test('advance popup defaults SMS on and saving without SMS posts a receipt witho
     expect((float) $advance->amount)->toBe(1000.0)->and($advance->status)->toBe('Completed')
         ->and($advance->send_sms)->toBeFalse()->and($advance->payment_id)->toBeNull()
         ->and(Invoice::count())->toBe(0)->and(Payment::count())->toBe(0)
-        ->and(Account::systemAccount('main')->balance)->toBe(1000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(1000.0);
     Http::assertNothingSent();
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Advance paid')->assertSeeText('Rs. 1,000.00')->assertSeeText('Rs. 4,000.00')->assertSeeText($advance->number);
     expect(DB::table('job_card_status_logs')->where('job_card_id', $this->job->id)->value('note'))->toContain($advance->number, '1,000.00', 'not requested');
@@ -69,13 +72,44 @@ test('invoice deducts advances and posts only the new cash with no duplicate adv
     $this->get(route('jobs.show', $this->job))->assertOk()->assertDontSeeText('+ Add advance')->assertSeeText(JobAdvance::sole()->number);
 });
 
+test('advances reduce parts first and regular payments exhaust the remaining Main share before paying parts', function (int $advanceAmount, int $partsFromAdvance, int $mainFromAdvance, int $mainFromPartial) {
+    $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_amount' => $advanceAmount]))
+        ->assertSessionHasNoErrors();
+    expect(Account::systemAccount('spare_parts')->balance)->toBe((float) $advanceAmount)
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0);
+
+    $cash = ['method' => 'Cash', 'account_id' => Account::systemAccount('main')->id];
+    $this->post(route('jobs.invoice', $this->job), ['payments' => [$cash + ['amount' => 1000]]])
+        ->assertSessionHasNoErrors();
+    $invoice = $this->job->fresh()->invoice;
+    $advance = Payment::findOrFail(JobAdvance::sole()->payment_id);
+    $partial = $invoice->payments()->whereKeyNot($advance->id)->sole();
+    $service = app(AccountService::class);
+    expect($service->paymentReceiptAllocation($invoice, $advance))->toBe([
+        'spare_parts' => $partsFromAdvance * 100, 'washing' => 0, 'main' => $mainFromAdvance * 100,
+    ])->and($service->paymentReceiptAllocation($invoice, $partial)['main'])->toBe($mainFromPartial * 100)
+        ->and(Account::systemAccount('main')->balance)->toBe((float) ($mainFromAdvance + $mainFromPartial))
+        ->and((float) $invoice->due_amount)->toBe((float) (4000 - $advanceAmount));
+
+    $this->post(route('customers.dues.payment', $invoice), ['payments' => [$cash + ['amount' => (float) $invoice->due_amount]]])
+        ->assertSessionHasNoErrors();
+    expect((float) $invoice->fresh()->due_amount)->toBe(0.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(2000.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(3000.0);
+    $receipts = app(CollectionReportService::class)->rows(today()->toDateString(), today()->toDateString());
+    expect($receipts)->toHaveCount(3)->and((float) $receipts->sum('amount'))->toBe(5000.0);
+})->with([
+    'advance below parts' => [1000, 1000, 0, 1000],
+    'advance above parts' => [3500, 3000, 500, 1000],
+]);
+
 test('bank advances are deducted once and bank ledger is not posted twice', function () {
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_method' => 'Bank Transfer', 'advance_account_id' => Account::systemAccount('bank')->id]))->assertSessionHasNoErrors();
     expect(Account::systemAccount('bank')->balance)->toBe(1000.0);
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect(Account::systemAccount('bank')->balance)->toBe(1000.0)
         ->and((float) $this->job->fresh()->invoice->due_amount)->toBe(4000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-1000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
 });
 
 test('cheque advance remains held on invoice and clears or returns using normal cheque rules', function () {
@@ -88,7 +122,9 @@ test('cheque advance remains held on invoice and clears or returns using normal 
     expect((float) $invoice->hold_amount)->toBe(1000.0)->and((float) $invoice->paid_amount)->toBe(0.0)->and((float) $invoice->due_amount)->toBe(4000.0);
     app(SettlementService::class)->resolve(Cheque::sole(), 'Cleared', today()->toDateString());
     expect((float) $invoice->fresh()->hold_amount)->toBe(0.0)->and((float) $invoice->fresh()->paid_amount)->toBe(1000.0)
-        ->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
+        ->and(Account::systemAccount('bank')->balance)->toBe(1000.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
     app(SettlementService::class)->resolve(Cheque::sole(), 'Returned', today()->toDateString(), 'Returned by bank');
     expect((float) $invoice->fresh()->paid_amount)->toBe(0.0)->and((float) $invoice->fresh()->due_amount)->toBe(5000.0)
         ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(0.0);
@@ -99,10 +135,11 @@ test('cheque cleared before billing transfers its existing receipt without doubl
         'advance_method' => 'Cheque', 'advance_cheque_date' => today()->toDateString(), 'advance_cheque_number' => 'EARLY', 'advance_bank_name' => 'Test Bank',
     ]))->assertSessionHasNoErrors();
     app(SettlementService::class)->resolve(Cheque::sole(), 'Cleared', today()->toDateString());
-    expect(JobAdvance::sole()->status)->toBe('Completed')->and(Account::systemAccount('main')->balance)->toBe(1000.0);
+    expect(JobAdvance::sole()->status)->toBe('Completed')->and(Account::systemAccount('bank')->balance)->toBe(1000.0)
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0);
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect((float) $this->job->fresh()->invoice->paid_amount)->toBe(1000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-1000.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(1000.0);
 });
 
 test('future cheques cannot clear early and returned unbilled advances are not deducted', function () {
@@ -121,7 +158,7 @@ test('invalid advances and bills below advances do not write partial financial d
     expect(JobAdvance::count())->toBe(0)->and(AccountTransaction::count())->toBe(0);
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_amount' => 6000, 'advance_method' => 'Bank Transfer']))->assertSessionHasNoErrors();
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasErrors('advance_amount');
-    expect(Invoice::count())->toBe(0)->and(Payment::count())->toBe(0)->and(JobAdvance::sole()->payment_id)->toBeNull()->and(Account::systemAccount('main')->balance)->toBe(6000.0);
+    expect(Invoice::count())->toBe(0)->and(Payment::count())->toBe(0)->and(JobAdvance::sole()->payment_id)->toBeNull()->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(6000.0);
 });
 
 test('billed and cancelled jobs reject new advances', function () {
@@ -136,7 +173,7 @@ test('SMS failure leaves the advance saved and reports the delivery problem', fu
     SmsSetting::instance()->update(['enabled' => false]);
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['send_advance_sms' => 1]))
         ->assertSessionHasNoErrors()->assertSessionHas('success', fn ($message) => str_contains($message, 'SMS was not sent'));
-    expect(JobAdvance::count())->toBe(1)->and(Account::systemAccount('main')->balance)->toBe(1000.0)->and(SmsLog::sole()->status)->toBe('failed');
+    expect(JobAdvance::count())->toBe(1)->and(Account::systemAccount('spare_parts')->balance)->toBe(1000.0)->and(SmsLog::sole()->status)->toBe('failed');
 });
 
 test('advance receipt collection requires payment permission', function () {
@@ -179,7 +216,7 @@ test('multiple advances reduce the final bill before new receipts and earlier du
     }
     $this->post(route('jobs.invoice', $this->job), ['payments' => [['method' => 'Cash', 'amount' => 3700, 'account_id' => Account::systemAccount('main')->id]]])->assertSessionHasNoErrors();
     expect((float) $this->job->fresh()->invoice->paid_amount)->toBe(5000.0)->and((float) $opening->fresh()->due_amount)->toBe(300.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(2200.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(2000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3200.0);
 });
 
 test('SMS settings can stop delivery while retaining the requested advance', function () {

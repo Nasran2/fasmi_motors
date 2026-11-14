@@ -39,7 +39,7 @@ test('advance surplus reduces combined balance and new charges get first claim b
     expect((float) $invoice->paid_amount)->toBe(5400.0)->and((float) $invoice->due_amount)->toBe(0.0)
         ->and((float) $this->opening->fresh()->paid_amount)->toBe(3600.0)->and((float) $this->opening->fresh()->due_amount)->toBe(12150.0)
         ->and(Payment::pluck('receipt_group_id')->unique())->toHaveCount(1)
-        ->and(Account::systemAccount('main')->balance)->toBe(5600.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3400.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(2000.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(7000.0);
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Rs. 12,150.00')->assertSeeText('Rs. 9,000.00');
 });
 
@@ -48,14 +48,14 @@ test('cash advance above combined dues is returned as change at billing', functi
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect((float) $this->opening->fresh()->due_amount)->toBe(0.0)
         ->and((float) Payment::sum('received_amount'))->toBe(20000.0)->and((float) Payment::sum('change_amount'))->toBe(850.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(15750.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3400.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(19150.0);
 });
 
 test('noncash advance allocation preserves the original bank receipt across both bills', function () {
     $this->post(route('jobs.advances.store', $this->job), array_replace($this->data, ['advance_method' => 'Bank Transfer', 'advance_account_id' => Account::systemAccount('bank')->id]))->assertSessionHasNoErrors();
     $this->post(route('jobs.invoice', $this->job), ['payments' => []])->assertSessionHasNoErrors();
     expect((float) $this->opening->fresh()->paid_amount)->toBe(5600.0)->and(Account::systemAccount('bank')->balance)->toBe(9000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(5600.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3400.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
 });
 
 test('surplus advance cheque holds both bills and clearing or returning changes both once', function () {
@@ -75,10 +75,10 @@ test('correcting cash advance replaces it reverses old money and preserves reaso
     $original = JobAdvance::sole();
     $replacement = array_replace($this->data, ['advance_amount' => 8000, 'advance_method' => 'Bank Transfer', 'advance_account_id' => Account::systemAccount('bank')->id]);
     $this->put(route('jobs.advances.update', [$this->job, $original]), $replacement)->assertSessionHasErrors('advance_reason');
-    expect(Account::systemAccount('main')->balance)->toBe(9000.0);
+    expect(Account::systemAccount('spare_parts')->balance)->toBe(9000.0);
     $this->put(route('jobs.advances.update', [$this->job, $original]), $replacement + ['advance_reason' => 'Correct the amount and method'])->assertSessionHasNoErrors();
     expect($original->fresh()->status)->toBe('Cancelled')->and(JobAdvance::count())->toBe(2)
-        ->and(Account::systemAccount('main')->balance)->toBe(8000.0)->and(Account::systemAccount('bank')->balance)->toBe(8000.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('bank')->balance)->toBe(8000.0);
     $audit = AuditLog::where('event', 'Advance corrected')->sole();
     expect((float) $audit->old_values['amount'])->toBe(9000.0)->and((float) $audit->new_values['amount'])->toBe(8000.0)->and($audit->new_values['reason'])->toBe('Correct the amount and method');
     $this->get(route('jobs.show', $this->job))->assertOk()->assertSeeText('Correct the amount and method')->assertSeeText('Rs. 11,150.00');
@@ -136,7 +136,7 @@ test('billed split advance is corrected as one receipt without double bank posti
     $payment = Payment::findOrFail(JobAdvance::sole()->payment_id);
     $this->put(route('jobs.payments.update', [$this->job, $payment]), ['reason' => 'Correct previously received advance', 'include_previous_balance' => 1, 'amount' => 8000, 'method' => 'Bank Transfer', 'account_id' => Account::systemAccount('bank')->id, 'paid_at' => today()->toDateString()])->assertSessionHasNoErrors();
     expect((float) $this->opening->fresh()->paid_amount)->toBe(4600.0)->and(Account::systemAccount('bank')->balance)->toBe(8000.0)
-        ->and(Account::systemAccount('main')->balance)->toBe(4600.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(3400.0);
+        ->and(Account::systemAccount('main')->balance)->toBe(0.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(0.0);
 });
 
 test('old advance allocations cover oldest bills before newer ones', function () {
