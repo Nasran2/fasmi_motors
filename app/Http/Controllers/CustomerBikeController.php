@@ -33,7 +33,31 @@ class CustomerBikeController extends Controller
             ->selectSub($this->customerDueSubquery(), 'due_amount')
             ->selectSub($this->customerDueSubquery('hold_amount'), 'hold_amount')
             ->selectSub($this->customerLastVisitSubquery(), 'last_visit')
-            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")->orWhereHas('bikes', fn ($b) => $b->where('number', 'like', "%{$term}%"))))
+            ->when($request->q, function ($q, $term) {
+                $term = trim($term);
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+                $words = array_filter(explode(' ', $term));
+                $q->where(function ($x) use ($term, $clean, $words) {
+                    $x->where('name', 'like', "%{$term}%")
+                        ->orWhere('phone', 'like', "%{$term}%")
+                        ->orWhereHas('bikes', fn ($b) => $b->where('number', 'like', "%{$term}%"));
+                    if ($clean !== '') {
+                        $x->orWhereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"])
+                          ->orWhereHas('bikes', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
+                    }
+                    if (count($words) > 1) {
+                        $x->orWhere(function ($sub) use ($words) {
+                            foreach ($words as $w) {
+                                $sub->where(function ($wSub) use ($w) {
+                                    $wSub->where('name', 'like', "%{$w}%")
+                                        ->orWhere('phone', 'like', "%{$w}%")
+                                        ->orWhereHas('bikes', fn ($b) => $b->where('number', 'like', "%{$w}%"));
+                                });
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->filter === 'due', fn ($q) => $q->whereExists($this->customerDueExistsSubquery()))
             ->when($request->filter === 'service', fn ($q) => $q->whereHas('bikes.intakes', fn ($i) => $i->where('is_service', true)))
             ->when($request->status === 'active', fn ($q) => $q->where('active', true))
@@ -138,7 +162,30 @@ class CustomerBikeController extends Controller
             ->selectSub($this->bikeDueSubquery(), 'due_amount')
             ->selectSub(BikeIntake::selectRaw('max(intake_date)')->whereColumn('bike_id', 'bikes.id'), 'last_job_date')
             ->selectSub(BikeIntake::select('next_service_date')->whereColumn('bike_id', 'bikes.id')->whereNotNull('next_service_date')->latest('intake_date')->latest('created_at')->limit(1), 'next_service_date')
-            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhere('model', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))))
+            ->when($request->q, function ($q, $term) {
+                $term = trim($term);
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+                $words = array_filter(explode(' ', $term));
+                $q->where(function ($x) use ($term, $clean, $words) {
+                    $x->where('number', 'like', "%{$term}%")
+                        ->orWhere('model', 'like', "%{$term}%")
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
+                    if ($clean !== '') {
+                        $x->orWhereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]);
+                    }
+                    if (count($words) > 1) {
+                        $x->orWhere(function ($sub) use ($words) {
+                            foreach ($words as $w) {
+                                $sub->where(function ($wSub) use ($w) {
+                                    $wSub->where('number', 'like', "%{$w}%")
+                                        ->orWhere('model', 'like', "%{$w}%")
+                                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"));
+                                });
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->filter === 'service_due', fn ($q) => $q->whereHas('intakes', fn ($i) => $i->whereDate('next_service_date', '<=', today())))
             ->when($request->filter === 'due', fn ($q) => $q->whereExists($this->bikeDueExistsSubquery()))
             ->when($request->filter === 'technician', fn ($q) => $q->where('is_technician_bike', true))
@@ -204,7 +251,32 @@ class CustomerBikeController extends Controller
     {
         $query = Invoice::query()->with(['customer', 'bike.customer', 'jobCard.intake.bike.customer', 'payments'])
             ->where('status', '!=', 'Cancelled')->where('due_amount', '>', 0)
-            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))->orWhereHas('jobCard.intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"))))
+            ->when($request->q, function ($q, $term) {
+                $term = trim($term);
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+                $words = array_filter(explode(' ', $term));
+                $q->where(function ($x) use ($term, $clean, $words) {
+                    $x->where('number', 'like', "%{$term}%")
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
+                        ->orWhereHas('jobCard.intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"));
+                    if ($clean !== '') {
+                        $x->orWhereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"])
+                            ->orWhereHas('customer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                            ->orWhereHas('jobCard.intake.bike', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
+                    }
+                    if (count($words) > 1) {
+                        $x->orWhere(function ($sub) use ($words) {
+                            foreach ($words as $w) {
+                                $sub->where(function ($wSub) use ($w) {
+                                    $wSub->where('number', 'like', "%{$w}%")
+                                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"))
+                                        ->orWhereHas('jobCard.intake.bike', fn ($b) => $b->where('number', 'like', "%{$w}%"));
+                                });
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->from, fn ($q, $date) => $q->whereDate('due_date', '>=', $date))
             ->when($request->to, fn ($q, $date) => $q->whereDate('due_date', '<=', $date))
             ->when($request->minimum, fn ($q, $value) => $q->where('due_amount', '>=', $value))
@@ -244,7 +316,38 @@ class CustomerBikeController extends Controller
     public function serviceHistory(Request $request)
     {
         $jobs = JobCard::query()->with(['intake.bike.customer', 'technician', 'invoice'])
-            ->when($request->q, fn ($q, $term) => $q->where(fn ($x) => $x->where('number', 'like', "%{$term}%")->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%")->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%")))->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$term}%"))->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))))
+            ->when($request->q, function ($q, $term) {
+                $term = trim($term);
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+                $words = array_filter(explode(' ', $term));
+                $q->where(function ($x) use ($term, $clean, $words) {
+                    $x->where('number', 'like', "%{$term}%")
+                        ->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"))
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
+                        ->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$term}%"))
+                        ->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
+                    if ($clean !== '') {
+                        $x->orWhereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"])
+                            ->orWhereHas('intake.bike', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                            ->orWhereHas('customer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                            ->orWhereHas('quickBike', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                            ->orWhereHas('quickCustomer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
+                    }
+                    if (count($words) > 1) {
+                        $x->orWhere(function ($sub) use ($words) {
+                            foreach ($words as $w) {
+                                $sub->where(function ($wSub) use ($w) {
+                                    $wSub->where('number', 'like', "%{$w}%")
+                                        ->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$w}%"))
+                                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"))
+                                        ->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$w}%"))
+                                        ->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"));
+                                });
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->type === 'service', fn ($q) => $q->whereHas('intake', fn ($i) => $i->where('is_service', true)))
             ->when($request->type === 'repair', fn ($q) => $q->where(fn ($jobs) => $jobs->where('is_quick_job', true)->orWhereHas('intake', fn ($i) => $i->where('is_service', false))))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))

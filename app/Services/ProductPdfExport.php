@@ -27,9 +27,32 @@ class ProductPdfExport
     public function query(Request $request): Builder
     {
         return Product::query()
-            ->when($request->filled('q'), fn ($q) => $q->where(fn ($x) => $x
-                ->where('name', 'like', '%'.$request->q.'%')->orWhere('code', 'like', '%'.$request->q.'%')
-                ->orWhere('barcode', 'like', '%'.$request->q.'%')->orWhere('rack_number', 'like', '%'.$request->q.'%')))
+            ->when($request->filled('q'), function ($q) use ($request) {
+                $term = trim((string) $request->q);
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+                $words = array_filter(explode(' ', $term));
+                $q->where(function ($x) use ($term, $clean, $words) {
+                    $x->where('name', 'like', "%{$term}%")
+                        ->orWhere('code', 'like', "%{$term}%")
+                        ->orWhere('barcode', 'like', "%{$term}%")
+                        ->orWhere('rack_number', 'like', "%{$term}%");
+                    if ($clean !== '' && $clean !== $term) {
+                        $x->orWhereRaw("replace(replace(code, '-', ''), ' ', '') like ?", ["%{$clean}%"]);
+                    }
+                    if (count($words) > 1) {
+                        $x->orWhere(function ($sub) use ($words) {
+                            foreach ($words as $w) {
+                                $sub->where(function ($wSub) use ($w) {
+                                    $wSub->where('name', 'like', "%{$w}%")
+                                        ->orWhere('code', 'like', "%{$w}%")
+                                        ->orWhere('barcode', 'like', "%{$w}%")
+                                        ->orWhere('rack_number', 'like', "%{$w}%");
+                                });
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->filled('rack_number'), fn ($q) => $q->where('rack_number', 'like', '%'.$request->rack_number.'%'))
             ->when($request->filled('supplier'), fn ($q) => $q->where('supplier_id', $request->supplier))
             ->when($request->filled('brand'), fn ($q) => $q->where('brand', $request->brand))

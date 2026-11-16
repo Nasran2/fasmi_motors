@@ -4,6 +4,7 @@ import './printing';
 import './partsSaleEdit';
 import './cashier';
 import './attendanceImport';
+import './liveFilter';
 
 window.spreadsheetSafeText = (value) => {
     const text = String(value ?? '');

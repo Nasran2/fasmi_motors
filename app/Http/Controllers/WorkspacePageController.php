@@ -122,10 +122,28 @@ class WorkspacePageController extends Controller
 
         if ($request->filled('q')) {
             $term = trim((string) $request->q);
-            $query->where(function (Builder $builder) use ($term) {
+            $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+            $words = array_filter(explode(' ', $term));
+            $query->where(function (Builder $builder) use ($term, $clean, $words) {
                 $builder->where('intake_number', 'like', "%{$term}%")
                     ->orWhereHas('bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%")->orWhere('model', 'like', "%{$term}%"))
                     ->orWhereHas('bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
+                if ($clean !== '') {
+                    $builder->orWhereRaw("replace(replace(intake_number, '-', ''), ' ', '') like ?", ["%{$clean}%"])
+                        ->orWhereHas('bike', fn (Builder $b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                        ->orWhereHas('bike.customer', fn (Builder $c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
+                }
+                if (count($words) > 1) {
+                    $builder->orWhere(function ($sub) use ($words) {
+                        foreach ($words as $w) {
+                            $sub->where(function ($wSub) use ($w) {
+                                $wSub->where('intake_number', 'like', "%{$w}%")
+                                    ->orWhereHas('bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$w}%")->orWhere('model', 'like', "%{$w}%"))
+                                    ->orWhereHas('bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"));
+                            });
+                        }
+                    });
+                }
             });
         }
 
@@ -168,12 +186,34 @@ class WorkspacePageController extends Controller
 
         if ($request->filled('q')) {
             $term = trim((string) $request->q);
-            $query->where(function (Builder $builder) use ($term) {
+            $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
+            $words = array_filter(explode(' ', $term));
+            $query->where(function (Builder $builder) use ($term, $clean, $words) {
                 $builder->where('number', 'like', "%{$term}%")
                     ->orWhereHas('intake.bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%"))
                     ->orWhereHas('intake.bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
                     ->orWhereHas('quickBike', fn (Builder $bike) => $bike->where('number', 'like', "%{$term}%"))
                     ->orWhereHas('quickCustomer', fn (Builder $customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
+                if ($clean !== '') {
+                    $builder->orWhereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"])
+                        ->orWhereHas('intake.bike', fn (Builder $b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                        ->orWhereHas('intake.bike.customer', fn (Builder $c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                        ->orWhereHas('quickBike', fn (Builder $b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                        ->orWhereHas('quickCustomer', fn (Builder $c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
+                }
+                if (count($words) > 1) {
+                    $builder->orWhere(function ($sub) use ($words) {
+                        foreach ($words as $w) {
+                            $sub->where(function ($wSub) use ($w) {
+                                $wSub->where('number', 'like', "%{$w}%")
+                                    ->orWhereHas('intake.bike', fn (Builder $bike) => $bike->where('number', 'like', "%{$w}%"))
+                                    ->orWhereHas('intake.bike.customer', fn (Builder $customer) => $customer->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"))
+                                    ->orWhereHas('quickBike', fn (Builder $bike) => $bike->where('number', 'like', "%{$w}%"))
+                                    ->orWhereHas('quickCustomer', fn (Builder $customer) => $customer->where('name', 'like', "%{$w}%")->orWhere('phone', 'like', "%{$w}%"));
+                            });
+                        }
+                    });
+                }
             });
         }
 
