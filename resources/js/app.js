@@ -5,6 +5,7 @@ import './partsSaleEdit';
 import './cashier';
 import './attendanceImport';
 import './liveFilter';
+import './workshopLayout';
 
 window.spreadsheetSafeText = (value) => {
     const text = String(value ?? '');

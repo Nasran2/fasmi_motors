@@ -64,7 +64,7 @@
                 <p x-show="productError" x-cloak role="alert" class="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700" x-text="productError"></p>
                 <p x-show="items.length === 0" x-cloak class="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">No products added. You can create a quotation using charges only.</p>
                 <template x-for="(item, index) in items" :key="item.key">
-                    <div class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_100px_140px_100px_auto] lg:items-end">
+                    <div class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_100px_140px_100px_auto] xl:items-end">
                         <div class="relative" @click.outside="item.productOpen = false" @focusout="if (!$el.contains($event.relatedTarget)) item.productOpen = false">
                             <span class="label">Product *</span>
                             <div class="relative">
@@ -72,7 +72,7 @@
                                 <button type="button" @click="toggleProductPicker(item, $event)" :aria-label="item.productOpen ? 'Close product list' : 'Browse products'" class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-red-600"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></button>
                             </div>
                             <input type="hidden" :name="`items[${index}][product_id]`" :value="item.product_id">
-                            <div x-show="item.productOpen" x-cloak :id="`product-options-${item.key}`" role="listbox" aria-label="Products" class="absolute z-50 mt-1 max-h-64 w-full min-w-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                            <div x-show="item.productOpen" x-cloak :id="`product-options-${item.key}`" role="listbox" aria-label="Products" class="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
                                 <p x-show="!item.productMatches.length" class="px-3 py-4 text-sm text-slate-500">No matching products. Try a different name or SKU.</p>
                                 <template x-for="(product, productIndex) in item.productMatches" :key="product.id"><button type="button" role="option" :id="`product-option-${item.key}-${productIndex}`" :aria-selected="productIndex === item.activeProductIndex" @mousedown.prevent @click="chooseProduct(item, product)" :class="productIndex === item.activeProductIndex ? 'bg-red-50 text-red-700' : 'text-slate-800 hover:bg-slate-50'" class="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm"><span class="min-w-0 truncate font-semibold" x-text="product.name"></span><span class="shrink-0 text-xs text-slate-500" x-text="product.code || 'No SKU'"></span></button></template>
                                 <p x-show="!item.search.trim() && item.productMatches.length" class="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">Type to search the full catalog</p>

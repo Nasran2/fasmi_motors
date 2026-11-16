@@ -1,6 +1,6 @@
 <x-layouts::app title="Products & Stock">
 <div class="space-y-5">
-    <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Inventory</p><h1 class="page-title">Spare Parts & Stock</h1><p class="page-subtitle">Manage real product quantities, pricing and store availability.</p></div><div class="flex gap-2"><a href="{{ route('products.transfers') }}" class="btn-secondary">⇄ Stock Transfer</a><div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-end justify-between gap-3"><div><p class="text-xs font-extrabold uppercase tracking-[.18em] text-red-600">Inventory</p><h1 class="page-title">Spare Parts & Stock</h1><p class="page-subtitle">Manage real product quantities, pricing and store availability.</p></div><div class="flex flex-wrap gap-2"><a href="{{ route('products.transfers') }}" class="btn-secondary">⇄ Stock Transfer</a><div class="flex flex-wrap items-center gap-2">
     <a href="{{ route('products.excel.export') }}" class="btn-secondary">Export Excel</a>
     <button onclick="document.getElementById('export-pdf-dialog').showModal()" class="btn-secondary">Export PDF</button>
     <button onclick="document.getElementById('import-dialog').showModal()" class="btn-secondary">Import</button>
@@ -40,7 +40,7 @@
                 <label><span class="label">Rack No</span><input type="text" name="rack_number" value="{{ request('rack_number') }}" class="field" placeholder="E.g. A1"></label>
                 <label><span class="label">Brand</span><select name="brand" class="field"><option value="">All brands</option>@foreach($brands as $brand)<option @selected(request('brand')===$brand->name)>{{ $brand->name }}</option>@endforeach</select></label>
                 <label><span class="label">Status</span><select name="status" class="field"><option value="">All statuses</option><option value="low" @selected(request('status')==='low')>Low / out of stock</option></select></label>
-                <label class="xl:col-span-2"><span class="label">Search products</span><div class="flex gap-2"><input name="q" value="{{ request('q') }}" class="field" placeholder="Name, SKU or barcode"><button class="btn-secondary">Search</button></div></label>
+                <label class="xl:col-span-2"><span class="label">Search products</span><div class="workshop-search-row"><input name="q" value="{{ request('q') }}" class="field" placeholder="Name, SKU or barcode"><button class="btn-secondary">Search</button></div></label>
             </form>
             @php
                 $sortLink = function($column, $label) {

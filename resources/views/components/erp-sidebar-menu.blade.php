@@ -49,11 +49,10 @@
 
 <div class="relative flex min-h-0 flex-1 flex-col" data-erp-menu>
     <div class="px-1 pb-3 pt-4">
-        <label for="sidebar-menu-search" class="sr-only">Search menu</label>
-        <div class="relative">
-            <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-            <input id="sidebar-menu-search" data-menu-search type="search" placeholder="Search menu..." autocomplete="off" class="h-10 w-full rounded-xl border border-white/10 bg-white/[.055] !pl-9 pr-3 text-xs font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-red-500/50 focus:bg-white/[.08] focus:ring-4 focus:ring-red-500/5">
-        </div>
+        <button type="button" data-open-dialog="workshop-menu-search" class="workshop-search-button w-full" aria-haspopup="dialog">
+            <x-workshop-search-icon />
+            <span class="truncate">Search menu</span>
+        </button>
     </div>
 
     <div class="mb-2 flex items-center justify-between px-3"><span class="text-[9px] font-bold uppercase tracking-[.2em] text-slate-500">Main Menu</span><span class="rounded-md bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-slate-500">{{ count($groups) }}</span></div>
@@ -95,7 +94,7 @@
                                                 && collect($direct['query'] ?? [])->every(fn ($value, $key) => request()->query($key, $value) === $value)
                                             : $currentSection === $group['slug'] && $currentPage === $child['slug'];
                                     @endphp
-                                    <a href="{{ $url }}" data-menu-child data-search="{{ Str::lower($group['title'].' '.$child['title']) }}" class="erp-submenu-link {{ $childActive ? 'erp-submenu-link-active' : '' }}">
+                                    <a href="{{ $url }}" data-menu-child data-menu-key="{{ $key }}" data-search="{{ Str::lower($group['title'].' '.$child['title']) }}" class="erp-submenu-link {{ $childActive ? 'erp-submenu-link-active' : '' }}">
                                         <span class="erp-submenu-dot"></span><span class="truncate erp-submenu-text">{{ $child['title'] }}</span>
                                     </a>
                                 @endforeach
@@ -105,7 +104,6 @@
                 </div>
             </section>
         @endforeach
-        <div data-menu-empty class="hidden px-4 py-10 text-center"><span class="mx-auto grid size-10 place-items-center rounded-xl bg-white/5 text-slate-500"><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8.5 11h5"/></svg></span><p class="mt-3 text-xs font-bold text-slate-400">No menu item found</p></div>
     </nav>
 </div>
 
@@ -114,9 +112,7 @@
         const root = document.querySelector('[data-erp-menu]');
         if (!root || root.dataset.ready === 'true') return;
         root.dataset.ready = 'true';
-        const search = root.querySelector('[data-menu-search]');
         const groups = [...root.querySelectorAll('[data-menu-group]')];
-        const empty = root.querySelector('[data-menu-empty]');
         const scroller = root.querySelector('.erp-menu-scroll');
 
         const setOpen = (group, open) => {
@@ -129,27 +125,6 @@
             groups.forEach(other => setOpen(other, false));
             setOpen(group, willOpen);
         }));
-
-        search.addEventListener('input', () => {
-            const term = search.value.trim().toLowerCase();
-            let visibleGroups = 0;
-            groups.forEach(group => {
-                const titleMatches = group.dataset.title.includes(term);
-                const children = [...group.querySelectorAll('[data-menu-child]')];
-                let childMatches = 0;
-                children.forEach(child => {
-                    const matches = !term || titleMatches || child.dataset.search.includes(term);
-                    child.classList.toggle('hidden', !matches);
-                    if (matches) childMatches++;
-                });
-                const visible = !term || titleMatches || childMatches > 0;
-                group.classList.toggle('hidden', !visible);
-                if (visible) visibleGroups++;
-                if (term && visible) setOpen(group, true);
-                if (!term) setOpen(group, group.querySelector('.erp-menu-button-active') !== null);
-            });
-            empty.classList.toggle('hidden', visibleGroups !== 0);
-        });
 
         requestAnimationFrame(() => {
             const activeTarget = root.querySelector('.erp-submenu-link-active') || root.querySelector('.erp-menu-button-active');

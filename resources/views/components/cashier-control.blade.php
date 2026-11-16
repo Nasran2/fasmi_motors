@@ -1,4 +1,6 @@
-@if(\App\Support\RoutePermission::allows(auth()->user(), 'cashier.index'))
+@props(['showControl' => true, 'showHistory' => true])
+
+@if($showControl && \App\Support\RoutePermission::allows(auth()->user(), 'cashier.index'))
     @php
         $activeSession = \App\Models\CashierSession::active();
         $isToday = $activeSession?->session_date?->isToday();
@@ -23,6 +25,6 @@
     @endif
 @endif
 
-@if(\App\Support\RoutePermission::allows(auth()->user(), 'cashier.index'))
+@if($showHistory && \App\Support\RoutePermission::allows(auth()->user(), 'cashier.index'))
     <a href="{{ route('cashier.index') }}#cashier-history" class="inline-flex shrink-0 items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">Closing history</a>
 @endif

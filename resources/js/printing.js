@@ -74,7 +74,8 @@ export function printTable(source, selectedRow = null) {
 
 export function collectPrintDocument(trigger = null, nativePrint = false) {
     const config = configuration();
-    const modal = trigger?.closest('dialog[open]') || document.querySelector('dialog[open]');
+    const modalSelector = 'dialog[open]:not(.workshop-sidebar, .workshop-search-dialog)';
+    const modal = trigger?.closest(modalSelector) || document.querySelector(modalSelector);
     const visible = nativePrint ? (node) => !node.closest('dialog:not([open]), [hidden], [x-cloak], .hidden, [style*="display: none"]') : displayed;
     const source = modal || document.querySelector('[data-flux-main]') || document.querySelector('main') || document.body;
     const row = trigger?.closest('tr');

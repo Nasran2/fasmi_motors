@@ -16,8 +16,8 @@ class BikeIntakeController extends Controller
     public function index(Request $r)
     {
         $q = BikeIntake::with('bike.customer', 'jobCard')->latest('intake_date')->latest();
-        if ($r->q) {
-            $term = trim($r->q);
+        $term = trim($r->string('q')->limit(120, '')->toString());
+        if ($term !== '') {
             $clean = preg_replace('/[^A-Za-z0-9]/', '', $term);
             $words = array_filter(explode(' ', $term));
             $q->where(function ($query) use ($term, $clean, $words) {
@@ -43,7 +43,15 @@ class BikeIntakeController extends Controller
             });
         }
 
-        return view('intakes.index', ['intakes' => $q->paginate(15)]);
+        if ($r->boolean('suggestions')) {
+            return response()->json($q->limit(8)->get()->map(fn (BikeIntake $intake) => [
+                'title' => $intake->intake_number,
+                'detail' => implode(' · ', array_filter([$intake->bike?->number, $intake->bike?->model, $intake->bike?->customer?->name])),
+                'url' => route('intakes.show', $intake),
+            ]));
+        }
+
+        return view('intakes.index', ['intakes' => $q->paginate(15)->withQueryString()]);
     }
 
     public function create()

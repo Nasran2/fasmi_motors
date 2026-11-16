@@ -4,45 +4,61 @@
     $defaultCashierDate = $activeCashier?->session_date?->toDateString() ?? today()->toDateString();
 @endphp
     @section('pos-search')
-    <div class="relative w-full max-w-2xl" x-data="{ query: '' }">
-        <svg class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-        <input id="pos-search-input" type="text" aria-label="Search products" x-model="query" @input.debounce.100ms="$dispatch('search-products', query)" @keydown.enter.prevent="$dispatch('scan-product', query)" placeholder="Enter product name / SKU / Scan barcode (Alt+S)" class="noinput h-12 w-full rounded-2xl border-2 border-slate-700 bg-[#0b2447] pl-12 pr-12 text-[15px] font-semibold text-white placeholder-slate-400 outline-none transition focus:border-red-500 focus:bg-[#06162f] focus:ring-4 focus:ring-red-500/20" autofocus>
-        <button type="button" title="Focus barcode search (Alt+S)" aria-label="Focus barcode search (Alt+S)" onclick="document.getElementById('pos-search-input').focus()" class="absolute right-3 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-700 hover:text-white transition">
-            <kbd class="pos-header-key">Alt+S</kbd>
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+    <div class="pos-search-bar workshop-search-row">
+        <input id="pos-search-input" type="search" aria-label="Search products" x-model="query" @keydown.enter.prevent="scanProduct(query)" placeholder="Product name, SKU or barcode" class="pos-search-inline noinput h-11 min-w-0 rounded-xl border border-slate-500 bg-[#0b2447] px-3 text-sm font-semibold text-white placeholder-slate-300 focus:border-red-500">
+        <button type="button" class="pos-search-trigger workshop-search-button" @click="openSearch()" aria-label="Search products" aria-haspopup="dialog" title="Search products (Alt+S)">
+            <x-workshop-search-icon />
+            <span class="pos-search-label truncate">Search products</span>
         </button>
     </div>
+    <x-workshop-search-dialog id="pos-product-search" title="Search products">
+        <form class="workshop-search-row" @submit.prevent="scanProduct(query)">
+            <input id="pos-popup-search-input" type="search" class="field" x-model="query" aria-label="Product name, SKU or barcode" placeholder="Product name, SKU or barcode" autocomplete="off" autofocus>
+            <button type="submit" class="btn-primary" :disabled="!query.trim()">Scan</button>
+        </form>
+        <p class="mt-4 mb-2 text-xs font-semibold text-slate-500" aria-live="polite" x-text="query.trim() ? (searchSuggestions.length ? 'Matching products' : 'No matching products') : (searchSuggestions.length ? 'Suggested products' : 'No products available')"></p>
+        <ul class="workshop-search-results">
+            <template x-for="product in searchSuggestions" :key="product.id">
+                <li>
+                    <button type="button" class="workshop-search-result" @click="selectSearchProduct(product)">
+                        <span class="flex flex-wrap justify-between gap-x-2"><span x-text="product.name"></span><span class="text-red-700" x-text="'Rs. ' + formatNumber(product.price)"></span></span>
+                        <span class="mt-0.5 text-xs font-medium text-slate-600" x-text="[product.sku, 'Stock: ' + product.currentStock].filter(Boolean).join(' · ')"></span>
+                    </button>
+                </li>
+            </template>
+        </ul>
+        @if(auth()->user()->canAccess('product.add'))
+            <button type="button" class="btn-secondary mt-3" x-show="query.trim() && !searchSuggestions.length" @click="closeDialog('pos-product-search'); openNewProduct()">Add new product</button>
+        @endif
+    </x-workshop-search-dialog>
     @endsection
 
     @section('pos-actions')
-    <div class="flex items-center gap-2 mr-4">
         @if(auth()->user()->canAccess('intake.add'))
-            <a href="{{ route('intakes.create') }}" class="relative inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-xl bg-red-600 px-4 text-sm font-bold text-white shadow-lg shadow-red-500/20 hover:bg-red-500 transition" title="New Bike Intake (Alt+I)">
-                <kbd class="pos-header-key">Alt+I</kbd>New Bike Intake
-            </a>
+            <a href="{{ route('intakes.create') }}" class="workshop-header-action" title="New Bike Intake (Alt+I)">New Bike Intake</a>
         @endif
         @if(auth()->user()->canAccess('job_card.create'))
-            <a href="{{ route('jobs.create') }}" class="relative inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-xl border-2 border-slate-700 bg-transparent px-4 text-sm font-bold text-white hover:border-slate-500 hover:bg-slate-800 transition" title="Create Job Card (Alt+J)">
-                <kbd class="pos-header-key">Alt+J</kbd>Create Job Card
-            </a>
+            <a href="{{ route('jobs.create') }}" class="workshop-header-action" title="Create Job Card (Alt+J)">Create Job Card</a>
         @endif
         @if(auth()->user()->canAccess('sales.view_invoices'))
-            <a href="{{ route('sales.parts.index') }}" class="relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border-2 border-slate-700 bg-transparent text-white hover:border-slate-500 hover:bg-slate-800 transition" title="Bills and quotations (Alt+L)" aria-label="Bills and quotations (Alt+L)">
-                <kbd class="pos-header-key">Alt+L</kbd><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M8 8h8M8 12h8"/></svg>
-            </a>
+            <a href="{{ route('sales.parts.index') }}" class="workshop-header-action" title="Bills and quotations (Alt+L)">Bills and quotations</a>
         @endif
-    </div>
     @endsection
 
-    <div class="flex w-full h-full overflow-hidden" x-data="posApp()" @keydown.window="handleShortcut($event)">
+    <div class="pos-panel-tabs" role="group" aria-label="Point of sale view">
+        <button type="button" @click="activePanel = 'products'" :aria-pressed="activePanel === 'products'" aria-controls="pos-products">Products</button>
+        <button type="button" @click="activePanel = 'cart'" :aria-pressed="activePanel === 'cart'" aria-controls="pos-cart">Cart (<span x-text="cart.items.length + cart.charges.length">0</span>)</button>
+    </div>
+
+    <div class="pos-panels" :data-panel="activePanel">
         <!-- Left Side: Products Grid -->
-        <div class="pos-left flex flex-col relative w-full h-full">
+        <div id="pos-products" class="pos-left">
             <!-- Store Selector & Categories -->
             <div class="flex flex-col gap-4 p-4 pb-0 bg-white border-b border-slate-200 shrink-0">
                 <div class="flex flex-wrap items-center gap-3">
-                    <label class="flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2 border border-slate-200">
+                    <label class="flex max-w-full min-w-0 items-center gap-2 bg-slate-100 rounded-xl px-3 py-2 border border-slate-200">
                         <svg class="size-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                        <select id="pos-store-select" class="bg-transparent border-none outline-none font-bold text-slate-700 text-sm cursor-pointer pr-4" x-model="storeId" @change="changeStore" title="Select store (Alt+T)">
+                        <select id="pos-store-select" class="min-w-0 bg-transparent border-none outline-none font-bold text-slate-700 text-sm cursor-pointer pr-4" x-model="storeId" @change="changeStore" title="Select store (Alt+T)">
                             @foreach($stores as $store)
                                 <option value="{{ $store->id }}">{{ $store->name }}</option>
                             @endforeach
@@ -91,42 +107,43 @@
 
             <!-- Product Grid -->
             <div id="pos-products-scroll" class="flex-1 overflow-y-auto p-4 bg-[#f7f9fc]" @scroll.passive="loadMoreOnScroll($event)">
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4 content-start">
+                <div class="pos-product-grid grid gap-2 sm:gap-4 content-start">
                     <template x-for="(product, index) in visibleProducts" :key="product.id">
-                        <button class="relative flex flex-col text-left rounded-2xl bg-white p-4 transition-all shadow-sm border-2 overflow-hidden group outline-none focus:ring-4 focus:ring-red-500/20"
+                        <button class="relative flex flex-col text-left rounded-2xl bg-white p-3 sm:p-4 transition-all shadow-sm border-2 overflow-hidden group outline-none focus:ring-4 focus:ring-red-500/20"
                             :class="{
                                 'border-transparent hover:border-red-300 hover:shadow-md': product.currentStock > 0 || allowNegativeStock,
                                 'border-red-100 bg-red-50/50 hover:border-red-300': product.currentStock <= 0 && !allowNegativeStock,
                             }"
                             :title="product.currentStock <= 0 && !allowNegativeStock ? 'Can be quoted; sale requires stock' : 'Add to cart'"
                             @click="productClicked(product)">
-                            <kbd x-show="index < 9" x-text="index + 1" class="absolute left-2 top-2 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500" :title="'Press ' + (index + 1) + ' to add'"></kbd>
-                            
-                            <!-- Badges -->
-                            <div class="absolute top-3 right-3 flex flex-col gap-1 items-end">
-                                <template x-if="product.currentStock <= 0">
-                                    <span class="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-sm">Out of Stock</span>
-                                </template>
-                                <template x-if="product.currentStock > 0 && product.currentStock <= 8">
-                                    <span class="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-sm">Low Stock</span>
-                                </template>
-                                <template x-if="product.currentBatches.length > 1 && product.currentStock > 0">
-                                    <span class="rounded-full bg-[#06162f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm flex items-center gap-1">
-                                        <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                                        Multiple Prices
-                                    </span>
-                                </template>
+                            <div class="mb-1 flex min-h-5 w-full flex-wrap items-start justify-between gap-1">
+                                <kbd x-show="index < 9" x-text="index + 1" class="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500" :title="'Press ' + (index + 1) + ' to add'"></kbd>
+
+                                <div class="ml-auto flex flex-wrap justify-end gap-1">
+                                    <template x-if="product.currentStock <= 0">
+                                        <span class="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-sm">Out of Stock</span>
+                                    </template>
+                                    <template x-if="product.currentStock > 0 && product.currentStock <= 8">
+                                        <span class="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-sm">Low Stock</span>
+                                    </template>
+                                    <template x-if="product.currentBatches.length > 1 && product.currentStock > 0">
+                                        <span class="rounded-full bg-[#06162f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm flex items-center gap-1">
+                                            <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                            Multiple Prices
+                                        </span>
+                                    </template>
+                                </div>
                             </div>
 
                             <!-- Product Info -->
-                            <div class="mt-2">
+                            <div class="min-w-0">
                                 <h3 class="text-sm font-black text-slate-900 leading-tight line-clamp-2"><span x-show="product.posPinned" class="mr-1 text-amber-500" aria-label="Pinned">★</span><span x-text="product.name"></span></h3>
-                                <p class="text-[11px] font-semibold tracking-wider text-slate-400 mt-1 uppercase" x-text="product.sku"></p>
+                                <p class="text-[11px] font-semibold tracking-wider text-slate-400 mt-1 uppercase [overflow-wrap:anywhere]" x-text="product.sku"></p>
                             </div>
                             
-                            <div class="mt-auto pt-4 flex items-end justify-between w-full">
+                            <div class="mt-auto flex w-full flex-wrap items-end justify-between gap-1 pt-3">
                                 <div>
-                                    <p class="text-lg font-black text-red-600 leading-none" x-text="'Rs. ' + formatNumber(product.price)"></p>
+                                    <p class="text-base font-black leading-none text-red-600 sm:text-lg" x-text="'Rs. ' + formatNumber(product.price)"></p>
                                     <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-2">
                                         Stock: 
                                         <span class="text-xs ml-0.5" 
@@ -163,7 +180,7 @@
         </div>
 
         <!-- Right Side: Cart Panel -->
-        <div class="pos-right shadow-2xl flex flex-col z-40 bg-white h-[calc(100vh-72px)]">
+        <div id="pos-cart" class="pos-right bg-white">
             <div x-show="cart.sourceQuotationId" class="border-b border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-800" x-cloak>
                 <span>Quotation <span x-text="cart.sourceQuotationNumber"></span> ready for checkout</span>
                 <span x-show="cart.bikeNumber" class="block text-[11px] font-medium" x-text="'Bike: ' + cart.bikeNumber"></span>
@@ -171,7 +188,7 @@
             <!-- Customer Section -->
             <div class="p-4 border-b border-slate-100 flex flex-col gap-3">
                 <div class="flex gap-2">
-                    <div class="relative flex-1">
+                    <div class="relative min-w-0 flex-1">
                         <select id="pos-customer-select" class="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-800 outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 transition appearance-none" x-model="cart.customerId" title="Select customer (Alt+Y)">
                             <option value="">Walk-in Customer</option>
                             <option value="new" x-show="cart.customerName" x-text="'New: ' + cart.customerName"></option>
@@ -202,13 +219,13 @@
             </div>
 
             <!-- Cart Items -->
-            <div class="flex-1 overflow-y-auto p-4 bg-slate-50/50">
+            <div class="pos-cart-items p-3 sm:p-4 bg-slate-50/50">
                 <!-- Headers -->
-                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-2 mb-3 px-2 pr-10">
+                <div class="pos-cart-row mb-3 px-2">
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Product</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center w-[84px]">Qty</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[80px]">Price</span>
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right w-[95px]">Subtotal</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Qty</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Price</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Subtotal</span>
                 </div>
 
                 <div class="space-y-3">
@@ -220,7 +237,7 @@
                         </div>
                     </template>
                     <template x-for="(item, index) in cart.items" :key="index">
-                        <div role="button" tabindex="0" @click="openItemEditor(index)" @keydown.enter.prevent="openItemEditor(index)" @keydown.space.prevent="openItemEditor(index)" :aria-label="'Edit ' + (item.display_name || item.product.name)" class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 shadow-sm relative pr-10 min-h-[64px] cursor-pointer hover:border-red-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 transition">
+                        <div role="button" tabindex="0" @click="openItemEditor(index)" @keydown.enter.prevent="openItemEditor(index)" @keydown.space.prevent="openItemEditor(index)" :aria-label="'Edit ' + (item.display_name || item.product.name)" class="pos-cart-row p-2 sm:p-3 bg-white rounded-xl border border-slate-100 shadow-sm relative min-h-[64px] cursor-pointer hover:border-red-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 transition">
                             <!-- Product Detail -->
                             <div class="min-w-0">
                                 <p class="text-[11px] font-black text-slate-900 leading-tight truncate" x-text="item.display_name || item.product.name" :title="item.display_name || item.product.name"></p>
@@ -231,16 +248,16 @@
                             </div>
                             
                             <!-- Qty -->
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-center text-xs font-black text-slate-900 w-[84px]" x-text="Number(item.qty).toLocaleString('en-US', { maximumFractionDigits: 2 })">
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-center text-xs font-black text-slate-900" x-text="Number(item.qty).toLocaleString('en-US', { maximumFractionDigits: 2 })">
                             </div>
                             
                             <!-- Price -->
-                            <div class="text-right w-[80px]">
+                            <div class="text-right">
                                 <span class="text-xs font-black text-slate-700" x-text="formatNumber(item.unit_price)"></span>
                             </div>
 
                             <!-- Subtotal -->
-                            <div class="text-right w-[95px]">
+                            <div class="text-right">
                                 <p class="text-xs font-black text-slate-950" x-text="'Rs. ' + formatNumber(item.qty * item.unit_price)"></p>
                             </div>
 
@@ -679,20 +696,6 @@
             background: rgba(255,255,255,.22);
             padding: 2px 3px;
         }
-        .pos-header-key {
-            position: absolute;
-            right: .3rem;
-            top: -.45rem;
-            border-radius: .25rem;
-            border: 1px solid rgba(255,255,255,.35);
-            background: #0b2447;
-            color: #fff;
-            padding: 2px 4px;
-            font-size: 8px;
-            font-weight: 800;
-            line-height: 1;
-            box-shadow: 0 1px 3px rgba(0,0,0,.18);
-        }
         /* Custom scrollbar for pos */
         .hide-scrollbar::-webkit-scrollbar {
             display: none;
@@ -714,6 +717,7 @@
                 allowNegativeStock: {{ filter_var(\App\Models\Setting::valueFor('negative_stock', false), FILTER_VALIDATE_BOOL) ? 'true' : 'false' }},
                 activeCategory: null,
                 query: '',
+                activePanel: 'products',
                 visibleProductCount: 60,
                 
                 cart: {
@@ -793,16 +797,15 @@
                         url.searchParams.delete('quotation');
                         window.history.replaceState({}, '', url.toString());
                     }
+                    if (this.hasCartLines()) this.activePanel = 'cart';
                     this.recalculateTotals();
                     this.currentTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second:'2-digit' });
                     setInterval(() => {
                         this.currentTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second:'2-digit' });
                     }, 1000);
 
-                    window.addEventListener('search-products', (e) => {
-                        this.query = e.detail;
-                    });
-                    window.addEventListener('scan-product', (e) => this.scanProduct(e.detail));
+                    const search = document.getElementById('pos-search-input');
+                    if (search?.getClientRects().length) search.focus();
                     window.addEventListener('focus', () => this.refreshPins());
                     this.$watch('query', () => this.resetProductWindow());
                     this.$watch('activeCategory', () => this.resetProductWindow());
@@ -919,7 +922,7 @@
                 },
 
                 handleShortcut(event) {
-                    const modal = document.querySelector('dialog[open]');
+                    const modal = document.querySelector('dialog:modal');
                     if (!event.altKey && !event.ctrlKey && !event.metaKey && !modal && /^[1-9]$/.test(event.key) && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]'))) {
                         const product = this.filteredProducts[Number(event.key) - 1];
                         if (product) { event.preventDefault(); this.productClicked(product); }
@@ -996,10 +999,20 @@
                     }
                 },
 
+                openSearch() {
+                    const dialog = document.getElementById('pos-product-search');
+                    if (!dialog.open) dialog.showModal();
+                    document.getElementById('pos-popup-search-input').select();
+                },
+
                 focusSearch() {
                     const input = document.getElementById('pos-search-input');
-                    input?.focus();
-                    input?.select();
+                    if (input.getClientRects().length) {
+                        input.focus();
+                        input.select();
+                    } else {
+                        this.openSearch();
+                    }
                 },
 
                 get pinnedCount() {
@@ -1031,7 +1044,7 @@
 
                 async openPinManager() {
                     const modal = document.getElementById('pos-pin-modal');
-                    if (!modal || document.querySelector('dialog[open]')) return;
+                    if (!modal || document.querySelector('dialog:modal')) return;
                     if (!await this.refreshPins()) {
                         workshopNotify('Could not load pinned products. Please try again.');
                         return;
@@ -1084,10 +1097,13 @@
                         workshopNotify('No product matches this barcode or SKU.');
                         return;
                     }
-                    this.productClicked(product);
-                    const input = document.getElementById('pos-search-input');
-                    if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+                    this.selectSearchProduct(product);
+                },
+
+                selectSearchProduct(product) {
+                    this.closeDialog('pos-product-search');
                     this.query = '';
+                    this.productClicked(product);
                 },
 
                 changeStore() {
@@ -1133,11 +1149,6 @@
                         this.recalculateStocks();
                         this.activeCategory = null;
                         this.query = data.product.sku;
-                        const input = document.getElementById('pos-search-input');
-                        if (input) {
-                            input.value = data.product.sku;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
                         this.closeDialog('pos-new-product-modal');
                         this.focusSearch();
                         workshopNotify(data.product.name + ' added to inventory.');
@@ -1301,16 +1312,24 @@
                     }
                 },
 
+                matchesProduct(product, query) {
+                    return [product.name, product.sku, product.barcode].some(value => value?.toLowerCase().includes(query));
+                },
+
                 get filteredProducts() {
-                    let p = this.productsData;
-                    if (this.activeCategory) {
-                        p = p.filter(x => x.category_id == this.activeCategory);
-                    }
-                    if (this.query.trim()) {
-                        const q = this.query.toLowerCase();
-                        p = p.filter(x => x.name.toLowerCase().includes(q) || (x.sku && x.sku.toLowerCase().includes(q)) || (x.barcode && x.barcode.toLowerCase().includes(q)));
-                    }
-                    return p;
+                    const query = this.query.trim().toLowerCase();
+                    return this.productsData.filter(product =>
+                        (!this.activeCategory || product.category_id == this.activeCategory) && this.matchesProduct(product, query)
+                    );
+                },
+
+                get searchSuggestions() {
+                    const query = this.query.trim().toLowerCase();
+                    if (!query) return this.productsData.slice(0, 8);
+
+                    const matches = this.productsData.filter(product => this.matchesProduct(product, query));
+                    const exact = product => [product.sku, product.barcode].some(value => value?.toLowerCase() === query);
+                    return matches.sort((a, b) => Number(exact(b)) - Number(exact(a))).slice(0, 12);
                 },
 
                 get visibleProducts() {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Bike;
 use App\Models\BikeIntake;
 use App\Models\Customer;
 use App\Models\JobCard;
@@ -155,4 +156,18 @@ test('intake numbers use sequential format IN-Date-001 and intake list displays 
     // Verify search works by intake number
     $searchResponse = $this->get(route('intakes.index', ['q' => 'IN-2026_11_16-001']))->assertOk();
     expect($searchResponse->viewData('intakes')->pluck('id')->all())->toBe([$intakes[0]->id]);
+});
+
+test('intake search suggestions match bike numbers across formatting and link to the intake', function () {
+    $customer = Customer::create(['name' => 'Search Customer', 'phone' => '0771234567']);
+    $bike = Bike::create(['customer_id' => $customer->id, 'number' => 'BFR-2000', 'model' => 'FZ V2']);
+    $intake = BikeIntake::create(['bike_id' => $bike->id, 'complaint' => 'Full service', 'created_by' => auth()->id()]);
+
+    $this->getJson(route('intakes.index', ['q' => 'bfr2000', 'suggestions' => 1]))
+        ->assertOk()
+        ->assertExactJson([[
+            'title' => $intake->intake_number,
+            'detail' => 'BFR-2000 · FZ V2 · Search Customer',
+            'url' => route('intakes.show', $intake),
+        ]]);
 });

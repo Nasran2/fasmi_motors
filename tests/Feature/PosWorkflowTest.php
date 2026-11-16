@@ -11,11 +11,14 @@ use App\Models\User;
 test('POS renders working action controls with visible shortcut labels', function () {
     $user = User::factory()->create();
 
-    $this->actingAs($user)->withOpenCashier()->get(route('sales.parts'))->assertOk()
+    $response = $this->actingAs($user)->withOpenCashier()->get(route('sales.parts'))->assertOk()
         ->assertSeeText('Alt+Q')->assertSeeText('Alt+H')->assertSeeText('Alt+M')
         ->assertSeeText('Alt+C')->assertSeeText('Alt+K')->assertSeeText('Alt+B')
         ->assertSee('handleShortcut($event)', false)
-        ->assertDontSeeText('Coupon')->assertDontSeeText('Return');
+        ->assertSee('id="pos-product-search"', false);
+
+    $posText = strip_tags(str($response->getContent())->after('<main class="pos-main">')->before('</main>')->toString());
+    expect($posText)->not->toContain('Coupon', 'Return');
 });
 
 test('quotation saves a printable document and notes without moving stock or creating a due', function () {

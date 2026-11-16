@@ -293,8 +293,8 @@ $ledgerRoutes=[
                 <h2 class="text-sm font-bold text-amber-900">Reopen Closed Day</h2>
                 <p class="mt-0.5 text-xs text-amber-700">A reason is required and will remain in the audit history.</p>
                 <div class="mt-3 flex flex-wrap gap-2">
-                    <input name="reason" required minlength="5" placeholder="Reason for reopening" class="h-10 min-w-[240px] flex-1 rounded-xl border border-amber-200 px-3 text-sm focus:border-amber-400 focus:ring-amber-400 outline-none">
-                    <button class="rounded-xl bg-amber-500 hover:bg-amber-600 transition-colors px-5 text-sm font-bold text-white shadow-sm">Reopen Day</button>
+                    <input name="reason" required minlength="5" placeholder="Reason for reopening" class="h-10 min-w-0 flex-[1_1_12rem] rounded-xl border border-amber-200 px-3 text-sm focus:border-amber-400 focus:ring-amber-400 outline-none">
+                    <button class="min-h-10 rounded-xl bg-amber-500 hover:bg-amber-600 transition-colors px-5 text-sm font-bold text-white shadow-sm">Reopen Day</button>
                 </div>
             </div>
         </div>

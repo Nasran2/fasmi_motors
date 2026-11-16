@@ -1,6 +1,6 @@
 @props(['summary'])
 
-<div class="relative" x-data="{ open: false }" x-id="['notifications-panel']" @keydown.escape.stop.prevent="open = false; $refs.bell.focus()" @click.outside="open = false" @focusout="if (!$el.contains($event.relatedTarget)) open = false">
+<div class="workshop-notifications relative" x-data="{ open: false }" x-id="['notifications-panel']" @keydown.escape.stop.prevent="open = false; $refs.bell.focus()" @click.outside="open = false" @focusout="if (!$el.contains($event.relatedTarget)) open = false">
     <button type="button" x-ref="bell" @click="open = !open" :aria-expanded="open" :aria-controls="$id('notifications-panel')" aria-label="Notifications ({{ $summary['count'] }})" title="Notifications" class="relative grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-red-600">
         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/></svg>
         @if($summary['count'])
