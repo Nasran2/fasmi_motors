@@ -48,13 +48,6 @@
 @endphp
 
 <div class="relative flex min-h-0 flex-1 flex-col" data-erp-menu>
-    <div class="px-1 pb-3 pt-4">
-        <button type="button" data-open-dialog="workshop-menu-search" class="workshop-search-button w-full" aria-haspopup="dialog">
-            <x-workshop-search-icon />
-            <span class="truncate">Search menu</span>
-        </button>
-    </div>
-
     <div class="mb-2 flex items-center justify-between px-3"><span class="text-[9px] font-bold uppercase tracking-[.2em] text-slate-500">Main Menu</span><span class="rounded-md bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-slate-500">{{ count($groups) }}</span></div>
 
     <nav class="erp-menu-scroll min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Workshop navigation">

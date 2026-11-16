@@ -10,16 +10,23 @@
         </button>
     </div>
 
-    <div class="mt-4 px-3 relative z-10">
-        @if(session('shop_mode', 'workshop') === 'helmet')
-            <form method="POST" action="{{ route('shop.switch', ['mode' => 'workshop']) }}">@csrf<x-submission-token/><button class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-slate-700 transition">
-                🔧 Switch to Workshop
-            </button></form>
-        @else
-            <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<x-submission-token/><button class="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-[11px] font-bold text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
-                🪖 Switch to Helmet Shop
-            </button></form>
-        @endif
+    @php($helmetMode = session('shop_mode', 'workshop') === 'helmet')
+    <div class="relative z-10 mt-4 mb-3 flex shrink-0 items-center gap-2 px-1">
+        <form method="POST" action="{{ route('shop.switch', ['mode' => $helmetMode ? 'workshop' : 'helmet']) }}" class="min-w-0 flex-1">
+            @csrf
+            <x-submission-token />
+            <button type="submit" @class([
+                'flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-2 py-2 text-center text-[11px] leading-tight font-bold text-white transition',
+                'bg-slate-800 hover:bg-slate-700' => $helmetMode,
+                'bg-indigo-600 shadow-lg shadow-indigo-500/20 hover:bg-indigo-500' => !$helmetMode,
+            ])>
+                <span aria-hidden="true">{{ $helmetMode ? '🔧' : '🪖' }}</span>
+                <span>{{ $helmetMode ? 'Switch to Workshop' : 'Switch to Helmet Shop' }}</span>
+            </button>
+        </form>
+        <button type="button" data-open-dialog="workshop-menu-search" class="workshop-menu-button border border-white/15 bg-white/5" aria-label="Search menu" aria-controls="workshop-menu-search" aria-haspopup="dialog" title="Search menu">
+            <x-workshop-search-icon />
+        </button>
     </div>
 
     <x-erp-sidebar-menu />
