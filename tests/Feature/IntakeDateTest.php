@@ -93,3 +93,66 @@ test('job card creation uses today when omitted and rejects invalid job dates', 
     expect(JobCard::sole()->created_at->isToday())->toBeTrue()
         ->and($intake->fresh()->intake_date->toDateString())->toBe($date);
 });
+
+test('intake numbers use sequential format IN-Date-001 and intake list displays columns in requested order with job card link', function () {
+    $date = Carbon::parse('2026-11-16');
+    $this->travelTo($date);
+
+    $this->post(route('intakes.store'), [
+        'bike_number' => 'BFR-2000',
+        'bike_model' => 'FZ V2',
+        'customer_name' => 'Walk-in',
+        'phone' => '0719203014',
+        'complaint' => 'Full service, fork oil',
+        'is_service' => 1,
+        'intake_date' => '2026-11-16',
+    ])->assertSessionHasNoErrors();
+
+    $this->post(route('intakes.store'), [
+        'bike_number' => 'BIF-6687',
+        'bike_model' => 'Platina 100',
+        'customer_name' => 'John',
+        'phone' => '0777303685',
+        'complaint' => 'Rear shocket',
+        'is_service' => 0,
+        'intake_date' => '2026-11-16',
+    ])->assertSessionHasNoErrors();
+
+    $intakes = BikeIntake::orderBy('id')->get();
+    expect($intakes[0]->intake_number)->toBe('IN-2026_11_16-001')
+        ->and($intakes[1]->intake_number)->toBe('IN-2026_11_16-002');
+
+    // Create job card for the first intake
+    $this->post(route('jobs.store'), [
+        'bike_intake_id' => $intakes[0]->id,
+        'priority' => 'Normal',
+    ])->assertSessionHasNoErrors();
+    $job = JobCard::sole();
+
+    $response = $this->get(route('intakes.index'))->assertOk();
+
+    // Verify column headers exist in correct order
+    $html = $response->getContent();
+    expect($html)->toContain('<th>Intake</th>')
+        ->and($html)->toContain('<th>Bike number</th>')
+        ->and($html)->toContain('<th>Service or not</th>')
+        ->and($html)->toContain('<th>Complaint</th>')
+        ->and($html)->toContain('<th>Job card</th>')
+        ->and($html)->toContain('<th>Date</th>')
+        ->and($html)->toContain('<th>Customer & Phone</th>');
+
+    // Verify job card link is present for first intake
+    expect($html)->toContain(route('jobs.show', $job))
+        ->and($html)->toContain($job->number);
+
+    // Verify "Not created" for second intake
+    expect($html)->toContain('Not created');
+
+    // Verify service badges
+    expect($html)->toContain('Service')
+        ->and($html)->toContain('Repair');
+
+    // Verify search works by intake number
+    $searchResponse = $this->get(route('intakes.index', ['q' => 'IN-2026_11_16-001']))->assertOk();
+    expect($searchResponse->viewData('intakes')->pluck('id')->all())->toBe([$intakes[0]->id]);
+});

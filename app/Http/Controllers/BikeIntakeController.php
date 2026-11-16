@@ -17,7 +17,12 @@ class BikeIntakeController extends Controller
     {
         $q = BikeIntake::with('bike.customer', 'jobCard')->latest('intake_date')->latest();
         if ($r->q) {
-            $q->whereHas('bike', fn ($x) => $x->where('number', 'like', '%'.$r->q.'%'));
+            $term = trim($r->q);
+            $q->where(function ($query) use ($term) {
+                $query->where('intake_number', 'like', '%'.$term.'%')
+                    ->orWhereHas('bike', fn ($x) => $x->where('number', 'like', '%'.$term.'%'))
+                    ->orWhereHas('bike.customer', fn ($x) => $x->where('name', 'like', '%'.$term.'%')->orWhere('phone', 'like', '%'.$term.'%'));
+            });
         }
 
         return view('intakes.index', ['intakes' => $q->paginate(15)]);
@@ -77,7 +82,25 @@ class BikeIntakeController extends Controller
 
             app(OpeningBalanceService::class)->record($bike->customer, $v, $bike);
 
-            return $bike->intakes()->create(['intake_number' => 'IN-'.now()->format('ymd').'-'.Str::upper(Str::random(6)), 'intake_date' => $v['intake_date'] ?? today()->toDateString(), 'complaint' => $v['complaint'], 'current_mileage' => $r->current_mileage, 'fuel_level' => $r->fuel_level, 'condition_notes' => $r->condition_notes, 'accessories' => $r->accessories, 'estimated_delivery_date' => $r->estimated_delivery_date, 'estimated_amount' => $r->estimated_amount ?? 0, 'advance_payment' => $r->advance_payment ?? 0, 'payment_method' => $r->payment_method, 'is_service' => $r->boolean('is_service'), 'next_service_km' => $r->next_service_km, 'next_service_date' => $r->next_service_date, 'created_by' => auth()->id()]);
+            $intakeDate = $v['intake_date'] ?? today()->toDateString();
+
+            return $bike->intakes()->create([
+                'intake_number' => BikeIntake::generateNumber($intakeDate),
+                'intake_date' => $intakeDate,
+                'complaint' => $v['complaint'],
+                'current_mileage' => $r->current_mileage,
+                'fuel_level' => $r->fuel_level,
+                'condition_notes' => $r->condition_notes,
+                'accessories' => $r->accessories,
+                'estimated_delivery_date' => $r->estimated_delivery_date,
+                'estimated_amount' => $r->estimated_amount ?? 0,
+                'advance_payment' => $r->advance_payment ?? 0,
+                'payment_method' => $r->payment_method,
+                'is_service' => $r->boolean('is_service'),
+                'next_service_km' => $r->next_service_km,
+                'next_service_date' => $r->next_service_date,
+                'created_by' => auth()->id(),
+            ]);
         });
 
         return redirect()->route('intakes.show', $intake)->with('success', 'Bike intake recorded.');
