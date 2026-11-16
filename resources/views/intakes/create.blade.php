@@ -6,7 +6,13 @@
                 <h1 class="page-title">New Bike Intake</h1>
                 <p class="page-subtitle">Register an incoming bike, customer details and repair requirements.</p>
             </div>
-            <a href="{{ route('intakes.index') }}" class="btn-secondary">View all intakes</a>
+            <div class="flex items-center gap-2.5">
+                <span class="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3.5 py-2 text-xs shadow-sm">
+                    <span class="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Intake #:</span>
+                    <span class="text-red-600 font-mono text-xs font-black">{{ App\Models\BikeIntake::generateNumber() }}</span>
+                </span>
+                <a href="{{ route('intakes.index') }}" class="btn-secondary">View all intakes</a>
+            </div>
         </div>
 
         <x-flash/>

@@ -4,7 +4,7 @@
         @include('partials.head')
     </head>
     <body class="workshop-shell min-h-screen bg-[#f7f9fc] text-slate-900">
-        <flux:sidebar sticky collapsible="mobile" class="workshop-sidebar border-e-0 !bg-[#06162f] text-white shadow-2xl print:hidden" style="background-color:#06162f;color:#fff">
+        <flux:sidebar sticky collapsible="mobile" persist="false" class="workshop-sidebar border-e-0 !bg-[#06162f] text-white shadow-2xl print:hidden" style="background-color:#06162f;color:#fff">
             <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div class="absolute -right-20 -top-24 size-64 rounded-full bg-red-600/10 blur-3xl"></div><div class="absolute bottom-20 left-0 size-48 rounded-full bg-blue-500/10 blur-3xl"></div></div>
             <flux:sidebar.header class="relative border-b border-white/10 px-2 pb-5 pt-3">
                 <a href="{{ route('dashboard') }}" class="group flex items-center gap-3 rounded-2xl px-1 py-1" wire:navigate>

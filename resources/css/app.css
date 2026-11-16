@@ -153,16 +153,35 @@
     .data-table tbody { @apply divide-y divide-slate-100; }
 }
 
-.workshop-sidebar {
+.workshop-sidebar,
+ui-sidebar.workshop-sidebar,
+[data-flux-sidebar].workshop-sidebar {
     background:
         linear-gradient(180deg, rgba(11, 37, 70, .35), transparent 32%),
         linear-gradient(165deg, #07182f 0%, #041124 55%, #061a35 100%) !important;
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, .22) transparent;
     width: 18rem !important;
+    min-width: 18rem !important;
+    max-width: 18rem !important;
     gap: 0 !important;
-    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     padding: .75rem !important;
+    transform: none !important;
+    margin-left: 0 !important;
+    left: 0 !important;
+}
+
+[data-flux-sidebar-collapsed-desktop].workshop-sidebar,
+.workshop-sidebar[data-flux-sidebar-collapsed-desktop] {
+    width: 18rem !important;
+    min-width: 18rem !important;
+    max-width: 18rem !important;
+    padding: .75rem !important;
+    transform: none !important;
+    margin-left: 0 !important;
+    left: 0 !important;
 }
 
 .erp-menu-scroll {
@@ -316,33 +335,45 @@ body.workshop-shell > [data-flux-main] {
    desktop: the dark navigation must start at the top-left, as in the design. */
 @media (min-width: 64rem) {
     body.workshop-shell {
+        display: grid !important;
         grid-template-areas:
             "sidebar header header"
             "sidebar main aside"
-            "sidebar footer aside";
-        grid-template-columns: 18rem minmax(0, 1fr) auto;
-        grid-template-rows: 68px auto auto;
+            "sidebar footer aside" !important;
+        grid-template-columns: 18rem minmax(0, 1fr) auto !important;
+        grid-template-rows: 68px auto auto !important;
     }
 
-    body.workshop-shell > .workshop-sidebar {
-        grid-area: sidebar;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
+    body.workshop-shell > .workshop-sidebar,
+    body.workshop-shell > ui-sidebar.workshop-sidebar,
+    body.workshop-shell > [data-flux-sidebar].workshop-sidebar {
+        grid-area: sidebar !important;
+        position: sticky !important;
+        top: 0 !important;
+        height: 100vh !important;
+        width: 18rem !important;
+        min-width: 18rem !important;
+        max-width: 18rem !important;
+        transform: none !important;
+        margin-left: 0 !important;
+        left: 0 !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
     }
 
     body.workshop-shell > .workshop-topbar {
-        grid-area: header;
-        width: 100%;
-        margin-left: 0;
+        grid-area: header !important;
+        width: 100% !important;
+        margin-left: 0 !important;
     }
 
     body.workshop-shell > [data-flux-main] {
-        min-width: 0;
-        padding: 20px 24px 28px;
+        grid-area: main !important;
+        min-width: 0 !important;
+        padding: 20px 24px 28px !important;
         background:
             radial-gradient(circle at 88% 0%, rgba(219, 234, 254, .42), transparent 28rem),
-            #f7f9fc;
+            #f7f9fc !important;
     }
 }
 

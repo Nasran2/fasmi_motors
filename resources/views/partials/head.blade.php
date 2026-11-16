@@ -13,9 +13,12 @@
 
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 <script>
-    localStorage.removeItem('flux.appearance');
-    localStorage.removeItem('theme');
-    document.documentElement.classList.remove('dark');
+    try {
+        localStorage.removeItem('flux.appearance');
+        localStorage.removeItem('theme');
+        localStorage.removeItem('flux-sidebar-collapsed-desktop');
+        document.documentElement.classList.remove('dark');
+    } catch (e) {}
 </script>
 
 <!-- Flatpickr for Date Inputs -->
