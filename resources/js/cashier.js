@@ -116,7 +116,7 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
             const converted = convertedCents / 100;
             const nonCash = nonCashCents / 100;
             if (convertedCents > 0 && nonCashCents === 0) {
-                return `(Rs. ${this.money(directCash)} cash + Rs. ${this.money(converted)} bank transfer from Spare Parts opening)`;
+                return `(Rs. ${this.money(directCash)} cash + Rs. ${this.money(converted)} bank transfer from Spare Parts)`;
             }
             if (nonCashCents > 0 && convertedCents === 0) {
                 return `(Rs. ${this.money(cashAddedCents / 100)} cash + Rs. ${this.money(nonCash)} bank transfer)`;

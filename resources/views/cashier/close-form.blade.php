@@ -41,7 +41,7 @@
                     $ssrNote = match (true) {
                         $openingCashPart > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($todayPartsCash, 2) . ' today’s cash + Rs. ' . number_format($openingCashPart, 2) . ' opening cashier cash)',
                         $openingCashPart > 0 && $nonCashAmount > 0 => '(Rs. ' . number_format($todayPartsCash, 2) . ' today’s cash + Rs. ' . number_format($openingCashPart, 2) . ' opening cashier cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
-                        $convertedCash > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' bank transfer from Spare Parts opening)',
+                        $convertedCash > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' bank transfer from Spare Parts)',
                         $nonCashAmount > 0 && $convertedCash == 0 => '(Rs. ' . number_format($suggestedCash, 2) . ' cash + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
                         $convertedCash > 0 && $nonCashAmount > 0 => '(Rs. ' . number_format($directCash, 2) . ' cash + Rs. ' . number_format($convertedCash, 2) . ' from bank transfer + Rs. ' . number_format($nonCashAmount, 2) . ' bank transfer)',
                         default => '',
@@ -55,12 +55,16 @@
                             <span class="block text-xs font-normal text-slate-500">(Rs. {{ number_format($accountMeta['reversed_debits'], 2) }} reversed)</span>
                         @endif
                     </span>
-                    <span class="mt-1 block text-sm text-emerald-700" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0) > 0" @if($convertedCash <= 0) x-cloak @endif>
-                        + Bank transfer to Main (Spare Parts opening): <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0)">{{ number_format($convertedCash, 2) }}</span></b>
+                    @if($convertedCash > 0)
+                    <span class="mt-1 block text-sm text-emerald-700" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0) > 0">
+                        + Bank transfer to Main: <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_converted_cash || 0)">{{ number_format($convertedCash, 2) }}</span></b>
                     </span>
-                    <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0) > 0" @if($conversionDeduction <= 0) x-cloak @endif>
+                    @endif
+                    @if($conversionDeduction > 0)
+                    <span class="mt-1 block text-sm text-red-600" x-show="cents(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0) > 0">
                         − Bank transfer to Main (opening): <b>Rs. <span x-text="money(allocationConfig.accounts['{{ $type }}'].bank_conversion_deduction || 0)">{{ number_format($conversionDeduction, 2) }}</span></b>
                     </span>
+                    @endif
                     <span class="mt-1 block text-sm" :class="(allocationConfig.accounts['{{ $type }}'].other_movements || 0) >= 0 ? 'text-emerald-700' : 'text-red-600'" x-show="cents(allocationConfig.accounts['{{ $type }}'].other_movements || 0) !== 0" @if($otherMovement == 0) x-cloak @endif>
                         <span x-text="(allocationConfig.accounts['{{ $type }}'].other_movements || 0) >= 0 ? '+ Transfers / adjustments:' : '− Transfers / adjustments:'">{{ $otherMovement != 0 ? ($otherMovement > 0 ? '+ Transfers / adjustments:' : '− Transfers / adjustments:') : '' }}</span>
                         <b x-show="cents(allocationConfig.accounts['{{ $type }}'].other_movements || 0) !== 0"><span x-text="'Rs. ' + money(Math.abs(allocationConfig.accounts['{{ $type }}'].other_movements || 0))">{{ $otherMovement != 0 ? 'Rs. ' . number_format(abs($otherMovement), 2) : '' }}</span></b>

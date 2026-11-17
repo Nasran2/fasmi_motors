@@ -42,7 +42,7 @@ class CashPositionService
 
         $query->where(function ($query) use ($bankId) {
             $query->where(function ($q) use ($bankId) {
-                $q->where(fn ($sub) => $sub->where('payment_method', 'Cash')->orWhere('account_type', 'cash'))
+                $q->where(fn ($sub) => $sub->where('payment_method', 'Cash')->orWhere('account_type', 'cash')->orWhere('funding_source', 'spare_parts_cashier'))
                     ->where(function ($sub) use ($bankId) {
                         // If it's an account transfer, it must involve bank or cashier
                         $sub->where('reference_type', '!=', (new AccountTransfer)->getMorphClass())

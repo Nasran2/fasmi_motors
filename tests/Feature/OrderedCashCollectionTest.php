@@ -59,7 +59,7 @@ test('bank payments occupy their priority share but never enter cash in hand', f
     $summary = app(CashierService::class)->summary(today()->toDateString());
     expect($summary['cash_received'])->toBe(600.0)
         ->and($summary['bank_received'])->toBe(600.0)
-        ->and($summary['cash_in_hand'])->toBe(600.0)
+        ->and($summary['cash_in_hand'])->toBe(0.0)
         ->and($summary['cash_accounts']['main']['closing'])->toBe(600.0);
     $this->get(route('cashier.collections', ['method' => 'cash']))->assertOk()->assertViewHas('rows', fn ($rows) => $rows->count() === 1 && $rows->first()['amount'] === 600.0);
     $this->get(route('cashier.collections', ['method' => 'bank_transfer']))->assertOk()->assertViewHas('rows', fn ($rows) => $rows->count() === 1 && $rows->first()['channel'] === 'bank');
@@ -148,7 +148,7 @@ test('a held cheque only takes the next priority share when it actually clears',
     $cheque->update(['paid_at' => today()->subDay(), 'status' => 'Completed']);
     app(AccountService::class)->receiveInvoicePayment($this->invoice, $cheque, settledAt: now()->addMinute());
     expect(app(AccountService::class)->paymentComponentAllocation($this->invoice, $cheque))->toBe(['service' => 0, 'labor' => 50000, 'washing' => 10000, 'other' => 0, 'spare_parts' => 0]);
-    expect(app(CashierService::class)->summary(today()->toDateString())['cash_in_hand'])->toBe(500.0);
+    expect(app(CashierService::class)->summary(today()->toDateString())['cash_in_hand'])->toBe(-100.0);
 });
 
 test('cent receipts follow priority and full settlement retains existing discount allocation', function () {

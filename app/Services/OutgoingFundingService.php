@@ -172,31 +172,32 @@ class OutgoingFundingService
         return round(max(0.0, (float) $credits - (float) $revisionDebits), 2);
     }
 
-    /** Bank-transfer / non-cash Main share transferred from Spare Parts opening balance (outside cashier cash). */
+    /** Bank-transfer / non-cash Main share transferred from Spare Parts. */
     public function bankConvertedMainCash(Collection $entries): float
     {
         $credits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->transaction_type !== 'reversal'
-            && in_array($entry->funding_source, [null, 'spare_parts'], true)
+            && in_array($entry->funding_source, [null, 'spare_parts', 'spare_parts_cashier'], true)
             && $entry->converted_from_method !== null
             && $entry->credit > 0)->sum('credit');
         $debits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->category === 'invoice_revision'
             && $entry->transaction_type === 'adjustment_decrease'
-            && in_array($entry->funding_source, [null, 'spare_parts'], true)
+            && in_array($entry->funding_source, [null, 'spare_parts', 'spare_parts_cashier'], true)
             && $entry->converted_from_method !== null
             && $entry->debit > 0)->sum('debit');
 
         return round(max(0.0, (float) $credits - (float) $debits), 2);
     }
 
-    /** Spare Parts opening-balance deduction used to convert non-cash Main shares into Main opening balance (outside cashier cash). */
+    /** Spare Parts opening-balance deduction used to convert non-cash Main shares (when funded from opening balance). */
     public function sparePartsBankConversionDeduction(Collection $entries): float
     {
         $rows = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->transaction_type !== 'reversal'
+            && $entry->funding_source === 'spare_parts'
             && ($entry->category === 'bank_to_main_cash'
-                || ($entry->category === 'invoice_revision' && $entry->converted_from_method !== null && $entry->funding_source === 'spare_parts')));
+                || ($entry->category === 'invoice_revision' && $entry->converted_from_method !== null)));
 
         return round((float) $rows->sum('debit') - (float) $rows->sum('credit'), 2);
     }
