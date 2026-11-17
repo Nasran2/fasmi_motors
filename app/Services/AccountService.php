@@ -102,7 +102,7 @@ class AccountService
                 - (float) $account->transactions()->posted()->sum('debit');
             $newBalance = round($previousBalance + $credit - $debit, 2);
 
-            if ($fundingSource === 'main_cashier') {
+            if ($fundingSource === 'main_cashier' && $convertedFromMethod === null) {
                 $fundingSource = 'main';
             }
             if ($accountType === 'main' && $debit > 0 && ! $fundingSource && $category !== 'invoice_revision') {
@@ -299,10 +299,11 @@ class AccountService
                     "Receipt for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    "Main share for {$payment->method} · Taken from Spare Parts opening balance",
+                    "Main share for {$payment->method} · Cash moved from Spare Parts opening to the cashier drawer",
                     null,
                     $effectiveDate,
                     $category,
+                    fundingSource: 'main_cashier',
                     convertedFromMethod: $payment->method,
                 );
                 $this->recordTransaction(
@@ -312,7 +313,7 @@ class AccountService
                     "Bank transfer Main share for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    'Transferred Rs. '.number_format($mainAmount, 2)." to Main Account for {$payment->method} share",
+                    'Transferred Rs. '.number_format($mainAmount, 2)." to the cashier drawer for the Main share of {$payment->method}",
                     null,
                     $effectiveDate,
                     'bank_to_main_cash',
@@ -372,7 +373,9 @@ class AccountService
                 if ($difference != 0) {
                     $adjType = $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease';
                     if ($convertedBank && $type === 'main') {
-                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
+                        $fundingSource = (clone $entries)->where('funding_source', 'main_cashier')->exists() || ! (clone $entries)->exists()
+                            ? 'main_cashier' : null;
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', $fundingSource, convertedFromMethod: $payment->method);
                     } elseif ($convertedBank && $type === 'spare_parts') {
                         $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts opening deduction for {$payment->method} Main share", null, $correctionDate ?? $effectiveDate, 'invoice_revision', 'spare_parts', convertedFromMethod: $payment->method);
                     } else {

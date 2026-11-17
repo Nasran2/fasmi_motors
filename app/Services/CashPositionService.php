@@ -23,9 +23,9 @@ class CashPositionService
 
         if ($type === 'main') {
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
-            // Cashier drawer movements for Main account only include incoming cash collections.
-            $query->whereNull('funding_source')
-                ->whereNull('converted_from_method')
+            $query->where(fn ($query) => $query
+                ->where(fn ($cash) => $cash->whereNull('funding_source')->whereNull('converted_from_method'))
+                ->orWhere(fn ($conversion) => $conversion->where('funding_source', 'main_cashier')->whereNotNull('converted_from_method')))
                 ->where(function ($query) {
                     $query->where('credit', '>', 0)
                         ->orWhere('debit', '<=', 0)
@@ -42,7 +42,8 @@ class CashPositionService
 
         $query->where(function ($query) use ($bankId) {
             $query->where(function ($q) use ($bankId) {
-                $q->where(fn ($sub) => $sub->where('payment_method', 'Cash')->orWhere('account_type', 'cash'))
+                $q->where(fn ($sub) => $sub->where('payment_method', 'Cash')->orWhere('account_type', 'cash')
+                        ->orWhere('funding_source', 'main_cashier'))
                     ->where(function ($sub) use ($bankId) {
                         // If it's an account transfer, it must involve bank or cashier
                         $sub->where('reference_type', '!=', (new AccountTransfer)->getMorphClass())
@@ -74,8 +75,10 @@ class CashPositionService
             ->map(fn ($entries) => [
                 'entries' => $entries,
                 'net' => round($entries->sum('credit') - $entries->sum('debit'), 2),
-                'receipt' => $entries->contains(fn ($row) => $row->reference_type === (new Payment)->getMorphClass()
-                    ? in_array($row->reference_id, $collectedPaymentIds) : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true)),
+                'receipt' => $entries->contains(fn ($row) => $row->converted_from_method === null
+                    && ($row->reference_type === (new Payment)->getMorphClass()
+                        ? in_array($row->reference_id, $collectedPaymentIds)
+                        : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true))),
                 'internal' => $entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep'),
             ]);
     }
