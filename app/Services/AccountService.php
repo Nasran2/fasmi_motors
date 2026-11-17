@@ -102,7 +102,7 @@ class AccountService
                 - (float) $account->transactions()->posted()->sum('debit');
             $newBalance = round($previousBalance + $credit - $debit, 2);
 
-            if ($fundingSource === 'main_cashier' && $convertedFromMethod === null) {
+            if ($fundingSource === 'main_cashier') {
                 $fundingSource = 'main';
             }
             if ($accountType === 'main' && $debit > 0 && ! $fundingSource && $category !== 'invoice_revision') {
@@ -299,11 +299,11 @@ class AccountService
                     "Receipt for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    "Main share for {$payment->method} · Cash moved from Spare Parts opening to the cashier drawer",
+                    "Main share for {$payment->method} · Taken from Spare Parts opening balance",
                     null,
                     $effectiveDate,
                     $category,
-                    fundingSource: 'main_cashier',
+                    fundingSource: null,
                     convertedFromMethod: $payment->method,
                 );
                 $this->recordTransaction(
@@ -313,7 +313,7 @@ class AccountService
                     "Bank transfer Main share for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    'Transferred Rs. '.number_format($mainAmount, 2)." to the cashier drawer for the Main share of {$payment->method}",
+                    'Transferred Rs. '.number_format($mainAmount, 2)." to Main Account for {$payment->method} share",
                     null,
                     $effectiveDate,
                     'bank_to_main_cash',
@@ -345,14 +345,17 @@ class AccountService
         $payments = $this->orderedReceipts($invoice);
         $advanceReceiptIds = JobAdvance::whereIn('id', $payments->pluck('job_advance_id')->filter()->unique())
             ->whereNotNull('payment_id')->pluck('payment_id', 'id');
+        $groupReceiptIds = Payment::whereIn('receipt_group_id', $payments->pluck('receipt_group_id')->filter()->unique())
+            ->pluck('id');
         $receiptDates = AccountTransaction::posted()
             ->where('reference_type', (new Payment)->getMorphClass())
-            ->whereIn('reference_id', array_unique([...$payments->modelKeys(), ...$advanceReceiptIds->values()]))
+            ->whereIn('reference_id', array_unique([...$payments->modelKeys(), ...$advanceReceiptIds->values(), ...$groupReceiptIds->values()]))
             ->where('transaction_type', 'income')
             ->selectRaw('reference_id, MIN(transaction_date) as receipt_date')->groupBy('reference_id')->pluck('receipt_date', 'reference_id');
         $allocations = $this->allocateReceipts($invoice, $payments);
         foreach ($payments as $payment) {
-            $effectiveDate = $receiptDates[$payment->id] ?? $receiptDates[$advanceReceiptIds[$payment->job_advance_id] ?? 0] ?? null;
+            $groupIdDate = $payment->receipt_group_id ? Payment::where('receipt_group_id', $payment->receipt_group_id)->pluck('id')->map(fn ($id) => $receiptDates[$id] ?? null)->filter()->first() : null;
+            $effectiveDate = $receiptDates[$payment->id] ?? $receiptDates[$advanceReceiptIds[$payment->job_advance_id] ?? 0] ?? $groupIdDate ?? null;
             if ($effectiveDate === null || ($payment->receiving_account && ! $payment->cheque?->forwarded_supplier_id)) {
                 continue;
             }
@@ -373,9 +376,7 @@ class AccountService
                 if ($difference != 0) {
                     $adjType = $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease';
                     if ($convertedBank && $type === 'main') {
-                        $fundingSource = (clone $entries)->where('funding_source', 'main_cashier')->exists() || ! (clone $entries)->exists()
-                            ? 'main_cashier' : null;
-                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', $fundingSource, convertedFromMethod: $payment->method);
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
                     } elseif ($convertedBank && $type === 'spare_parts') {
                         $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts opening deduction for {$payment->method} Main share", null, $correctionDate ?? $effectiveDate, 'invoice_revision', 'spare_parts', convertedFromMethod: $payment->method);
                     } else {

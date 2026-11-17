@@ -113,19 +113,21 @@ class OutgoingFundingService
     {
         if ($type === 'main') {
             // Main account expenses and cashouts always go from the opening balance, never from the cashier.
-            // Main drawer cash includes cash receipts and bank shares funded by Spare Parts opening.
-            $isDrawerCash = fn ($entry) => $entry->converted_from_method !== null
-                ? $entry->funding_source === 'main_cashier'
-                : $entry->funding_source === null && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash');
+            // Cashier receipts for Main track active cash collected today from customers
+            // minus any same-channel invoice revision decreases.
             $credits = $entries->filter(fn ($entry) => $entry->status === 'active'
                 && $entry->transaction_type !== 'reversal'
-                && $isDrawerCash($entry)
+                && $entry->funding_source === null
+                && $entry->converted_from_method === null
+                && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
                 && $entry->credit > 0
                 && ! in_array($entry->category, ['opening_balance', 'cashier_opening', 'cashier_cash_reconciliation', 'cashier_opening_rebase', 'cashier_account_opening', 'cashier_account_reconciliation', 'transfer'], true));
             $revisionDebits = $entries->filter(fn ($entry) => $entry->status === 'active'
                 && $entry->category === 'invoice_revision'
                 && $entry->transaction_type === 'adjustment_decrease'
-                && $isDrawerCash($entry)
+                && $entry->funding_source === null
+                && $entry->converted_from_method === null
+                && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
                 && $entry->debit > 0);
 
             return round((float) $credits->sum('credit') - (float) $revisionDebits->sum('debit'), 2);
@@ -170,25 +172,25 @@ class OutgoingFundingService
         return round(max(0.0, (float) $credits - (float) $revisionDebits), 2);
     }
 
-    /** Legacy Main shares transferred directly from Spare Parts opening balance. */
+    /** Bank-transfer / non-cash Main share transferred from Spare Parts opening balance (outside cashier cash). */
     public function bankConvertedMainCash(Collection $entries): float
     {
         $credits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->transaction_type !== 'reversal'
-            && $entry->funding_source === null
+            && in_array($entry->funding_source, [null, 'spare_parts'], true)
             && $entry->converted_from_method !== null
             && $entry->credit > 0)->sum('credit');
         $debits = $entries->filter(fn ($entry) => $entry->status === 'active'
             && $entry->category === 'invoice_revision'
             && $entry->transaction_type === 'adjustment_decrease'
-            && $entry->funding_source === null
+            && in_array($entry->funding_source, [null, 'spare_parts'], true)
             && $entry->converted_from_method !== null
             && $entry->debit > 0)->sum('debit');
 
         return round(max(0.0, (float) $credits - (float) $debits), 2);
     }
 
-    /** Spare Parts opening-balance deduction used to convert non-cash Main shares into cashier cash. */
+    /** Spare Parts opening-balance deduction used to convert non-cash Main shares into Main opening balance (outside cashier cash). */
     public function sparePartsBankConversionDeduction(Collection $entries): float
     {
         $rows = $entries->filter(fn ($entry) => $entry->status === 'active'

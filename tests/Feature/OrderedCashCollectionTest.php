@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\User;
 use App\Services\AccountService;
 use App\Services\CashierService;
+use App\Services\CashPositionService;
 use App\Services\CollectionReportService;
 use Illuminate\Support\Str;
 
@@ -44,24 +45,22 @@ test('sequential receipts exhaust service then labor then washing then other and
         $payment = ($this->receive)($amount);
         expect(array_values(app(AccountService::class)->paymentComponentAllocation($this->invoice, $payment)))->toBe(array_map(fn ($v) => $v * 100, $pieces));
     }
-    expect(Account::systemAccount('main')->balance)->toBe(1100.0)->and(Account::systemAccount('washing')->balance)->toBe(200.0)
-        ->and(Account::systemAccount('spare_parts')->balance)->toBe(100.0);
+    expect(Account::systemAccount('main')->balance)->toBe(1200.0)->and(Account::systemAccount('washing')->balance)->toBe(0.0)
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(200.0);
     $count = AccountTransaction::count();
     app(AccountService::class)->reallocateInvoiceReceipts($this->invoice);
     expect(AccountTransaction::count())->toBe($count);
 });
 
-test('a bank receipt stays in Bank and its Spare Parts funded Main share enters the drawer', function () {
+test('bank payments occupy their priority share but never enter cash in hand', function () {
     ($this->receive)(600, 'Bank Transfer');
     ($this->receive)(600, 'Cash');
     expect(Account::systemAccount('bank')->balance)->toBe(600.0);
     $summary = app(CashierService::class)->summary(today()->toDateString());
     expect($summary['cash_received'])->toBe(600.0)
         ->and($summary['bank_received'])->toBe(600.0)
-        ->and($summary['cash_other_in'])->toBe(600.0)
-        ->and($summary['cash_in_hand'])->toBe(1200.0)
-        ->and($summary['cash_accounts']['main']['closing'])->toBe(1200.0)
-        ->and($summary['cash_accounts']['washing']['closing'])->toBe(0.0);
+        ->and($summary['cash_in_hand'])->toBe(600.0)
+        ->and($summary['cash_accounts']['main']['closing'])->toBe(600.0);
     $this->get(route('cashier.collections', ['method' => 'cash']))->assertOk()->assertViewHas('rows', fn ($rows) => $rows->count() === 1 && $rows->first()['amount'] === 600.0);
     $this->get(route('cashier.collections', ['method' => 'bank_transfer']))->assertOk()->assertViewHas('rows', fn ($rows) => $rows->count() === 1 && $rows->first()['channel'] === 'bank');
     $this->get(route('cashier.collections'))->assertOk()->assertViewHas('totals', fn ($s) => $s['all'] === 1200.0);
@@ -76,25 +75,18 @@ test('held and cancelled receipts cannot appear as collected money', function ()
         ->and(app(CashierService::class)->summary(today()->toDateString())['cash_in_hand'])->toBe(0.0);
 });
 
-test('closing can leave converted Main cash in the drawer without changing bank funds', function () {
-    app(CashierService::class)->open(0, null, separateCash: true);
+test('cash closing accepts only cash balances and does not change bank funds', function () {
+    app(CashierService::class)->open(0, null);
     ($this->receive)(600, 'Bank Transfer');
     ($this->receive)(600, 'Cash');
     $session = CashierSession::active();
     $service = app(CashierService::class);
     $summary = $service->summary(today()->toDateString());
-    $payload = ['owner_withdrawal' => 0, 'closing_balance' => 1190, 'separate_cash_balance' => 1,
-        'account_additions' => ['main' => 10, 'spare_parts' => 0],
-        'balances' => [
-            'main' => $summary['allocation_accounts']['main']['base'] + 10,
-            'spare_parts' => $summary['allocation_accounts']['spare_parts']['base'],
-            'bank' => 600,
-        ],
-        'balance_version' => $service->fingerprint($summary)];
+    $payload = ['owner_withdrawal' => 0, 'closing_balance' => 600, 'difference_reason' => 'Verified physical cash count', 'balance_version' => $service->fingerprint($summary)];
     $this->post(route('cashier.close', $session), $payload)->assertSessionHasNoErrors();
-    expect(Account::systemAccount('bank')->balance)->toBe(600.0)->and((float) $session->fresh()->drawer_closing_balance)->toBe(1190.0);
+    expect(Account::systemAccount('bank')->balance)->toBe(600.0)->and(array_sum($session->fresh()->cash_balances))->toEqual(600);
     $this->travel(1)->days();
-    expect($service->suggestedOpening())->toBe(1190.0);
+    expect(app(CashPositionService::class)->suggestedOpening(today()->toDateString()))->toBe(600.0);
 });
 
 test('owner cannot withdraw bank collections as spare parts cash', function () {
@@ -156,7 +148,7 @@ test('a held cheque only takes the next priority share when it actually clears',
     $cheque->update(['paid_at' => today()->subDay(), 'status' => 'Completed']);
     app(AccountService::class)->receiveInvoicePayment($this->invoice, $cheque, settledAt: now()->addMinute());
     expect(app(AccountService::class)->paymentComponentAllocation($this->invoice, $cheque))->toBe(['service' => 0, 'labor' => 50000, 'washing' => 10000, 'other' => 0, 'spare_parts' => 0]);
-    expect(app(CashierService::class)->summary(today()->toDateString())['cash_in_hand'])->toBe(1100.0);
+    expect(app(CashierService::class)->summary(today()->toDateString())['cash_in_hand'])->toBe(500.0);
 });
 
 test('cent receipts follow priority and full settlement retains existing discount allocation', function () {
@@ -167,5 +159,5 @@ test('cent receipts follow priority and full settlement retains existing discoun
         expect($parts[$type])->toBe(1)->and(array_sum($parts))->toBe(1);
     }
     $this->invoice->update(['subtotal' => 250, 'total' => 225, 'parts_amount' => 150, 'service_amount' => 100, 'labor_amount' => 0, 'washing_amount' => 0, 'discount' => 25]);
-    expect(app(AccountService::class)->receiptAllocation($this->invoice, 22500))->toBe(['spare_parts' => 15000, 'washing' => 0, 'main' => 7500]);
+    expect(app(AccountService::class)->receiptAllocation($this->invoice, 22500))->toBe(['spare_parts' => 12500, 'washing' => 0, 'main' => 10000]);
 });
