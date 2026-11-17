@@ -193,7 +193,7 @@ class JobCardController extends Controller
     {
         return DB::transaction(function () use ($r, $job) {
             $job = JobCard::lockForUpdate()->findOrFail($job->id);
-            $isCurrentLocked = in_array($job->status, ['Billed', 'Completed', 'Delivered']);
+            $isCurrentLocked = in_array($job->status, ['Billed', 'Completed', 'Delivered', 'Cancelled']);
 
             if ($isCurrentLocked) {
                 $v = $r->validate([
@@ -220,7 +220,22 @@ class JobCardController extends Controller
                     'show_labor_on_bill' => 'nullable|boolean',
                     'service_name' => 'nullable|string|max:50',
                     'other_income_name' => 'nullable|string|max:50',
+                    'main_account_charges_present' => 'sometimes|accepted',
+                    'main_account_charges' => 'sometimes|array|max:25',
+                    'main_account_charges.*' => 'required|array:name,amount,show_on_bill',
+                    'main_account_charges.*.name' => 'required|string|max:80',
+                    'main_account_charges.*.amount' => 'required|numeric|decimal:0,2|min:0.01|max:999999999.99',
+                    'main_account_charges.*.show_on_bill' => 'sometimes|required|boolean',
                 ] + WashingCommissionService::rules());
+
+                if (isset($v['main_account_charges_present']) || array_key_exists('main_account_charges', $v)) {
+                    $v['main_account_charges'] = array_values(array_map(fn (array $charge) => [
+                        'name' => trim($charge['name']),
+                        'amount' => round((float) $charge['amount'], 2),
+                        'show_on_bill' => (bool) ($charge['show_on_bill'] ?? true),
+                    ], $v['main_account_charges'] ?? []));
+                }
+                unset($v['main_account_charges_present']);
 
                 // Cleared amounts mean zero; omitted amounts keep their saved values.
                 foreach (['parts_total', 'service_total', 'labor_total', 'washing_total', 'other_total', 'tax'] as $field) {
@@ -504,7 +519,6 @@ class JobCardController extends Controller
                 return;
             }
             $total = $job->total;
-            $subtotal = (float) $job->parts_total + (float) $job->service_total + (float) $job->labor_total + (float) $job->washing_total + (float) $job->other_total;
             $paid = (float) $invoice->paid_amount;
             if ($total < $paid + (float) $invoice->hold_amount) {
                 throw ValidationException::withMessages(['total' => 'Cancel or refund payments before reducing the invoice below its settled amount.']);
@@ -512,11 +526,11 @@ class JobCardController extends Controller
             $due = max(0, $total - $paid - (float) $invoice->hold_amount);
 
             $invoice->update([
-                'subtotal' => $subtotal,
+                'subtotal' => $job->subtotal,
                 'discount' => $job->discount,
                 'tax' => $job->tax,
                 'parts_amount' => $job->parts_total,
-                'service_amount' => $job->service_total,
+                'service_amount' => $job->invoice_service_amount,
                 'labor_amount' => $job->labor_total,
                 'washing_amount' => $job->washing_total,
                 'other_amount' => $job->other_total,

@@ -92,7 +92,7 @@ class WorkspacePageController extends Controller
         $performanceRows = JobCard::query()
             ->whereBetween('job_cards.created_at', [$start, $end])
             ->whereNotNull('main_technician_id')
-            ->selectRaw('main_technician_id, count(*) jobs_count, sum(parts_total + service_total + labor_total + washing_total + other_total - discount + tax) billed_total')
+            ->selectRaw('main_technician_id, count(*) jobs_count, sum(parts_total + service_total + main_account_charge_total + labor_total + washing_total + other_total - discount + tax) billed_total')
             ->groupBy('main_technician_id')
             ->orderByDesc('billed_total')
             ->get();

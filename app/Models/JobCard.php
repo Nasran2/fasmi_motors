@@ -27,12 +27,16 @@ class JobCard extends Model
 
     protected function casts(): array
     {
-        return ['bill_date' => 'date', 'show_previous_balance_on_bill' => 'boolean', 'is_quick_job' => 'boolean', 'is_staff_bike' => 'boolean', 'quick_bike_details' => 'array'];
+        return ['bill_date' => 'date', 'show_previous_balance_on_bill' => 'boolean', 'is_quick_job' => 'boolean', 'is_staff_bike' => 'boolean', 'quick_bike_details' => 'array', 'main_account_charges' => 'array'];
     }
 
     protected static function booted(): void
     {
         static::saving(function (JobCard $job) {
+            if ($job->isDirty('main_account_charges')) {
+                $job->main_account_charge_total = round(array_sum(array_column($job->main_account_charges ?? [], 'amount')), 2);
+            }
+
             if (! $job->isDirty('discount_percentage') && ! $job->isDirty('fixed_discount')) {
                 // Preserve existing callers that submit one discount type or a fixed amount.
                 if ($job->isDirty('discount_value') || $job->isDirty('discount_type')) {
@@ -57,7 +61,12 @@ class JobCard extends Model
 
     public function getSubtotalAttribute(): float
     {
-        return (float) $this->parts_total + (float) $this->service_total + (float) $this->labor_total + (float) $this->washing_total + (float) $this->other_total;
+        return (float) $this->parts_total + $this->invoice_service_amount + (float) $this->labor_total + (float) $this->washing_total + (float) $this->other_total;
+    }
+
+    public function getInvoiceServiceAmountAttribute(): float
+    {
+        return round((float) $this->service_total + (float) $this->main_account_charge_total, 2);
     }
 
     public function getServiceLaborCommissionBaseAttribute(): float

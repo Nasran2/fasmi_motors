@@ -40,18 +40,30 @@
                         <a href="{{ route('live-board.index') }}" class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-[#0b2447] shadow-sm hover:border-red-200 hover:text-red-600" title="Live Bike Status Board"><span class="text-base">▦</span> Live Board</a>
                         <a href="{{ route('live-board.customer') }}" target="_blank" class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-[#0b2447] shadow-sm hover:border-red-200 hover:text-red-600" title="Customer TV Display"><span class="text-base">📺</span> TV Board</a>
                         @endif
-                        @if(auth()->user()->canAccess('intake.add'))
-                        <a href="{{ route('intakes.create') }}" class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-red-600 px-3 text-xs font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700 xl:px-4 xl:text-sm"><x-dashboard-icon name="bike" class="size-5"/> New Bike Intake</a>
-                        @endif
-                        @if(auth()->user()->canAccess('job_card.create'))
-                        <a href="{{ route('jobs.create') }}" class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-[#0b2447] px-4 text-sm font-bold text-white shadow-lg shadow-slate-200 hover:bg-[#123665]"><x-dashboard-icon name="clipboard" class="size-5"/> Create Job Card</a>
-                        @endif
                         <form method="POST" action="{{ route('shop.switch', ['mode' => 'helmet']) }}">@csrf<x-submission-token/><button class="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-indigo-600 px-4 text-xs font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 xl:text-sm">
                             🪖 Helmet Shop
                         </button></form>
                     @endif
                 </x-workshop-header-more>
             </div>
+            @if(session('shop_mode', 'workshop') !== 'helmet')
+                @php($canTakeIntake = auth()->user()->canAccess('intake.add'))
+                @php($canCreateJob = auth()->user()->canAccess('job_card.create'))
+                @if($canTakeIntake || $canCreateJob)
+                    <nav class="workshop-quick-actions" aria-label="Workshop quick actions">
+                        @if($canTakeIntake)
+                            <a href="{{ route('intakes.create') }}" class="btn-primary gap-2 !px-3">
+                                <x-dashboard-icon name="bike" class="size-5 shrink-0" /> New Bike Intake
+                            </a>
+                        @endif
+                        @if($canCreateJob)
+                            <a href="{{ route('jobs.create') }}" class="btn-secondary gap-2 !px-3">
+                                <x-dashboard-icon name="clipboard" class="size-5 shrink-0" /> Create Job Card
+                            </a>
+                        @endif
+                    </nav>
+                @endif
+            @endif
         </header>
 
         {{ $slot }}

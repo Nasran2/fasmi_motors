@@ -92,27 +92,7 @@ final class InvoiceDocument
         }
 
         if (! in_array($invoice->invoice_type, ['Parts Sale', 'Quotation'], true)) {
-            $service = (float) $invoice->service_amount;
-            $labor = (float) $invoice->labor_amount;
-            $washing = (float) $invoice->washing_amount;
-            if ($invoice->jobCard && ! $invoice->jobCard->show_labor_on_bill) {
-                $service += $labor;
-                $labor = 0;
-            }
-            if ($invoice->jobCard && ! $invoice->jobCard->show_washing_on_bill) {
-                $service += $washing;
-                $washing = 0;
-            }
-            foreach ([
-                [$invoice->jobCard?->service_name ?: 'Service', $service],
-                ['Labor', $labor],
-                ['Wash', $washing],
-                [$invoice->jobCard?->other_income_name ?: 'Other charges', (float) $invoice->other_amount],
-            ] as [$name, $amount]) {
-                if ($amount > 0) {
-                    $lines[] = ['name' => $name, 'detail' => 'Service', 'qty' => 1, 'rate' => $amount, 'total' => $amount];
-                }
-            }
+            $lines = array_merge($lines, self::jobChargeLines($invoice));
         }
 
         $logo = null;
@@ -159,6 +139,37 @@ final class InvoiceDocument
             'previousBalanceLabel' => ($paymentSummary['previousBalance'] ?? 0) > ($paymentSummary['previousDue'] ?? 0) ? 'Earlier balances included' : 'Earlier unpaid balances',
             'summaryStatus' => $paymentSummary && $invoice->status !== 'Cancelled' ? ($paymentSummary['hold'] > 0 ? ($paymentSummary['due'] > 0 ? 'Partially Paid / Hold' : 'Hold') : ($paymentSummary['due'] <= 0 ? 'Paid' : ($paymentSummary['paid'] > 0 ? 'Partially Paid' : 'Unpaid'))) : $invoice->status,
         ];
+    }
+
+    public static function jobChargeLines(Invoice $invoice): array
+    {
+        $service = (float) $invoice->service_amount;
+        $labor = (float) $invoice->labor_amount;
+        $washing = (float) $invoice->washing_amount;
+        if ($invoice->jobCard && ! $invoice->jobCard->show_labor_on_bill) {
+            $service += $labor;
+            $labor = 0;
+        }
+        if ($invoice->jobCard && ! $invoice->jobCard->show_washing_on_bill) {
+            $service += $washing;
+            $washing = 0;
+        }
+        $namedCharges = collect($invoice->jobCard?->main_account_charges ?? [])->where('show_on_bill', true);
+        $service = round($service - $namedCharges->sum('amount'), 2);
+        $lines = [];
+        foreach ([
+            [$invoice->jobCard?->service_name ?: 'Service', $service],
+            ['Labor', $labor],
+            ['Wash', $washing],
+            [$invoice->jobCard?->other_income_name ?: 'Other charges', (float) $invoice->other_amount],
+            ...$namedCharges->map(fn (array $charge) => [$charge['name'], (float) $charge['amount']])->values()->all(),
+        ] as [$name, $amount]) {
+            if ($amount > 0) {
+                $lines[] = ['name' => $name, 'detail' => 'Service', 'qty' => 1, 'rate' => $amount, 'total' => $amount];
+            }
+        }
+
+        return $lines;
     }
 
     private static function wordingValue(array $settings, string $key, string $default = ''): string

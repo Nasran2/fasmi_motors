@@ -390,6 +390,20 @@ body.workshop-shell > [data-flux-main] {
 }
 .workshop-search-button:hover { background: #eff6ff; }
 
+.workshop-quick-actions {
+    display: flex;
+    flex: none;
+    gap: .375rem;
+}
+
+.workshop-quick-actions a { white-space: nowrap; }
+
+@media (max-width: 47.999rem) {
+    .workshop-topbar:has(.workshop-quick-actions) { flex-wrap: wrap; row-gap: .375rem; }
+    .workshop-quick-actions { width: 100%; }
+    .workshop-quick-actions a { flex: 1; min-width: 0; font-size: .8125rem; }
+}
+
 .workshop-topbar > .workshop-search-button { flex: 1; max-width: 26rem; }
 .workshop-pos-link { bottom: max(1rem, env(safe-area-inset-bottom)); right: max(1rem, env(safe-area-inset-right)); }
 

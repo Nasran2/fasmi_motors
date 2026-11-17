@@ -16,7 +16,11 @@
       'Delivered'         => 'bg-teal-100 text-teal-700 border border-teal-200',
       'Cancelled'         => 'bg-rose-100 text-rose-700 border border-rose-200',
   ];
+  $savedMainAccountCharges = $job->main_account_charges ?? [];
   $isLocked = in_array($job->status, ['Completed', 'Billed', 'Delivered', 'Cancelled']);
+  $mainAccountCharges = !$isLocked && old('main_account_charges_present')
+      ? collect((array) old('main_account_charges', []))->filter(fn ($charge) => is_array($charge))->values()->all()
+      : $savedMainAccountCharges;
 @endphp
 <div class="space-y-5">
 <x-job-card-heading :job="$job" :status-class="$statusColors[$job->status] ?? 'bg-slate-100 text-slate-700'" />
@@ -30,6 +34,13 @@
     discountPercentage: @js(old('discount_percentage', $job->discount_percentage ?? 0)),
     fixedDiscount: @js(old('fixed_discount', $job->fixed_discount ?? 0)),
     partsTotal: @js((float) $job->parts_total),
+    mainAccountCharges: @js($mainAccountCharges).map((charge, index) => ({
+        ...charge, key: index, show_on_bill: Number(charge.show_on_bill ?? 1) === 1,
+    })),
+    nextChargeKey: @js(count($mainAccountCharges)),
+    get mainAccountChargeTotal() {
+        return this.mainAccountCharges.reduce((total, charge) => total + Math.round((Number(charge.amount) || 0) * 100), 0) / 100;
+    },
     serviceTotal: @js((float) $job->service_total),
     laborTotal: @js((float) $job->labor_total),
     washingTotal: @js((float) $job->washing_total),
@@ -38,7 +49,7 @@
     otherIncomeName: @js(old('other_income_name', $job->other_income_name ?: 'Other Income')),
     taxTotal: @js((float) $job->tax),
     get subtotal() {
-        return this.partsTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
+        return this.partsTotal + this.mainAccountChargeTotal + (Number(this.serviceTotal) || 0) + (Number(this.laborTotal) || 0) + (Number(this.washingTotal) || 0) + (Number(this.otherTotal) || 0);
     },
     get percentageDiscountAmount() {
         return Math.round(this.subtotal * (Number(this.discountPercentage) || 0)) / 100;
@@ -51,7 +62,13 @@
     },
     get hasUnsavedBillChanges() {
         const saved = @js([(float) $job->service_total, (float) $job->labor_total, (float) $job->washing_total, (float) $job->other_total, (float) $job->discount_percentage, (float) $job->fixed_discount, (float) $job->tax]);
-        return [this.serviceTotal, this.laborTotal, this.washingTotal, this.otherTotal, this.discountPercentage, this.fixedDiscount, this.taxTotal].some((value, index) => (Number(value) || 0) !== saved[index]);
+        const savedCharges = @js($savedMainAccountCharges);
+        const chargesChanged = this.mainAccountCharges.length !== savedCharges.length || this.mainAccountCharges.some((charge, index) => {
+            const savedCharge = savedCharges[index];
+            return String(charge.name ?? '').trim() !== savedCharge.name || Number(charge.amount) !== Number(savedCharge.amount)
+                || charge.show_on_bill !== savedCharge.show_on_bill;
+        });
+        return chargesChanged || [this.serviceTotal, this.laborTotal, this.washingTotal, this.otherTotal, this.discountPercentage, this.fixedDiscount, this.taxTotal].some((value, index) => (Number(value) || 0) !== saved[index]);
     },
     money(amount) {
         return Number(amount).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -85,6 +102,8 @@
     <p class="mt-2 text-xs text-slate-500">Cash received for Other goes to Spare Parts Cashier.</p>
 </div>
 
+@include('jobs.partials.main-account-charges')
+
 <div class="sm:col-span-2 grid gap-4 sm:grid-cols-3">
     <div>
         <label for="job-discount-percentage" class="label">Percentage discount (%)</label>
@@ -105,6 +124,7 @@
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Service & labor</dt><dd id="job-summary-service-labor" x-text="'Rs. ' + money((Number(serviceTotal) || 0) + (Number(laborTotal) || 0))">Rs. {{ number_format($job->service_total+$job->labor_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Washing</dt><dd id="job-summary-washing" x-text="'Rs. ' + money(washingTotal)">Rs. {{ number_format($job->washing_total,2) }}</dd></div>
+            <div class="flex justify-between gap-2" x-cloak x-show="mainAccountCharges.length"><dt>Main Account charges</dt><dd x-text="'Rs. ' + money(mainAccountChargeTotal)">Rs. {{ number_format($job->main_account_charge_total, 2) }}</dd></div>
             <div class="flex justify-between"><dt>Other charges</dt><dd x-text="'Rs. ' + money(otherTotal)">Rs. {{ number_format($job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
@@ -319,7 +339,7 @@
                                 📌
                             </span>
                         </div>
-                        <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                        <div class="flex min-w-0 flex-1 flex-col gap-1 pt-1.5 sm:flex-row sm:justify-between sm:gap-4">
                             <div>
                                 @if($entry['kind'] === 'payment')
                                 <p class="text-xs font-bold text-slate-700">Payment corrected by {{ $log->changer?->name ?: 'System' }} · {{ $log->before['invoice_number'] }}</p>
@@ -354,7 +374,7 @@
                                 @endif
                                 @endif
                             </div>
-                            <div class="whitespace-nowrap text-right text-[10px] font-bold text-slate-400">
+                            <div class="text-[10px] font-bold text-slate-400 sm:text-right">
                                 <time datetime="{{ $log->created_at }}">{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y, h:i A') }}</time>
                             </div>
                         </div>

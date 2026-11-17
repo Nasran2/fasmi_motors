@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\AccountTransaction;
 use App\Models\BikeIntake;
 use App\Models\JobCard;
 use App\Models\User;
+use App\Support\InvoiceDocument;
 
 beforeEach(function () {
     $this->actingAs(User::factory()->create())->withOpenCashier();
@@ -68,4 +70,76 @@ test('cleared amounts cannot change locked jobs', function () {
     foreach ($this->amounts as $field => $amount) {
         expect((float) $job->$field)->toBe((float) $amount);
     }
+});
+
+test('main account charges keep their full amount on the bill and route receipts to Main', function () {
+    $this->job->update(['parts_total' => 0, 'washing_total' => 0, 'tax' => 0]);
+    $this->put(route('jobs.update', $this->job), [
+        'status' => 'Received',
+        'show_labor_on_bill' => 1,
+        'main_account_charges' => [
+            ['name' => 'Pickup service', 'amount' => '120.00'],
+            ['name' => 'Internal workshop fee', 'amount' => '80.00', 'show_on_bill' => '0'],
+        ],
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $job = $this->job->fresh();
+    expect($job->main_account_charges[0]['show_on_bill'])->toBeTrue()
+        ->and($job->main_account_charges[1]['show_on_bill'])->toBeFalse()
+        ->and($job->total)->toBe(650.0)
+        ->and($job->service_labor_commission_base)->toBe(300.0);
+
+    $this->post(route('jobs.invoice', $job), ['paid_amount' => 650, 'payment_method' => 'Cash'])
+        ->assertRedirect()->assertSessionHasNoErrors();
+
+    $invoice = $job->invoice()->firstOrFail();
+    $payment = $invoice->payments()->firstOrFail();
+    $receipts = AccountTransaction::whereMorphedTo('reference', $payment)
+        ->where('transaction_type', 'income')->pluck('credit', 'account_type');
+
+    expect((float) $invoice->service_amount)->toBe(400.0)
+        ->and((float) $receipts['main'])->toBe(500.0)
+        ->and((float) $receipts['spare_parts'])->toBe(150.0);
+
+    foreach ([false, true] as $pdfMode) {
+        $lines = collect(InvoiceDocument::data($invoice, pdfMode: $pdfMode)['lines'])->pluck('total', 'name');
+        expect($lines->get('Service'))->toBe(280.0)
+            ->and($lines->get('Pickup service'))->toBe(120.0)
+            ->and($lines->has('Internal workshop fee'))->toBeFalse()
+            ->and($lines->sum())->toBe(650.0);
+    }
+
+    $this->put(route('jobs.update', $job), ['status' => 'Billed', 'main_account_charges_present' => 1])
+        ->assertSessionHasNoErrors();
+    expect((float) $job->fresh()->main_account_charge_total)->toBe(200.0);
+
+    $this->post(route('jobs.unlock', $job), ['status' => 'Diagnosis', 'reason' => 'Update the printed charge name'])
+        ->assertSessionHasNoErrors();
+    $this->put(route('jobs.update', $job), [
+        'status' => 'Diagnosis',
+        'main_account_charges' => [['name' => 'Updated pickup service', 'amount' => 200]],
+    ])->assertSessionHasNoErrors();
+    expect(collect(InvoiceDocument::data($invoice->fresh())['lines'])->pluck('name')->all())->toContain('Updated pickup service')
+        ->and((float) $invoice->fresh()->total)->toBe(650.0)
+        ->and(AccountTransaction::whereMorphedTo('reference', $payment)->count())->toBe(2);
+});
+
+test('main account charges remain optional, validate both fields and can be removed', function () {
+    $this->put(route('jobs.update', $this->job), [
+        'status' => 'Received',
+        'main_account_charges' => [['name' => 'Pickup', 'amount' => 100]],
+    ])->assertSessionHasNoErrors();
+
+    $this->put(route('jobs.update', $this->job), [
+        'status' => 'Received',
+        'main_account_charges' => [['name' => '', 'amount' => '-1']],
+    ])->assertSessionHasErrors(['main_account_charges.0.name', 'main_account_charges.0.amount']);
+
+    $this->put(route('jobs.update', $this->job), ['status' => 'Diagnosis'])->assertSessionHasNoErrors();
+    expect((float) $this->job->fresh()->main_account_charge_total)->toBe(100.0);
+
+    $this->put(route('jobs.update', $this->job), ['status' => 'Diagnosis', 'main_account_charges_present' => 1])
+        ->assertSessionHasNoErrors();
+    expect($this->job->fresh()->main_account_charges)->toBe([])
+        ->and((float) $this->job->fresh()->main_account_charge_total)->toBe(0.0);
 });
