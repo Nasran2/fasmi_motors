@@ -1,7 +1,8 @@
 <section class="space-y-3 rounded-xl border border-slate-200 p-3 sm:col-span-2 sm:p-4" aria-labelledby="job-main-account-heading">
     <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-            <h3 id="job-main-account-heading" class="text-sm font-bold text-slate-900">Main Account charges</h3>
+            <h3 id="job-main-account-heading" class="text-sm font-bold text-slate-900">Main Account income</h3>
+            <p class="mt-1 text-xs text-slate-600">With automatic payment allocation, payments for these items are credited to Main Account as income.</p>
             <p class="mt-1 text-xs text-slate-600">
                 @if($isLocked)
                     Use “Request Changes / Edit Job” to add or edit charges.
@@ -11,7 +12,7 @@
             </p>
         </div>
         @unless($isLocked)
-            <button type="button" class="btn-secondary shrink-0" @click="mainAccountCharges.push({ key: nextChargeKey++, name: '', amount: '', show_on_bill: true }); $nextTick(() => $el.closest('section').querySelectorAll('[data-charge-name]')[mainAccountCharges.length - 1]?.focus())" :disabled="mainAccountCharges.length >= 25">+ Add charge</button>
+            <button type="button" class="btn-secondary shrink-0" @click="mainAccountCharges.push({ key: nextChargeKey++, name: '', amount: '', show_on_bill: true }); $nextTick(() => $el.closest('section').querySelectorAll('[data-charge-name]')[mainAccountCharges.length - 1]?.focus())" :disabled="mainAccountCharges.length >= 25">+ Add income</button>
         @endunless
     </div>
 

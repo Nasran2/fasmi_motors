@@ -124,7 +124,7 @@
             <div class="flex justify-between"><dt>Parts</dt><dd>Rs. {{ number_format($job->parts_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Service & labor</dt><dd id="job-summary-service-labor" x-text="'Rs. ' + money((Number(serviceTotal) || 0) + (Number(laborTotal) || 0))">Rs. {{ number_format($job->service_total+$job->labor_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Washing</dt><dd id="job-summary-washing" x-text="'Rs. ' + money(washingTotal)">Rs. {{ number_format($job->washing_total,2) }}</dd></div>
-            <div class="flex justify-between gap-2" x-cloak x-show="mainAccountCharges.length"><dt>Main Account charges</dt><dd x-text="'Rs. ' + money(mainAccountChargeTotal)">Rs. {{ number_format($job->main_account_charge_total, 2) }}</dd></div>
+            <div class="flex justify-between gap-2" x-cloak x-show="mainAccountCharges.length"><dt>Main Account income</dt><dd x-text="'Rs. ' + money(mainAccountChargeTotal)">Rs. {{ number_format($job->main_account_charge_total, 2) }}</dd></div>
             <div class="flex justify-between"><dt>Other charges</dt><dd x-text="'Rs. ' + money(otherTotal)">Rs. {{ number_format($job->other_total,2) }}</dd></div>
             <div class="flex justify-between"><dt>Discount</dt><dd id="job-summary-discount" x-text="'- Rs. ' + money(discountAmount)">- Rs. {{ number_format($job->discount,2) }}</dd></div>
             <div class="flex justify-between border-t pt-3 text-lg font-bold"><dt>Total</dt><dd id="job-summary-total" x-text="'Rs. ' + money(jobTotal)">Rs. {{ number_format($job->total,2) }}</dd></div>
