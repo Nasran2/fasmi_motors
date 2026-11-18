@@ -70,9 +70,13 @@
             <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b p-5">
                     <h2 class="text-lg font-black">Account balances · separate from cashier cash</h2>
-                    <p class="mt-1 text-sm text-slate-500">Opening balance + credits − debits + adjustments = balance. Opening balances are the saved amounts for this date. Select an adjustment to see its entries and opening reconciliation. The Washing row shows the washing portion of receipts for reference.</p>
+                    <p class="mt-1 text-sm text-slate-500">Opening balance + Session Net (credits − debits) + adjustments = balance. Opening balances are the saved amounts for this date. Select an adjustment to see its entries and opening reconciliation. The Washing row shows the washing portion of receipts for reference.</p>
                 </div>
                 <div class="overflow-auto">
+                    @php
+                    $totalSessionNet = round(collect($summary['display_accounts'])->except('washing')->sum(fn ($item) => round($item['income'] - $item['outgoing'], 2)), 2);
+                    $totalNetColor = $totalSessionNet > 0 ? 'text-emerald-700' : ($totalSessionNet < 0 ? 'text-red-600' : 'text-slate-600');
+                    @endphp
                     <table class="w-full text-right text-sm">
                         <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                             <tr>
@@ -80,6 +84,7 @@
                                 <th class="p-4">Opening balance · {{ \Carbon\Carbon::parse($date)->format('d M Y') }}</th>
                                 <th class="p-4">Credits</th>
                                 <th class="p-4">Debits</th>
+                                <th class="p-4">Session Net</th>
                                 <th class="p-4">Adjustments (+ / −)</th>
                                 <th class="p-4">Balance</th>
                             </tr>
@@ -89,6 +94,8 @@
                             @php
                             $account = $summary['display_accounts'][$type];
                             $adjustmentColor = $account['adjustments'] > 0 ? 'text-emerald-700' : ($account['adjustments'] < 0 ? 'text-red-600' : 'text-slate-500' );
+                            $sessionNet = round($account['income'] - $account['outgoing'], 2);
+                            $sessionNetColor = $sessionNet > 0 ? 'text-emerald-700' : ($sessionNet < 0 ? 'text-red-600' : 'text-slate-600');
                                 @endphp
                                 @if($type==='washing' )
                                 <tr class="bg-blue-50/60">
@@ -113,6 +120,7 @@
                                 </td>
                                 <td class="p-4 text-slate-400">—</td>
                                 <td class="p-4 text-slate-400">—</td>
+                                <td class="p-4 text-slate-400">—</td>
                                 <td class="p-4 text-xs font-bold text-slate-600">Included in receipts</td>
                                 </tr>
                                 @else
@@ -126,6 +134,7 @@
                                         <span class="block text-[11px] font-normal text-slate-500">Net: Rs. {{ number_format($summary['allocation_accounts'][$type]['net_debits'], 2) }}</span>
                                         @endif
                                     </td>
+                                    <td class="p-4 font-bold {{ $sessionNetColor }}">{{ $sessionNet > 0 ? '+' : '' }}{{ number_format($sessionNet, 2) }}</td>
                                     <td class="p-4 {{ $adjustmentColor }}"><button type="button" data-cashier-movements="{{ route('cashier.movements', ['date' => $date, 'account' => $type, 'side' => 'adjustment']) }}" class="rounded px-1 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="View {{ $label }} adjustments">{{ $account['adjustments'] > 0 ? '+' : '' }}{{ number_format($account['adjustments'], 2) }}</button></td>
                                     <td class="p-4 font-black">{{ number_format($account['closing'], 2) }}</td>
                                 </tr>
@@ -134,7 +143,9 @@
                         </tbody>
                         <tfoot class="border-t bg-slate-50 font-black">
                             <tr>
-                                <th scope="row" colspan="5" class="p-4 text-left">Total account balance</th>
+                                <th scope="row" colspan="4" class="p-4 text-left">Total account balance</th>
+                                <td class="p-4 {{ $totalNetColor }}">{{ $totalSessionNet > 0 ? '+' : '' }}{{ number_format($totalSessionNet, 2) }}</td>
+                                <td class="p-4"></td>
                                 <td class="p-4">Rs. {{ number_format(collect($summary['accounts'])->sum('closing'), 2) }}</td>
                             </tr>
                         </tfoot>

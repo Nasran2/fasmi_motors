@@ -444,3 +444,18 @@ it('migrates already-posted open session converted bank rows to spare parts cash
     $summary = $this->service->summary(today()->toDateString());
     expect($openTx->fresh()->funding_source)->toBe('spare_parts_cashier');
 });
+
+it('shows Session Net before Adjustments as credits minus debits in the account balances table', function () {
+    $this->service->open(5000, 'Start day', separateCash: true, allocations: [
+        'main' => 11500, 'spare_parts' => 18650, 'bank' => 16800, 'washing' => 0,
+    ]);
+
+    $this->accounts->recordTransaction('main', 'income', 1200, 'Service cash', paymentMethod: 'Cash');
+    $this->accounts->recordTransaction('main', 'expense', 300, 'Shop expense', paymentMethod: 'Cash', fundingSource: 'main');
+    $this->accounts->recordTransaction('main', 'adjustment_increase', 100, 'Manual adjustment', paymentMethod: 'Adjustment');
+
+    $this->get(route('cashier.index'))
+        ->assertOk()
+        ->assertSeeTextInOrder(['Credits', 'Debits', 'Session Net', 'Adjustments (+ / −)', 'Balance'])
+        ->assertSeeText('+900.00');
+});
