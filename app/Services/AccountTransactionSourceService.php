@@ -8,6 +8,7 @@ use App\Models\CommissionPayment;
 use App\Models\DailyClosing;
 use App\Models\Drawing;
 use App\Models\Expense;
+use App\Models\ExtraIncome;
 use App\Models\Invoice;
 use App\Models\JobAdvance;
 use App\Models\JobCard;
@@ -71,13 +72,13 @@ class AccountTransactionSourceService
         }
         $type = Relation::getMorphedModel($transaction->reference_type ?? '') ?? $transaction->reference_type;
         // Legacy/free-text references must never be instantiated as PHP classes.
-        if (! in_array($type, [Payment::class, Invoice::class, JobCard::class, JobAdvance::class, Expense::class, Drawing::class, OwnerCapital::class,
+        if (! in_array($type, [Payment::class, Invoice::class, JobCard::class, JobAdvance::class, Expense::class, Drawing::class, OwnerCapital::class, ExtraIncome::class,
             Purchase::class, SupplierPayment::class, PurchaseReturn::class, SaleReturn::class, TechnicianSalarySheet::class,
             CashierSession::class, DailyClosing::class, CommissionPayment::class], true)) {
             return null;
         }
         $query = $type::query();
-        if (in_array($type, [Expense::class, Drawing::class, OwnerCapital::class], true)) {
+        if (in_array($type, [Expense::class, Drawing::class, OwnerCapital::class, ExtraIncome::class], true)) {
             $query->withTrashed();
         }
 
@@ -88,6 +89,9 @@ class AccountTransactionSourceService
     {
         if ($source instanceof OwnerCapital) {
             return ['owner-capital.show', ['capital' => $source->id]];
+        }
+        if ($source instanceof ExtraIncome) {
+            return ['extra-money.show', ['extraIncome' => $source->id]];
         }
         if ($source instanceof Payment) {
             return $source->invoice ? ['sales.invoices.show', ['invoice' => $source->invoice_id]] : null;

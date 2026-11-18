@@ -85,7 +85,7 @@ class CollectionReportService
                 'description' => $income->description, 'method' => $income->payment_method ?: 'Cash',
                 'source_transaction_ids' => $group->pluck('id')->all(),
                 'channel' => $income->account_id === $bankId ? 'bank' : 'cash', 'amount' => $amount,
-                'in_drawer' => $income->account_id !== $bankId && ! ($income->category === 'customer_receipt'
+                'in_drawer' => $income->account_id !== $bankId && ! (in_array($income->category, ['customer_receipt', 'extra_income'], true)
                     && in_array($income->funding_source, ['main', 'spare_parts'], true)),
                 'components' => array_map(fn ($cents) => $cents / 100, $components),
             ]);

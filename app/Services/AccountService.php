@@ -138,7 +138,7 @@ class AccountService
                 'reference_type' => $reference?->getMorphClass(),
                 'reference_id' => $reference?->getKey(),
                 'description' => $description,
-                'note' => $fundingSource && $category !== 'customer_receipt'
+                'note' => $fundingSource && ! in_array($category, ['customer_receipt', 'extra_income'], true)
                     ? trim(($note ? $note.' · ' : '').'Source: '.OutgoingFundingService::SOURCES[$fundingSource])
                     : $note,
                 'status' => 'active',

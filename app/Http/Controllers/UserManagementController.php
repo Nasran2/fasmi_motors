@@ -423,6 +423,10 @@ class UserManagementController extends Controller
                 'capital.add' => 'Add Owner Capital',
                 'capital.edit' => 'Edit Owner Capital',
                 'capital.delete' => 'Delete Owner Capital',
+                'extra_income.view' => 'View Extra Money',
+                'extra_income.add' => 'Add Extra Money',
+                'extra_income.edit' => 'Edit Extra Money',
+                'extra_income.delete' => 'Delete Extra Money',
             ],
             'Service Reminders' => [
                 'reminder.view' => 'View Reminders',

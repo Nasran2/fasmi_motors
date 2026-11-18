@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\DailyClosing;
 use App\Models\Drawing;
 use App\Models\Expense;
+use App\Models\ExtraIncome;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\JobCard;
@@ -247,6 +248,8 @@ class ReportController extends Controller
                 $otherIncome += $revenue;
             }
         }
+        $extraIncome = (float) ExtraIncome::where('status', 'Completed')->whereBetween('income_date', [$from->toDateString(), $to->toDateString()])->sum('amount');
+        $otherIncome += $extraIncome;
         $partsCost = InvoiceItem::whereHas('invoice', fn ($q) => $q->whereIn('id', $invoices->where('invoice_type', 'Parts Sale')->modelKeys()))->sum(DB::raw('(quantity - returned_quantity) * cost_price'));
         // External parts are recorded as expenses when purchased; do not count them twice.
         $partsCost += JobCardPart::where('is_external', false)->whereIn('job_card_id', $invoices->where('invoice_type', 'Job Card Bill')->pluck('job_card_id')->filter())->sum(DB::raw('quantity * cost_price'));

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\Cheque;
+use App\Models\ExtraIncome;
 use App\Models\Invoice;
 use App\Models\JobAdvance;
 use App\Models\Payment;
@@ -254,6 +255,24 @@ class SettlementService
             $payments = $cheque->payments()->lockForUpdate()->get();
             $supplierPayments = $cheque->supplierPayments()->lockForUpdate()->get();
             $advances = JobAdvance::where('cheque_id', $cheque->id)->whereNull('payment_id')->lockForUpdate()->get();
+            $extraIncomes = ExtraIncome::where('cheque_id', $cheque->id)->lockForUpdate()->get();
+            foreach ($extraIncomes as $extraIncome) {
+                if (! in_array($extraIncome->status, ['Hold', 'Completed'], true)) {
+                    continue;
+                }
+                if ($status === 'Cleared') {
+                    $extraIncome->update(['status' => 'Completed']);
+                    app(ExtraIncomeService::class)->postLedgerIncome($extraIncome, $date ?? today()->toDateString());
+                } elseif (in_array($status, ['Returned', 'Cancelled'], true)) {
+                    AccountTransaction::where('reference_type', $extraIncome->getMorphClass())
+                        ->where('reference_id', $extraIncome->id)
+                        ->where('status', 'active')
+                        ->where('transaction_type', '!=', 'reversal')
+                        ->get()
+                        ->each(fn ($entry) => $service->reverseTransaction($entry, $reason ?? 'Extra money cheque '.strtolower($status)));
+                    $extraIncome->update(['status' => $status]);
+                }
+            }
             foreach ($advances as $advance) {
                 if (! in_array($advance->status, ['Hold', 'Completed'], true)) {
                     continue;
@@ -302,7 +321,7 @@ class SettlementService
                     }
                 }
             }
-            if ($payments->isEmpty() && $supplierPayments->isEmpty() && $advances->isEmpty()) {
+            if ($payments->isEmpty() && $supplierPayments->isEmpty() && $advances->isEmpty() && $extraIncomes->isEmpty()) {
                 if ($status === 'Cleared') {
                     $service->recordTransaction('bank', $cheque->cheque_type === 'Received' ? 'income' : 'expense', (float) $cheque->amount, "Cheque {$cheque->cheque_number} passed", $cheque, 'Cheque', $cheque->note, $cheque->bank_account_id, $date ?? today(), 'cheque');
                 } elseif ($old === 'Cleared') {
