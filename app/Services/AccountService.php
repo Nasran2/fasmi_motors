@@ -273,7 +273,7 @@ class AccountService
         }
         // Preserve the routing of receipts already posted under the old policy.
         // New bank receipts credit the full amount to Bank and convert Main's share
-        // into cashier cash via Spare Parts opening balance.
+        // into Main cashier cash from the Spare Parts cashier allocation.
         $alreadyPosted = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
             ->where('reference_id', $payment->id)->where('transaction_type', 'income')->exists();
         if (! $alreadyPosted) {
@@ -299,7 +299,7 @@ class AccountService
                     "Receipt for {$invoice->number}",
                     $payment,
                     $payment->method,
-                    "Main share for {$payment->method} · Taken from Spare Parts opening balance",
+                    "Main share for {$payment->method} · Transferred from Spare Parts cashier",
                     null,
                     $effectiveDate,
                     $category,
@@ -376,7 +376,7 @@ class AccountService
                 if ($difference != 0) {
                     $adjType = $difference > 0 ? 'adjustment_increase' : 'adjustment_decrease';
                     if ($convertedBank && $type === 'main') {
-                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts opening balance", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
+                        $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted {$payment->method} Main share from Spare Parts cashier", null, $correctionDate ?? $effectiveDate, 'invoice_revision', convertedFromMethod: $payment->method);
                     } elseif ($convertedBank && $type === 'spare_parts') {
                         $this->recordTransaction($type, $adjType, abs($difference), "Invoice allocation correction {$invoice->number}", $payment, $payment->method, "Adjusted Spare Parts cashier deduction for {$payment->method} Main share", null, $correctionDate ?? $effectiveDate, 'invoice_revision', fundingSource: 'spare_parts_cashier', convertedFromMethod: $payment->method);
                     } else {

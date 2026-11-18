@@ -65,6 +65,13 @@ class CashPositionService
             ]));
         }
 
+        if ($type === 'main') {
+            // Include the receiving side of Spare Parts cashier conversions.
+            // Both allocations stay in the same physical drawer.
+            return AccountTransaction::where(fn ($cash) => $cash->whereIn('id', $query->select('id'))
+                ->orWhereIn('id', AccountTransaction::cashierBankConversion()->select('id')));
+        }
+
         return $query;
     }
 
@@ -78,7 +85,9 @@ class CashPositionService
                     && ($row->reference_type === (new Payment)->getMorphClass()
                         ? in_array($row->reference_id, $collectedPaymentIds)
                         : in_array($row->transaction_type, ['income', 'payment_received', 'payment'], true))),
-                'internal' => $entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep'),
+                'internal' => $entries->contains(fn ($row) => $row->category === 'cashier_washing_sweep'
+                    || $row->category === 'bank_to_main_cash'
+                    || $row->converted_from_method !== null),
             ]);
     }
 

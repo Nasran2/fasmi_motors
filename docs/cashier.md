@@ -8,6 +8,8 @@ The highlighted header control opens the popup when closed and the review/closin
 
 ## Received money and the physical drawer
 
+Bank-payment Main shares funded from Spare Parts cashier are internal allocations of existing drawer cash. The Spare Parts cashier debit and Main cashier credit cancel in the physical drawer total and are excluded from Cash paid out and its popup. Main's drawer addition includes the transferred share exactly once. For example, Rs. 9,950 cash plus a Rs. 3,000 internal transfer gives a Rs. 12,950 Main drawer addition; Rs. 122,578 opening less Rs. 11,480 expenses plus Rs. 12,950 remains Rs. 124,048. Bank receipts stay in Bank and are not counted again as cash collected. Legacy conversions funded from the Spare Parts opening balance remain outside cashier additions.
+
 Expected cashier cash is physical opening cash + actual cash receipts + other physical cash in − cash paid out + recorded cash count adjustments. Bank receipts, unpaid/held invoices, account balance adjustments and internal washing-to-Main transfers are excluded from the drawer total. Cash count adjustments are shown separately from collections. Partial receipts settle Service → Labour → Washing → Other → Spare Parts. Bank and cash payments both consume their appropriate allocation share, but only actual cash receipts enter the drawer.
 
 Cash collection rows contain received money only. All Collections opens separately and offers cash, bank-transfer and all-payment filters. Bank is a physical payment channel, while Main/Washing/Spare Parts identify the income allocation; the receipt total is counted once.

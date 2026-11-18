@@ -10,6 +10,23 @@ class AccountTransaction extends Model
 {
     public const BALANCE_ADJUSTMENT_TYPES = ['adjustment_increase', 'adjustment_decrease'];
 
+    /** Main shares moved between cashier allocations, rather than paid out. */
+    public function scopeCashierBankConversion($query)
+    {
+        return $query->where('account_id', Account::systemAccount('main')->id)
+            ->where('status', 'active')->where('transaction_type', '!=', 'reversal')
+            ->whereNotNull('converted_from_method')
+            ->whereExists(function ($source) {
+                $source->selectRaw('1')->from('account_transactions as conversion_source')
+                    ->where('conversion_source.account_id', Account::systemAccount('spare_parts')->id)
+                    ->where('conversion_source.status', 'active')
+                    ->where('conversion_source.category', 'bank_to_main_cash')
+                    ->where('conversion_source.funding_source', 'spare_parts_cashier')
+                    ->whereColumn('conversion_source.reference_type', 'account_transactions.reference_type')
+                    ->whereColumn('conversion_source.reference_id', 'account_transactions.reference_id');
+            });
+    }
+
     public function scopeBalanceAdjustments($query, bool $include = true)
     {
         $condition = function ($adjustments) {

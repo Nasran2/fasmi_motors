@@ -1,7 +1,7 @@
         <form method="POST" action="{{ route('cashier.close', $session) }}" data-cashier-closing-form class="panel space-y-5 border-2 border-emerald-300" x-data="cashierClosing(@js($expectedBalances), @js(old('closing_balance', '')), @js(old('owner_withdrawal', 0)), @js($errors->has('balance_version') ? [] : old('balances', [])), @js($summary['cash_in_hand']), @js(!$errors->has('balance_version')), @js(old('funding', [['source' => 'main', 'amount' => old('owner_withdrawal', 0)]])), @js($summary['cashier_funds']), @js(['accounts' => $summary['allocation_accounts'], 'additions' => $errors->has('balance_version') ? [] : old('account_additions', [])]))" @outgoing-funding-change="updateWithdrawalFunding($event.detail)" @cashier-account-total-updated="applyAccountTotal($event.detail)">
             @csrf<x-submission-token /><input type="hidden" name="balance_version" value="{{ $balanceVersion }}"><input type="hidden" name="separate_cash_balance" value="1">
             <h2 class="text-xl font-black">Close Cashier</h2>
-            <p class="text-sm text-slate-500">Enter the cash left in the cashier after owner withdrawal. Any remaining legacy washing funds are transferred to Main when closing. Bank transfers to Main are settled directly between account opening balances and do not affect physical cashier cash.</p>
+            <p class="text-sm text-slate-500">Enter the cash left in the cashier after owner withdrawal. Any remaining legacy washing funds are transferred to Main when closing. Transfers from Spare Parts cashier to Main are included in Main’s drawer addition and keep the total physical cashier cash unchanged.</p>
             @if($session->owner_withdrawal > 0)<p class="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Previously withdrawn: Rs. {{ number_format($session->owner_withdrawal, 2) }}. Enter only an additional withdrawal.</p>@endif
             <div class="grid gap-4 rounded-xl bg-slate-50 p-4 md:grid-cols-3"><label><span class="label">Owner withdrawal · LKR</span><input name="owner_withdrawal" type="number" min="0" step="0.01" required class="field" :value="withdrawal" @input="updateWithdrawal($event.target.value)"></label><label><span class="label">Owner name (optional)</span><input name="owner_name" value="{{ old('owner_name') }}" maxlength="100" class="field" placeholder="Owner"></label>
                 <div aria-live="polite">
@@ -32,11 +32,12 @@
                     $otherMovement = round($accountMeta['other_movements'] ?? 0, 2);
                     $nonCashAmount = round($accountMeta['non_cash_income'] ?? 0, 2);
                     $convertedCash = round($accountMeta['bank_converted_cash'] ?? 0, 2);
+                    $convertedDrawerCash = round($accountMeta['bank_converted_drawer_cash'] ?? 0, 2);
                     $conversionDeduction = round($accountMeta['bank_conversion_deduction'] ?? 0, 2);
                     $openingCashPart = round($accountMeta['opening_cash'] ?? 0, 2);
                     $expenseAmount = round($accountMeta['expenses'] ?? 0, 2);
                     $suggestedCash = round($accountMeta['suggested_addition'] ?? 0, 2);
-                    $directCash = $suggestedCash;
+                    $directCash = max(0.0, round($suggestedCash - $convertedDrawerCash, 2));
                     $todayPartsCash = max(0.0, round($suggestedCash - $openingCashPart, 2));
                     $ssrNote = match (true) {
                         $openingCashPart > 0 && $nonCashAmount == 0 => '(Rs. ' . number_format($todayPartsCash, 2) . ' today’s cash + Rs. ' . number_format($openingCashPart, 2) . ' opening cashier cash)',
@@ -70,7 +71,7 @@
                         <b x-show="cents(allocationConfig.accounts['{{ $type }}'].other_movements || 0) !== 0"><span x-text="'Rs. ' + money(Math.abs(allocationConfig.accounts['{{ $type }}'].other_movements || 0))">{{ $otherMovement != 0 ? 'Rs. ' . number_format(abs($otherMovement), 2) : '' }}</span></b>
                     </span>
                     <span class="mt-1 block text-sm text-slate-600">
-                        + Added today: <b>Rs. <span x-text="money(totalAddition('{{ $type }}'))">{{ number_format($suggestedCash + $nonCashAmount + $convertedCash, 2) }}</span></b>
+                        + Added today: <b>Rs. <span x-text="money(totalAddition('{{ $type }}'))">{{ number_format($suggestedCash + $nonCashAmount + $convertedCash - $convertedDrawerCash, 2) }}</span></b>
                         <span class="mt-0.5 block text-xs text-slate-500" x-show="hasAdditionNote('{{ $type }}')" x-text="additionNote('{{ $type }}')" @if($ssrNote === '') x-cloak @endif>{{ $ssrNote }}</span>
                     </span>
                     <span class="mt-3 block rounded-lg bg-emerald-50 p-3 text-base font-black text-emerald-800" aria-live="polite"><span class="flex items-start justify-between gap-2"><span>Account balance after addition: Rs. <span x-text="money(closingAccountBalance('{{ $type }}'))">{{ number_format($accountMeta['base'] + $suggestedCash, 2) }}</span></span>@if(auth()->user()->canAccess('account.daily_closing'))<button type="button" class="rounded-lg border border-emerald-300 bg-white px-3 py-1 text-sm font-bold text-emerald-900 underline" data-account-total-url="{{ route('cashier.account-total-popup', $session) }}" @click.prevent.stop="editAccountTotal('{{ $type }}', $event.currentTarget)">Edit total</button>@endif</span><span x-show="savedAccountCorrections.{{ $type }}" x-cloak class="mt-2 block text-xs font-semibold">Correction saved with its reason. Carries forward.</span></span>

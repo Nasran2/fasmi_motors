@@ -144,3 +144,22 @@ test('cashier additions exclude posted bank movements and preserve a manual coun
     assert.equal(form.closingBalance, '6675.00');
     assert.equal(form.cashDifference, -500);
 });
+
+test('internal Spare Parts transfer is included in Main drawer addition exactly once', () => {
+    const accounts = {
+        main: {base:111098, suggested_addition:12950, bank_converted_cash:3000, bank_converted_drawer_cash:3000},
+        spare_parts: {base:511479.21, suggested_addition:30720},
+    };
+    const funds = {opening:5150, main:12950, spare_parts:25570, total:43670};
+    const form = cashierClosing({main:124048, spare_parts:537049.21, bank:158414.01}, '', 0, {}, 43670, true, [], funds, {accounts});
+    assert.equal(form.additions.main, '12950');
+    assert.equal(form.totalAddition('main'), 12950);
+    assert.equal(form.closingAccountBalance('main'), 124048);
+    assert.equal(form.additionNote('main'), '(Rs. 9,950.00 cash + Rs. 3,000.00 bank transfer from Spare Parts)');
+    assert.equal(form.allocatedCashTotal, 43670);
+    assert.equal(form.closingBalance, '0.00');
+    form.additions.main = '11950';
+    form.updateClosingBalance();
+    assert.equal(form.closingBalance, '1000.00');
+    assert.equal(form.totalAddition('main'), 11950);
+});

@@ -130,7 +130,7 @@ class OutgoingFundingService
                 && ($entry->payment_method === 'Cash' || $entry->account_type === 'cash')
                 && $entry->debit > 0);
 
-            return round((float) $credits->sum('credit') - (float) $revisionDebits->sum('debit'), 2);
+            return round((float) $credits->sum('credit') - (float) $revisionDebits->sum('debit') + $this->bankConvertedDrawerCash($entries), 2);
         }
 
         $cash = $entries->filter(fn ($entry) => $entry->status === 'active'
@@ -188,6 +188,13 @@ class OutgoingFundingService
             && $entry->debit > 0)->sum('debit');
 
         return round(max(0.0, (float) $credits - (float) $debits), 2);
+    }
+
+    public function bankConvertedDrawerCash(Collection $entries): float
+    {
+        $ids = AccountTransaction::cashierBankConversion()->whereIn('id', $entries->pluck('id'))->pluck('id');
+
+        return $this->bankConvertedMainCash($entries->whereIn('id', $ids));
     }
 
     /** Spare Parts opening-balance deduction used to convert non-cash Main shares (when funded from opening balance). */

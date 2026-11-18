@@ -119,11 +119,14 @@ class CashierService
             $bankConversionDeduction = $type === 'spare_parts'
                 ? round($funding->sparePartsBankConversionDeduction($accountTransactions) - ($openingContext['snapshot']['bank_conversion_deduction'][$type] ?? 0), 2)
                 : 0.0;
+            $bankConvertedDrawerCash = $type === 'main'
+                ? round(max(0.0, $funding->bankConvertedDrawerCash($accountTransactions) - ($openingContext['snapshot']['bank_converted_drawer'][$type] ?? 0)), 2)
+                : 0.0;
             $shownDeduction = max(0.0, $bankConversionDeduction);
             $openingCash = ($type === 'spare_parts' && $session?->status !== 'closed') ? round((float) ($cashierFunds['opening'] ?? 0), 2) : 0.0;
             $openingBalance = round((float) ($openingContext['accounts'][$type] ?? $accounts[$type]['opening']), 2);
             $base = round($accounts[$type]['closing'] + $washingToMain - $cashierFunds[$type] - $priorAllocation, 2);
-            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome - $bankConvertedCash + $shownDeduction, 2);
+            $otherMovements = round($base - $openingBalance + $cycleExpenses - $nonCashIncome - $bankConvertedCash + $bankConvertedDrawerCash + $shownDeduction, 2);
             $allocationAccounts[$type] = [
                 'opening' => $openingBalance,
                 'opening_cash' => $openingCash,
@@ -136,6 +139,7 @@ class CashierService
                 'expenses' => $cycleExpenses,
                 'non_cash_income' => $nonCashIncome,
                 'bank_converted_cash' => $bankConvertedCash,
+                'bank_converted_drawer_cash' => $bankConvertedDrawerCash,
                 'bank_conversion_deduction' => $shownDeduction,
                 'other_movements' => $otherMovements,
             ];

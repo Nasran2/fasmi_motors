@@ -84,7 +84,8 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
         },
         totalAddition(type) {
             const nonCash = this.cents(this.allocationConfig?.accounts?.[type]?.non_cash_income || 0);
-            return (this.cents(this.additions[type]) + nonCash + this.cents(this.allocationConfig?.accounts?.[type]?.bank_converted_cash)) / 100;
+            const meta = this.allocationConfig?.accounts?.[type] || {};
+            return (this.cents(this.additions[type]) + nonCash + this.cents(meta.bank_converted_cash) - this.cents(meta.bank_converted_drawer_cash)) / 100;
         },
         hasAdditionNote(type) {
             const meta = this.allocationConfig?.accounts?.[type] || {};
@@ -112,7 +113,7 @@ export function cashierClosing(expected, initialBalance = '', initialWithdrawal 
                 }
             }
             const convertedCents = this.cents(meta.bank_converted_cash || 0);
-            const directCash = cashAddedCents / 100;
+            const directCash = Math.max(0, cashAddedCents - this.cents(meta.bank_converted_drawer_cash)) / 100;
             const converted = convertedCents / 100;
             const nonCash = nonCashCents / 100;
             if (convertedCents > 0 && nonCashCents === 0) {
