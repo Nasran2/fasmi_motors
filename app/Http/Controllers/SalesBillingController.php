@@ -629,6 +629,7 @@ class SalesBillingController extends Controller
             ->where('reference_id', $payment->id)->where('status', 'active')
             ->where('transaction_type', '!=', 'reversal')->get()
             ->each(fn ($entry) => $accountService->reverseTransaction($entry, $reason));
+        app(\App\Services\PaymentChargeService::class)->reverseForRecord($payment, $reason);
         $payment->invoice->decrement('paid_amount', (float) $payment->amount);
         $payment->invoice->increment('due_amount', (float) $payment->amount);
         $payment->invoice->refresh();

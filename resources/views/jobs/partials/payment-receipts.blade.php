@@ -24,6 +24,10 @@
             @if($receipt->status === 'Completed' && auth()->user()->canAccess('technician.salaries'))<a class="mt-2 inline-block font-bold text-blue-700 underline" href="{{ route('technicians.salaries.repairs.edit',$receipt) }}">Correct deduction with reason</a>@endif
             @endif
             @if($snapshot['change_amount'] > 0)<p class="mt-1 text-violet-600">Applied: Rs. {{ number_format($snapshot['amount'],2) }} · Change: Rs. {{ number_format($snapshot['change_amount'],2) }}</p>@endif
+            @php($groupCharge = round($receiptGroup->sum('charge_amount'), 2))
+            @if($groupCharge > 0 && $receipt->status === 'Completed')
+            <p class="mt-1 font-semibold text-amber-800">{{ $receipt->method }} charge ({{ rtrim(rtrim(number_format((float) $receipt->charge_rate, 2, '.', ''), '0'), '.') }}%): Rs. {{ number_format($groupCharge, 2) }} · Expense recorded</p>
+            @endif
             @if($receiptGroup->count() > 1)
             @foreach($receiptGroup as $allocation)
             <p class="mt-1 text-slate-500">{{ $allocation->invoice->number }} · Applied: Rs. {{ number_format($allocation->amount,2) }}</p>

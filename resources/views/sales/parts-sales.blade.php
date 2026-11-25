@@ -566,6 +566,16 @@
                                     <input id="checkout-paid-amount" type="number" min="0" step=".01" inputmode="decimal" x-model.number="paidAmount" @focus="activePaymentIndex=null" class="field !pl-14 text-xl font-black" title="Paid amount (Alt+P)">
                                 </div>
                             </label>
+                            <div x-show="paymentMethod !== 'Credit/Due' && chargeRateFor(paymentMethod) > 0" x-cloak class="rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs space-y-1">
+                                <div class="flex items-center justify-between font-bold text-amber-900">
+                                    <span><span x-text="paymentMethod"></span> Charges (<span x-text="chargeRateFor(paymentMethod)"></span>%)</span>
+                                    <span class="text-sm text-red-700" x-text="'Rs. ' + formatNumber(calculateMethodCharge(paymentMethod, paidAmount))"></span>
+                                </div>
+                                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                                    <span>Saved as <span x-text="chargeAccountFor(paymentMethod)"></span> expense</span>
+                                    <span>Net: <b class="text-emerald-700" x-text="'Rs. ' + formatNumber(Math.max(0, Number(paidAmount || 0) - calculateMethodCharge(paymentMethod, paidAmount)))"></b></span>
+                                </div>
+                            </div>
                             <div x-show="paymentMethod==='Cash'" class="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
                                 <span class="text-xs font-black uppercase text-slate-500">Change Due</span>
                                 <span class="text-xl font-black text-emerald-600" x-text="'Rs. ' + formatNumber(Math.max(0, Number(paidAmount) + extraPayments.reduce((n,r)=>n+Number(r.amount||0),0) - cart.total))"></span>
@@ -605,6 +615,10 @@
                                     <label><span class="label">Amount</span><input type="number" min="0" step=".01" class="field" inputmode="decimal" x-model.number="row.amount" @focus="activePaymentIndex=index"></label>
                                     <label><span class="label">Account</span><select class="field" x-model="row.account_id"><option value="">Select account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></label>
                                 </div>
+                                <div x-show="chargeRateFor(row.method) > 0" x-cloak class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-semibold text-amber-900">
+                                    <span><span x-text="row.method"></span> fee (<span x-text="chargeRateFor(row.method)"></span>% · <span x-text="chargeAccountFor(row.method)"></span>)</span>
+                                    <span>Charge: <b class="text-red-700" x-text="'Rs. ' + formatNumber(calculateMethodCharge(row.method, row.amount))"></b> · Net: <b class="text-emerald-700" x-text="'Rs. ' + formatNumber(Math.max(0, Number(row.amount || 0) - calculateMethodCharge(row.method, row.amount)))"></b></span>
+                                </div>
                                 <div x-show="row.method==='Cheque'" class="border-t border-slate-200 pt-3 space-y-2">
                                     <div class="payment-fields">
                                         <label><span class="label">Cheque Date *</span><input class="field" type="date" x-model="row.cheque_date"></label>
@@ -623,6 +637,10 @@
                         <div class="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700"><span class="block mb-1">Paid</span><span x-text="'Rs. ' + formatNumber(checkoutPayments().filter(r=>r.method!=='Cheque').reduce((n,r)=>n+Number(r.amount),0))"></span></div>
                         <div class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700"><span class="block mb-1">Cheque Hold</span><span x-text="'Rs. ' + formatNumber(checkoutPayments().filter(r=>r.method==='Cheque').reduce((n,r)=>n+Number(r.amount),0))"></span></div>
                         <div class="rounded-lg bg-red-50 px-3 py-2 text-red-600"><span class="block mb-1">Due</span><span x-text="'Rs. ' + formatNumber(Math.max(0,cart.total-checkoutPayments().reduce((n,r)=>n+Number(r.amount),0)))"></span></div>
+                    </div>
+                    <div x-show="totalCheckoutCharges() > 0" x-cloak class="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">
+                        <span>Payment Charges (Saved as Expense)</span>
+                        <span x-text="'Rs. ' + formatNumber(totalCheckoutCharges())"></span>
                     </div>
                     <button type="button" class="min-h-14 w-full rounded-xl bg-red-600 py-3 font-bold text-white shadow-lg shadow-red-500/15 hover:bg-red-700 disabled:opacity-50" @click="submitSale('Parts Sale')" :disabled="isSubmitting" title="Confirm sale (Alt+Enter)">
                         <span x-show="!isSubmitting">Confirm Sale</span><span x-show="isSubmitting">Processing...</span><kbd class="ml-2 text-[10px] font-normal opacity-75">Alt+Enter</kbd>
@@ -764,6 +782,17 @@
                 accountId: '',
                 paidAmount: 0,
                 activePaymentIndex: null,
+                chargeConfig: @js(\App\Support\PaymentMethodCharges::configForUi()),
+                chargeRateFor(method) { return Number(this.chargeConfig?.rates?.[method] || 0); },
+                chargeAccountFor(method) { return this.chargeConfig?.accounts?.[method] || 'Bank Account'; },
+                calculateMethodCharge(method, amount) {
+                    const rate = this.chargeRateFor(method);
+                    const val = Number(amount || 0);
+                    return rate > 0 && val > 0 ? Math.round(val * rate) / 100 : 0;
+                },
+                totalCheckoutCharges() {
+                    return Math.round(this.checkoutPayments().reduce((n, r) => n + this.calculateMethodCharge(r.method, r.amount), 0) * 100) / 100;
+                },
                 billDate: @js($defaultCashierDate), paymentDate: @js($defaultCashierDate),
                 chequeDate: '', chequeNumber: '', chequeBank: '', extraPayments: [],
                 isSubmitting: false,

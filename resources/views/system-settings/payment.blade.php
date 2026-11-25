@@ -14,11 +14,15 @@
     </div>
 
     {{-- Help Box --}}
-    <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed">
-      ℹ️ <strong>Payment Routing:</strong> Map payment types to corresponding accounts (e.g. Cards and QR transactions going to Bank Account while Cash transactions route to Cash Book).
+    <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed space-y-1">
+      <p>ℹ️ <strong>Payment Routing:</strong> Map payment types to corresponding accounts (e.g. Cards and QR transactions going to Bank Account while Cash transactions route to Cash Book).</p>
+      <p>💳 <strong>Payment Charges:</strong> Configure the bank/card fee percentage per method (Card defaults to <strong>2.5%</strong>). When a receipt is recorded, the charge is saved as an <strong>Expense</strong> deducted directly from the selected <strong>Charge Account</strong> (default <strong>Bank Account</strong>, outside the cashier drawer) while preserving the existing Bank-to-Main transfer concept.</p>
     </div>
 
     <x-flash />
+    @if($errors->any())
+    <div class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{{ $errors->first() }}</div>
+    @endif
 
     <form method="POST" action="{{ route('system-settings.save') }}" class="space-y-6">
       @csrf<x-submission-token/>
@@ -36,6 +40,8 @@
               <tr>
                 <th class="px-4 py-3 font-bold">Payment Method</th>
                 <th class="px-4 py-3 font-bold">Mapping Ledger Account</th>
+                <th class="px-4 py-3 font-bold">Charge (%)</th>
+                <th class="px-4 py-3 font-bold">Charge Account (Expense)</th>
                 <th class="px-4 py-3 font-bold">Requires Reference</th>
                 <th class="px-4 py-3 font-bold">Show in POS</th>
                 <th class="px-4 py-3 font-bold">Enabled</th>
@@ -44,15 +50,19 @@
             <tbody class="divide-y divide-slate-100">
               @php
                 $methods = [
-                  'Cash' => ['key' => 'pm_cash', 'account' => 'Cash Book', 'ref' => false],
-                  'Card' => ['key' => 'pm_card', 'account' => 'Bank Account', 'ref' => true],
-                  'Bank Transfer' => ['key' => 'pm_bank', 'account' => 'Bank Account', 'ref' => true],
-                  'Cheque' => ['key' => 'pm_cheque', 'account' => 'Main Account', 'ref' => true],
-                  'QR Code' => ['key' => 'pm_qr', 'account' => 'Bank Account', 'ref' => true],
-                  'Credit / Due' => ['key' => 'pm_credit', 'account' => 'Main Account', 'ref' => false],
+                  'Cash' => ['key' => 'pm_cash', 'account' => 'Cash Book', 'ref' => false, 'supports_charge' => true, 'default_charge' => '0', 'default_charge_account' => 'bank'],
+                  'Card' => ['key' => 'pm_card', 'account' => 'Bank Account', 'ref' => true, 'supports_charge' => true, 'default_charge' => '2.5', 'default_charge_account' => 'bank'],
+                  'Bank Transfer' => ['key' => 'pm_bank', 'account' => 'Bank Account', 'ref' => true, 'supports_charge' => true, 'default_charge' => '0', 'default_charge_account' => 'bank'],
+                  'Cheque' => ['key' => 'pm_cheque', 'account' => 'Main Account', 'ref' => true, 'supports_charge' => true, 'default_charge' => '0', 'default_charge_account' => 'bank'],
+                  'QR Code' => ['key' => 'pm_qr', 'account' => 'Bank Account', 'ref' => true, 'supports_charge' => true, 'default_charge' => '0', 'default_charge_account' => 'bank'],
+                  'Credit / Due' => ['key' => 'pm_credit', 'account' => 'Main Account', 'ref' => false, 'supports_charge' => false, 'default_charge' => '0', 'default_charge_account' => 'bank'],
                 ];
               @endphp
               @foreach($methods as $name => $meta)
+              @php
+                $chargeValue = old($meta['key'].'_charge_percent', $settings[$meta['key'].'_charge_percent'] ?? $meta['default_charge']);
+                $chargeAccount = old($meta['key'].'_charge_account', $settings[$meta['key'].'_charge_account'] ?? $meta['default_charge_account']);
+              @endphp
               <tr class="hover:bg-slate-50/50 transition">
                 <td class="px-4 py-3 font-bold text-slate-900">{{ $name }}</td>
                 <td class="px-4 py-3">
@@ -62,6 +72,27 @@
                     <option value="Main Account" @selected(($settings[$meta['key'].'_account'] ?? '') === 'Main Account')>Main Account</option>
                     <option value="Spare Parts Account" @selected(($settings[$meta['key'].'_account'] ?? '') === 'Spare Parts Account')>Spare Parts Account</option>
                   </select>
+                </td>
+                <td class="px-4 py-3">
+                  @if($meta['supports_charge'])
+                  <div class="inline-flex items-center gap-1">
+                    <input type="number" name="{{ $meta['key'] }}_charge_percent" min="0" max="100" step="0.01" value="{{ $chargeValue === '' ? $meta['default_charge'] : $chargeValue }}" class="w-24 rounded-lg border border-slate-300 bg-white !py-1 !px-2 text-xs font-semibold text-slate-800" required>
+                    <span class="text-xs font-bold text-slate-500">%</span>
+                  </div>
+                  @else
+                  <span class="text-xs text-slate-400">—</span>
+                  @endif
+                </td>
+                <td class="px-4 py-3">
+                  @if($meta['supports_charge'])
+                  <select name="{{ $meta['key'] }}_charge_account" class="!py-1 !px-2 text-xs">
+                    @foreach(\App\Support\PaymentMethodCharges::CHARGE_ACCOUNTS as $accountCode => $accountLabel)
+                    <option value="{{ $accountCode }}" @selected($chargeAccount === $accountCode)>{{ $accountLabel }}</option>
+                    @endforeach
+                  </select>
+                  @else
+                  <span class="text-xs text-slate-400">—</span>
+                  @endif
                 </td>
                 <td class="px-4 py-3">
                   <input type="hidden" name="{{ $meta['key'] }}_requires_ref" value="0">

@@ -216,9 +216,27 @@ class SettingController extends Controller
             ]);
         }
 
+        if ($group === 'payment') {
+            $chargeRules = [];
+            foreach (['pm_cash', 'pm_card', 'pm_bank', 'pm_cheque', 'pm_qr'] as $key) {
+                $chargeRules[$key.'_charge_percent'] = ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:100'];
+                $chargeRules[$key.'_charge_account'] = ['nullable', 'in:bank,main,spare_parts'];
+            }
+            $r->validate($chargeRules);
+        }
+
         $inputs = $r->except(['_token', '_method', 'group', 'logo_file', 'favicon_file', 'slabs']);
         if ($group === 'invoice' && $r->has('show_due_invoice')) {
             $inputs['show_due_invoice'] = $r->boolean('show_due_invoice') ? '1' : '0';
+        }
+        if ($group === 'payment') {
+            foreach (['pm_cash', 'pm_card', 'pm_bank', 'pm_cheque', 'pm_qr'] as $key) {
+                if (array_key_exists($key.'_charge_percent', $inputs)) {
+                    $defaultRate = $key === 'pm_card' ? 2.5 : 0.0;
+                    $rate = $inputs[$key.'_charge_percent'] === null || $inputs[$key.'_charge_percent'] === '' ? $defaultRate : (float) $inputs[$key.'_charge_percent'];
+                    $inputs[$key.'_charge_percent'] = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.') ?: '0';
+                }
+            }
         }
 
         // Handle File uploads if present
@@ -252,7 +270,7 @@ class SettingController extends Controller
                 }
             }
 
-            if ($oldVal != $value) {
+            if ((string) ($oldVal ?? '') !== (string) ($value ?? '')) {
                 Setting::updateOrCreate(
                     ['key' => $key],
                     ['group' => $group, 'value' => $finalValue ?? '', 'type' => 'text']

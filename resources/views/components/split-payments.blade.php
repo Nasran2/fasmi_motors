@@ -4,6 +4,7 @@
     $cashAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode($purchase ? 'spare_parts' : 'main'))?->id ?? $accounts->firstWhere('type', 'main')?->id ?? $accounts->first()?->id;
     $bankAccountId = $accounts->firstWhere('code', App\Models\Account::systemCode('bank'))?->id ?? $accounts->firstWhere('type', 'bank')?->id ?? $cashAccountId;
     $fundingOptions = $purchase ? app(\App\Services\OutgoingFundingService::class)->options() : [];
+    $chargeConfig = $purchase ? ['rates' => [], 'accounts' => []] : \App\Support\PaymentMethodCharges::configForUi();
     $initial = collect(old('payments', [['method'=>'Cash','source'=>($purchase ? 'spare_parts' : null),'amount'=>0,'account_id'=>$cashAccountId,'cheque_date'=>'','cheque_number'=>'','bank_name'=>'','party_cheque_id'=>'']]))
         ->filter(fn ($row) => is_array($row))->map(fn ($row) => $row + ['receiving_account' => ''])->values();
     $chequeOptions = collect($partyCheques)->map(fn($c)=>['id'=>$c->id,'amount'=>(float)$c->amount])->values();
@@ -11,6 +12,15 @@
 <div class="space-y-3 text-slate-800" @if($purchase) data-purchase-funding data-options-url="{{ route('funding.options') }}" data-date-name="{{ $fundingDateName }}" data-funding-date="{{ today()->toDateString() }}" @funding-options-loaded="applyFundingOptions($event.detail.options)" @funding-date-state="fundingState=$event.detail.state" @endif x-data="{
     rows: {{ Illuminate\Support\Js::from($initial) }}, cheques: {{ Illuminate\Support\Js::from($chequeOptions) }},
     fundingOptions: {{ Illuminate\Support\Js::from($fundingOptions) }}, fundingState: 'loading',
+    chargeConfig: {{ Illuminate\Support\Js::from($chargeConfig) }},
+    chargeRate(method) { return Number(this.chargeConfig?.rates?.[method] || 0); },
+    chargeAccount(method) { return this.chargeConfig?.accounts?.[method] || 'Bank Account'; },
+    rowCharge(row) {
+        const amt = Number(row?.amount || 0);
+        const rate = this.chargeRate(row?.method);
+        return rate > 0 && amt > 0 ? Math.round(amt * rate) / 100 : 0;
+    },
+    totalCharges() { return Math.round(this.rows.reduce((n, r) => n + this.rowCharge(r), 0) * 100) / 100; },
     applyFundingOptions(options) {
         this.fundingOptions = options;
         this.rows.forEach(row => {
@@ -81,6 +91,17 @@
                 </label>
                 @endif
             </div>
+            @if(!$purchase)
+            <div x-show="chargeRate(row.method) > 0" x-cloak class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-semibold text-amber-900">
+                <span><span x-text="row.method"></span> fee (<span x-text="chargeRate(row.method)"></span>% · <span x-text="chargeAccount(row.method)"></span> expense)</span>
+                <span>
+                    Charge: <b class="text-red-700" x-text="'Rs. ' + rowCharge(row).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></b>
+                    <template x-if="Number(row.amount || 0) > 0">
+                        <span class="ml-1.5 text-slate-600">· Net: <b class="text-emerald-700" x-text="'Rs. ' + Math.max(0, Number(row.amount || 0) - rowCharge(row)).toLocaleString('en-LK', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></b></span>
+                    </template>
+                </span>
+            </div>
+            @endif
             <template x-if="row.method==='Cheque'">
                 <div class="border-t border-slate-200 pt-3 space-y-2">
                     <div class="payment-fields">
@@ -104,6 +125,9 @@
         <span class="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">Cheque Hold: Rs. <span x-text="hold().toFixed(2)"></span></span>
         @if($changeTotal !== null && $allowCashChange)
         <span class="rounded-lg bg-violet-50 px-3 py-2 text-violet-700">Change to return: Rs. <span x-text="change().toFixed(2)"></span></span>
+        @endif
+        @if(!$purchase)
+        <span x-show="totalCharges() > 0" x-cloak class="rounded-lg bg-rose-50 px-3 py-2 text-rose-700">Bank/Card Charges: Rs. <span x-text="totalCharges().toFixed(2)"></span></span>
         @endif
     </div>
     @if($changeTotal !== null)

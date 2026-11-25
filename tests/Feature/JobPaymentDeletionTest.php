@@ -214,7 +214,7 @@ test('deleting the first receipt cleanly rebuilds the second receipt allocation 
         ->and((float) $secondReceipt->fresh()->balance_after)->toBe(600.0)
         ->and(Account::systemAccount('main')->balance)->toBe(400.0)
         ->and(Account::systemAccount('spare_parts')->balance)->toBe(-400.0)
-        ->and(Account::systemAccount('bank')->balance)->toBe(400.0)
+        ->and(Account::systemAccount('bank')->balance)->toBe(390.0)
         ->and(AccountTransaction::balanceAdjustments()->count())->toBe(0)
         ->and(AccountTransaction::where('transaction_type', 'reversal')->count())->toBe(0);
 });

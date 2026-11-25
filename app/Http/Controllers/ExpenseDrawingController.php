@@ -148,7 +148,7 @@ class ExpenseDrawingController extends Controller
         abort_unless(in_array($module, ['expense', 'drawing'], true), 404);
         $r->validate(['reason' => 'required|min:5|max:500']);
         $record = ($module === 'expense' ? Expense::findOrFail($id) : Drawing::findOrFail($id));
-        abort_if($module === 'expense' && $record->jobPart()->exists(), 422, 'Edit or remove this outer product from its job card to update the expense and profit together.');
+        abort_if($module === 'expense' && ($record->jobPart()->exists() || $record->paymentFee()->exists() || $record->advanceFee()->exists()), 422, 'Edit or cancel the source payment or job card to update or reverse this expense.');
         abort_if($record->status === 'Cancelled', 422);
         DB::transaction(function () use ($record, $r, $service) {
             $record = $record->newQuery()->lockForUpdate()->findOrFail($record->id);

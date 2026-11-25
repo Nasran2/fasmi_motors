@@ -169,7 +169,7 @@ test('mixed receipts keep all other payments and allocation totals when one amou
     expect((float) $this->invoice->fresh()->paid_amount)->toBe(500.0)->and((float) $this->invoice->fresh()->due_amount)->toBe(500.0)
         ->and($this->invoice->fresh()->payment_method)->toBe('Mixed')->and($card->fresh()->status)->toBe('Completed')->and((float) $card->fresh()->amount)->toBe(300.0)
         ->and(Account::systemAccount('main')->balance)->toBe(500.0)->and(Account::systemAccount('spare_parts')->balance)->toBe(-300.0)
-        ->and(Account::systemAccount('bank')->balance)->toBe(300.0);
+        ->and(Account::systemAccount('bank')->balance)->toBe(292.5);
 });
 
 test('shared cheques are protected even when still pending', function () {

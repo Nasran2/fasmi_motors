@@ -70,6 +70,7 @@ class JobAdvanceService
         $type = $postBank && $advance->method !== 'Cash' ? 'bank' : 'spare_parts';
         $accounts->recordTransaction($type, 'income', (float) $advance->amount, $description, $advance, $advance->method,
             $advance->note, transactionDate: $effectiveDate, category: 'job_advance');
+        app(PaymentChargeService::class)->syncForAdvance($advance, $effectiveDate);
     }
 
     public function correct(JobCard $job, JobAdvance $advance, array $data, array $row): JobAdvance
@@ -105,6 +106,7 @@ class JobAdvanceService
                     ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()
                     ->each(fn ($entry) => app(AccountService::class)->reverseTransaction($entry, $reason));
             }
+            app(PaymentChargeService::class)->reverseForRecord($advance, $reason);
             $advance->update(['status' => 'Cancelled']);
             if ($action === 'deleted') {
                 $this->audit($job, $advance, 'Advance deleted', $reason, $before, $advance->getAttributes());
@@ -176,6 +178,14 @@ class JobAdvanceService
             // Preserve the original receipt date and bank movement without posting new money.
             AccountTransaction::where('reference_type', $advance->getMorphClass())->where('reference_id', $advance->id)
                 ->update(['reference_type' => (new Payment)->getMorphClass(), 'reference_id' => $pieces->first()->id]);
+            if ($advance->charge_expense_id) {
+                $pieces->first()->updateQuietly([
+                    'charge_rate' => $advance->charge_rate,
+                    'charge_amount' => $advance->charge_amount,
+                    'charge_expense_id' => $advance->charge_expense_id,
+                ]);
+                $advance->updateQuietly(['charge_expense_id' => null]);
+            }
             $advance->update(['payment_id' => $pieces->first()->id]);
         }
         foreach ($invoices as $bill) {

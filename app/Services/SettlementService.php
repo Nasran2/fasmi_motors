@@ -284,6 +284,7 @@ class SettlementService
                     AccountTransaction::where('reference_type', $advance->getMorphClass())->where('reference_id', $advance->id)
                         ->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()
                         ->each(fn ($entry) => $service->reverseTransaction($entry, $reason ?? 'Advance cheque returned'));
+                    app(PaymentChargeService::class)->reverseForRecord($advance, $reason ?? 'Advance cheque returned');
                     $advance->update(['status' => $status]);
                 }
             }
@@ -315,6 +316,9 @@ class SettlementService
                     $document->due_date ??= $cheque->cheque_date;
                     $this->move($document, $amount, $column, -1);
                     AccountTransaction::where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn ($t) => $service->reverseTransaction($t, $reason ?? 'Cheque returned'));
+                    if ($payment instanceof Payment) {
+                        app(PaymentChargeService::class)->reverseForRecord($payment, $reason ?? 'Cheque returned');
+                    }
                     $payment->update(['status' => $status]);
                     if ($document instanceof Invoice) {
                         $service->reallocateInvoiceReceipts($document);

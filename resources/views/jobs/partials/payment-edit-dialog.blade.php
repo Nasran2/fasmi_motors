@@ -2,6 +2,14 @@
     x-data="{
         edit: {number:'',method:'Cash',amount:0,account_id:'',receiving_account:'',paid_at:'',cheque_date:'',cheque_number:'',bank_name:'',available:0,other_paid:0,other_hold:0},
         reason: '', includePrevious: true,
+        chargeConfig: @js(\App\Support\PaymentMethodCharges::configForUi()),
+        chargeRate() { return Number(this.chargeConfig?.rates?.[this.edit.method] || 0); },
+        chargeAccount() { return this.chargeConfig?.accounts?.[this.edit.method] || 'Bank Account'; },
+        chargeAmount() {
+            const applied = Math.min(Number(this.edit.amount || 0), this.available());
+            const base = this.edit.method === 'Cash' ? Math.max(0, applied) : Number(this.edit.amount || 0);
+            return this.chargeRate() > 0 && base > 0 ? Math.round(base * this.chargeRate()) / 100 : 0;
+        },
         available() { return Number(this.edit.available || 0) + (this.includePrevious ? Number(this.edit.previous_available || 0) : 0); },
         remaining() { return Math.max(0, Math.round((this.available() - Number(this.edit.amount || 0)) * 100) / 100); },
         change() { return this.edit.method === 'Cash' ? Math.max(0, Math.round((Number(this.edit.amount || 0) - this.available()) * 100) / 100) : 0; },
@@ -38,6 +46,10 @@
             <div class="flex justify-between font-bold"><span>Remaining Due</span><span id="edit-payment-remaining" x-text="'Rs. ' + money(remaining())"></span></div>
             <div class="flex justify-between"><span>Change to return</span><span x-text="'Rs. ' + money(change())"></span></div>
             <div class="flex justify-between"><span>Payment status after saving</span><span class="font-bold" x-text="statusAfter()"></span></div>
+            <div class="flex justify-between text-xs font-bold text-amber-900 pt-1 border-t border-slate-200" x-show="chargeRate() > 0" x-cloak>
+                <span><span x-text="edit.method"></span> fee (<span x-text="chargeRate()"></span>% · <span x-text="chargeAccount()"></span>)</span>
+                <span class="text-red-700" x-text="'Rs. ' + money(chargeAmount())"></span>
+            </div>
             <p class="text-red-600 text-xs" x-show="edit.method !== 'Cash' && edit.amount > available()" x-cloak>Non-cash amounts cannot exceed the available balance.</p>
         </div>
         <p class="text-xs text-slate-500">Saving records your reason, the original values, the corrected values, your name and the time in Status History & Change Logs.</p>

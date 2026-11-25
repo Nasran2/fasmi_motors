@@ -156,7 +156,8 @@ class PartsSaleController extends Controller
                 }
                 $amount = min($remainingRefund, (float) $payment->amount);
                 AccountTransaction::where('reference_type', $payment->getMorphClass())->where('reference_id', $payment->id)->where('status', 'active')->where('transaction_type', '!=', 'reversal')->get()->each(fn ($entry) => $accounts->reverseTransaction($entry, 'Parts return: '.$data['reason']));
-                $payment->update(['amount' => round((float) $payment->amount - $amount, 2), 'refunded_amount' => round((float) $payment->refunded_amount + $amount, 2)]);
+                app(\App\Services\PaymentChargeService::class)->reverseForRecord($payment, 'Parts return: '.$data['reason']);
+                $payment->update(['amount' => round((float) $payment->amount - $amount, 2), 'refunded_amount' => round((float) $payment->refunded_amount + $amount, 2), 'charge_rate' => 0, 'charge_amount' => 0, 'charge_expense_id' => null]);
                 $refundRows[] = ['payment_id' => $payment->id, 'number' => $payment->number, 'method' => $payment->method, 'amount' => $amount];
                 $remainingRefund = round($remainingRefund - $amount, 2);
             }

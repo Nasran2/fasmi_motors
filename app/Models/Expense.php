@@ -24,6 +24,16 @@ class Expense extends Model
         return $this->hasOne(JobCardPart::class);
     }
 
+    public function paymentFee(): HasOne
+    {
+        return $this->hasOne(Payment::class, 'charge_expense_id');
+    }
+
+    public function advanceFee(): HasOne
+    {
+        return $this->hasOne(JobAdvance::class, 'charge_expense_id');
+    }
+
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);

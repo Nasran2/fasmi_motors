@@ -90,4 +90,10 @@ class Payment extends Model
     {
         return $this->belongsTo(Account::class);
     }
+
+    /** @return BelongsTo<Expense, $this> */
+    public function chargeExpense(): BelongsTo
+    {
+        return $this->belongsTo(Expense::class, 'charge_expense_id')->withTrashed();
+    }
 }

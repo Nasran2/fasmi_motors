@@ -338,6 +338,7 @@ class AccountService
         if ($reallocate) {
             $this->reallocateInvoiceReceipts($invoice);
         }
+        app(PaymentChargeService::class)->syncForPayment($invoice, $payment, $effectiveDate);
     }
 
     /**

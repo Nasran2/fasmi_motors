@@ -29,6 +29,11 @@ class JobAdvance extends Model
         return $this->belongsTo(Cheque::class)->withTrashed();
     }
 
+    public function chargeExpense(): BelongsTo
+    {
+        return $this->belongsTo(Expense::class, 'charge_expense_id')->withTrashed();
+    }
+
     public function getChangeBlockReasonAttribute(): ?string
     {
         if ($this->payment_id || ! in_array($this->status, ['Completed', 'Hold'], true)) {

@@ -68,6 +68,7 @@ class PaymentCorrectionService
                     $document->paid_amount = round((float) $document->paid_amount - (float) $receipt->amount, 2);
                     $document->due_amount = round((float) $document->due_amount + (float) $receipt->amount, 2);
                 }
+                app(PaymentChargeService::class)->reverseForRecord($receipt, $data['reason']);
                 $receipt->update(['status' => 'Cancelled', 'cancel_reason' => $data['reason'], 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
                 $settlement->saveStatus($document);
                 $accounts->reallocateInvoiceReceipts($document);
@@ -167,12 +168,17 @@ class PaymentCorrectionService
             }
 
             $allPaymentIds = $allPayments->keys()->values()->all();
+            $chargeExpenseIdsToPurge = $allPayments->pluck('charge_expense_id')->filter()->unique()->values()->all();
             $chequeIdsToClean = $allPayments->pluck('cheque_id')->filter()->unique()->values()->all();
             $advanceIds = $allPayments->pluck('job_advance_id')->filter()->unique()->values();
             $linkedAdvances = JobAdvance::whereIn('payment_id', $allPaymentIds)
                 ->when($advanceIds->isNotEmpty(), fn ($q) => $q->orWhereIn('id', $advanceIds))
                 ->lockForUpdate()
                 ->get();
+            $chargeExpenseIdsToPurge = array_values(array_unique(array_merge(
+                $chargeExpenseIdsToPurge,
+                $linkedAdvances->pluck('charge_expense_id')->filter()->all(),
+            )));
 
             if ($linkedAdvances->isNotEmpty()) {
                 JobAdvance::whereIn('payment_id', $allPaymentIds)->update(['payment_id' => null]);
@@ -263,6 +269,11 @@ class PaymentCorrectionService
                     }
                     JobAdvance::whereKey($advance->id)->delete();
                 }
+            }
+
+            if (! empty($chargeExpenseIdsToPurge)) {
+                $purgedAccountIds = app(PaymentChargeService::class)->purgeExpenses($chargeExpenseIdsToPurge);
+                $affectedAccountIds = array_merge($affectedAccountIds, $purgedAccountIds);
             }
 
             // Hard-delete any unreferenced cheques associated with the deleted receipts.
