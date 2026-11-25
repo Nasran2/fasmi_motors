@@ -215,12 +215,12 @@ class AccountService
         });
     }
 
-    private function recalculateBalances(Account $account): void
+    public function recalculateBalances(Account $account): void
     {
         $balance = (int) round((float) $account->opening_balance * 100);
         foreach ($account->transactions()->posted()->orderBy('transaction_date')->orderBy('id')->get() as $entry) {
             $balance += (int) round((float) $entry->credit * 100) - (int) round((float) $entry->debit * 100);
-            $entry->update(['running_balance' => $balance / 100]);
+            $entry->updateQuietly(['running_balance' => $balance / 100]);
         }
     }
 
@@ -257,7 +257,7 @@ class AccountService
         return $allocation;
     }
 
-    public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null, bool $reallocate = true): void
+    public function receiveInvoicePayment(Invoice $invoice, Payment $payment, bool $postBank = true, CarbonInterface|string|null $settledAt = null, bool $reallocate = true, bool $preserveFlags = false): void
     {
         if ($payment->receiving_account && $postBank) {
             $type = app(OutgoingFundingService::class)->type($payment->receiving_account);
@@ -274,7 +274,7 @@ class AccountService
         // Preserve the routing of receipts already posted under the old policy.
         // New bank receipts credit the full amount to Bank and convert Main's share
         // into Main cashier cash from the Spare Parts cashier allocation.
-        $alreadyPosted = AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
+        $alreadyPosted = $preserveFlags || AccountTransaction::posted()->where('reference_type', $payment->getMorphClass())
             ->where('reference_id', $payment->id)->where('transaction_type', 'income')->exists();
         if (! $alreadyPosted) {
             $payment->forceFill([
@@ -338,6 +338,101 @@ class AccountService
         if ($reallocate) {
             $this->reallocateInvoiceReceipts($invoice);
         }
+    }
+
+    /**
+     * Cleanly rebuild ledger allocations for remaining receipts on an invoice after a receipt is deleted,
+     * avoiding adjustment_increase / adjustment_decrease clutter while preserving routing flags.
+     *
+     * @return array<int, int>
+     */
+    public function rebuildInvoiceReceipts(Invoice $invoice): array
+    {
+        $payments = $this->orderedReceipts($invoice);
+        if ($payments->isEmpty()) {
+            return [];
+        }
+
+        $allocations = $this->allocateReceipts($invoice, $payments);
+        $affectedAccountIds = [];
+        $needsFallbackReallocate = false;
+
+        foreach ($payments as $payment) {
+            if ($payment->receiving_account && ! $payment->cheque?->forwarded_supplier_id) {
+                continue;
+            }
+            if ($payment->job_advance_id || $payment->cheque?->forwarded_supplier_id) {
+                $needsFallbackReallocate = true;
+
+                continue;
+            }
+
+            $rawAllocation = array_map(
+                fn ($cents) => $cents / 100,
+                $this->componentAccounts(
+                    $invoice,
+                    $allocations[$payment->id],
+                    (bool) $payment->washing_to_main,
+                    (bool) $payment->opening_due_to_spare_parts,
+                )
+            );
+            $postBank = ! $payment->cheque_id || ! $payment->cheque?->forwarded_supplier_id;
+            $convertedBank = $this->usesBankPoolConversion($payment, $postBank);
+            $expected = $convertedBank
+                ? ['spare_parts' => -$rawAllocation['main'], 'washing' => 0.0, 'main' => $rawAllocation['main']]
+                : $rawAllocation;
+
+            $existingEntries = AccountTransaction::where('reference_type', $payment->getMorphClass())
+                ->where('reference_id', $payment->id)
+                ->get();
+
+            $hasAdjustments = $existingEntries->contains(fn (AccountTransaction $entry) => $entry->category === 'invoice_revision'
+                || in_array($entry->transaction_type, AccountTransaction::BALANCE_ADJUSTMENT_TYPES, true)
+                || $entry->status !== 'active'
+                || $entry->transaction_type === 'reversal');
+
+            $matches = ! $hasAdjustments && $existingEntries->isNotEmpty();
+            if ($matches) {
+                foreach ($expected as $type => $expAmount) {
+                    $typeEntries = $existingEntries->where('status', 'active')->where('account_type', $type);
+                    $actual = round((float) $typeEntries->sum('credit') - (float) $typeEntries->sum('debit'), 2);
+                    if (round($expAmount - $actual, 2) != 0.0) {
+                        $matches = false;
+                        break;
+                    }
+                }
+            }
+
+            if ($matches) {
+                continue;
+            }
+
+            $effectiveDate = $existingEntries->where('transaction_type', 'income')->min('transaction_date') ?? $payment->paid_at;
+            $existingIds = $existingEntries->pluck('id')->all();
+            if ($existingIds) {
+                $affectedAccountIds = array_merge($affectedAccountIds, $existingEntries->pluck('account_id')->all());
+                if (\Illuminate\Support\Facades\Schema::hasTable('audit_logs')) {
+                    AuditLog::where('auditable_type', (new AccountTransaction)->getMorphClass())
+                        ->whereIn('auditable_id', $existingIds)
+                        ->delete();
+                }
+                AccountTransaction::whereIn('id', $existingIds)->delete();
+            }
+
+            $this->receiveInvoicePayment($invoice, $payment, $postBank, $effectiveDate, reallocate: false, preserveFlags: true);
+
+            $newAccountIds = AccountTransaction::where('reference_type', $payment->getMorphClass())
+                ->where('reference_id', $payment->id)
+                ->pluck('account_id')
+                ->all();
+            $affectedAccountIds = array_merge($affectedAccountIds, $newAccountIds);
+        }
+
+        if ($needsFallbackReallocate) {
+            $this->reallocateInvoiceReceipts($invoice);
+        }
+
+        return array_values(array_unique(array_filter($affectedAccountIds)));
     }
 
     public function reallocateInvoiceReceipts(Invoice $invoice, CarbonInterface|string|null $fromDate = null, CarbonInterface|string|null $correctionDate = null): void

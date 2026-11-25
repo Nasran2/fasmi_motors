@@ -23,7 +23,8 @@
         .format-option:focus-visible { outline: 2px solid #d91e2b; outline-offset: 2px; }
         .action { display: inline-block; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; padding: 10px 14px; color: #16243a; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; }
         .action-primary { border-color: #d91e2b; background: #d91e2b; color: #fff; }
-        .sheet { display: flex; flex-direction: column; width: 794px; min-height: 1123px; margin: 0 auto 28px; padding: 45px 45px 38px; background: #fff; box-shadow: 0 14px 45px rgba(13, 28, 50, .15); }
+        .sheet { position: relative; display: flex; flex-direction: column; width: 794px; min-height: 1123px; margin: 0 auto 28px; padding: 45px 45px 38px; background: #fff; box-shadow: 0 14px 45px rgba(13, 28, 50, .15); overflow: hidden; }
+        .watermark-cancelled { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 110px; font-weight: 900; color: rgba(220, 38, 38, 0.14); letter-spacing: 18px; text-transform: uppercase; pointer-events: none; z-index: 5; user-select: none; border: 8px dashed rgba(220, 38, 38, 0.25); padding: 10px 40px; border-radius: 16px; }
         .top-rule { height: 5px; background: #d91e2b; margin: 0 0 14px; }
         .top-rule span { display: block; width: 76%; height: 100%; background: #0b1d36; }
         table { width: 100%; border-collapse: collapse; }
@@ -221,10 +222,20 @@
 </head>
 <body class="{{ $pdfMode ? 'pdf' : '' }}">
 @unless($pdfMode)
-<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview</span><div class="toolbar-actions">@include('invoices.partials.format-selector')<button type="button" class="action" onclick="window.print()">Print {{ $format === 'a5' ? 'A5' : 'A4' }}</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', array_merge(['token' => $invoice->public_token, 'format' => $format], $presentationQuery)) }}">Download PDF</a>@endif</div></div>
+<div class="toolbar"><span class="toolbar-title">{{ $isQuotation ? 'Quotation' : 'Bill' }} preview @if($invoice->status === 'Cancelled')<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 9999px; background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 800;">CANCELLED</span>@endif</span><div class="toolbar-actions">@include('invoices.partials.format-selector')<button type="button" class="action" onclick="window.print()">Print {{ $format === 'a5' ? 'A5' : 'A4' }}</button>@if($allowPublicPdf)<a class="action action-primary" href="{{ route('invoices.public.pdf', array_merge(['token' => $invoice->public_token, 'format' => $format], $presentationQuery)) }}">Download PDF</a>@endif</div></div>
 @endunless
 <div class="document-footer-print">@include('invoices.partials.footer')</div>
 <main class="sheet">
+    @if($invoice->status === 'Cancelled')
+    <div class="watermark-cancelled">CANCELLED</div>
+    <div style="margin-bottom: 16px; padding: 12px 16px; background: #fef2f2; border: 2px solid #ef4444; border-radius: 8px; color: #991b1b; text-align: center;">
+        <div style="font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">⚠️ This Invoice Has Been Cancelled</div>
+        <div style="margin-top: 4px; font-size: 12px; color: #b91c1c;">
+            Cancelled{{ $invoice->cancelled_at ? ' on ' . $invoice->cancelled_at->format('d M Y, h:i A') : '' }}{{ $invoice->cancel_reason ? ' · Reason: ' . $invoice->cancel_reason : '' }}
+        </div>
+        <div style="margin-top: 3px; font-size: 11px; color: #7f1d1d;">This document is void and no longer valid for payment or accounting purposes.</div>
+    </div>
+    @endif
     <div class="top-rule"><span></span></div>
     <table class="header"><tr>
         <td class="brand-cell">
@@ -234,11 +245,13 @@
             @if($business['business_subtitle'] ?? 'Bike Repair Center')<div class="brand-subtitle">{{ $business['business_subtitle'] ?? 'Bike Repair Center' }}</div>@endif
         </td>
         <td class="document-cell">
-            <div class="document-type">{{ $isQuotation ? 'Quotation' : ($invoice->invoice_type === 'Job Card Bill' ? 'Service Invoice' : 'Sales Invoice') }}</div>
+            <div class="document-type" style="{{ $invoice->status === 'Cancelled' ? 'background: #dc2626;' : '' }}">{{ $invoice->status === 'Cancelled' ? 'Cancelled ' . ($isQuotation ? 'Quotation' : 'Bill') : ($isQuotation ? 'Quotation' : ($invoice->invoice_type === 'Job Card Bill' ? 'Service Invoice' : 'Sales Invoice')) }}</div>
             <div class="document-number">{{ $invoice->number }}</div>
             <table class="meta">
                 <tr><td>Date</td><td>{{ $invoice->bill_date->format('d M Y') }}</td></tr>
-                @if(!$isQuotation)
+                @if($invoice->status === 'Cancelled')
+                    <tr><td>Status</td><td style="color: #dc2626; font-weight: 700;">Cancelled</td></tr>
+                @elseif(!$isQuotation)
                     @if((float) $summaryPaid > 0 || (float) $summaryHold > 0 || $invoice->status === 'Paid')
                         <tr><td>Status</td><td>{{ $summaryStatus }}</td></tr>
                     @endif

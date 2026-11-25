@@ -150,10 +150,28 @@ class JobCard extends Model
         return $this->hasMany(JobCardService::class);
     }
 
+    /** @return HasMany<Invoice, $this> */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
     /** @return HasOne<Invoice, $this> */
     public function invoice(): HasOne
     {
-        return $this->hasOne(Invoice::class);
+        return $this->hasOne(Invoice::class)->where('status', '!=', 'Cancelled')->latestOfMany();
+    }
+
+    /** @return HasOne<Invoice, $this> */
+    public function cancelledInvoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class)->where('status', 'Cancelled')->latestOfMany();
+    }
+
+    /** @return HasOne<Invoice, $this> */
+    public function latestInvoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class)->latestOfMany();
     }
 
     public function getTotalAttribute(): float

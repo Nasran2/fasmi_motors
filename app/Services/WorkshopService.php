@@ -53,7 +53,7 @@ class WorkshopService
             if ($paid < 0) {
                 throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
             }
-            $invoice = $job->invoice()->create([
+            $invoice = $job->invoices()->create([
                 'number' => InvoiceNumber::next('Job Card Bill'),
                 'invoice_type' => 'Job Card Bill',
                 'bill_date' => $job->bill_date?->copy()->setTimeFrom(now()),

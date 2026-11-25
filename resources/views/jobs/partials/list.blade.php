@@ -19,17 +19,25 @@
             @php($collectible = $j->invoice && $j->invoice->status !== 'Cancelled' && $j->invoice->invoice_type !== 'Quotation')
             @php($olderBalances = $previousBalancesByJob->get($j->id, collect()))
             @php($combinedDue = ($collectible ? (float) $j->invoice->due_amount : 0) + App\Support\PreviousCustomerBalance::total($olderBalances))
-            <tr>
-                <td><a href="{{ route('jobs.show', $j) }}" class="font-semibold text-emerald-600">{{ $j->number }}</a><br><span class="text-xs">{{ $j->created_at->format('d M Y') }}
+            @php($isJobCancelled = $j->status === 'Cancelled')
+            <tr class="{{ $isJobCancelled ? 'bg-rose-50/50 text-slate-400 opacity-70' : '' }}">
+                <td><a href="{{ route('jobs.show', $j) }}" class="font-semibold {{ $isJobCancelled ? 'line-through text-rose-600' : 'text-emerald-600' }}">{{ $j->number }}</a><br><span class="text-xs {{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">{{ $j->created_at->format('d M Y') }}
                     @if($j->is_quick_job) · Quick Job @endif
                 </span></td>
-                <td class="font-semibold">{{ $j->bike?->number ?: 'Not recorded' }}<br><span class="text-xs font-normal">{{ $j->customer?->name ?: 'Walk-in' }}</span></td>
-                <td class="max-w-xs truncate">{{ $j->complaint }}</td>
-                <td>{{ $j->technician?->name ?: 'Unassigned' }}</td>
+                <td class="font-semibold {{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">{{ $j->bike?->number ?: 'Not recorded' }}<br><span class="text-xs font-normal {{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">{{ $j->customer?->name ?: 'Walk-in' }}</span></td>
+                <td class="max-w-xs truncate {{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">{{ $j->complaint }}</td>
+                <td class="{{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">{{ $j->technician?->name ?: 'Unassigned' }}</td>
                 <td><span class="rounded-full px-2.5 py-0.5 text-xs font-bold {{ $statusColors[$j->status] ?? 'bg-slate-100 text-slate-700' }}">{{ $j->status }}</span></td>
-                <td class="whitespace-nowrap">Rs. {{ number_format($j->total, 2) }}@if($j->invoice)<span class="mt-1 block text-xs font-semibold {{ $j->invoice->status === 'Paid' ? 'text-emerald-600' : 'text-slate-500' }}">@if($olderBalances->isNotEmpty())Current bill: @endif{{ $j->invoice->status === 'Paid' ? 'Completed' : $j->invoice->status }}</span>@endif</td>
+                <td class="whitespace-nowrap {{ $isJobCancelled ? 'line-through text-slate-400' : '' }}">
+                    Rs. {{ number_format($j->total, 2) }}
+                    @if($j->invoice)
+                        <span class="mt-1 block text-xs font-semibold {{ $j->invoice->status === 'Paid' ? 'text-emerald-600' : 'text-slate-500' }}">@if($olderBalances->isNotEmpty())Current bill: @endif{{ $j->invoice->status === 'Paid' ? 'Completed' : $j->invoice->status }}</span>
+                    @elseif($j->cancelledInvoice && !$isJobCancelled)
+                        <span class="mt-1 block text-xs font-semibold text-rose-600">Bill Cancelled</span>
+                    @endif
+                </td>
                 <td class="whitespace-nowrap">
-                    @if($combinedDue > 0)
+                    @if(!$isJobCancelled && $combinedDue > 0)
                         <span class="block font-bold text-red-600">Rs. {{ number_format($combinedDue, 2) }}</span>
                         <x-job-balances-payment-button :job="$j" :balances="$olderBalances" :due="$combinedDue"/>
                     @else<span class="text-slate-400">—</span>@endif

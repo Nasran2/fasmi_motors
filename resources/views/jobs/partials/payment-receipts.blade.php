@@ -1,7 +1,7 @@
 @if($paymentInvoices->contains(fn ($invoice) => $invoice->payments->isNotEmpty()))
 <div class="panel" id="job-payment-receipts">
     <h2 class="mb-3 font-bold">Payments received</h2>
-    <p class="mb-3 text-xs text-slate-500">Correct the method or amount with a reason. The original receipt and its replacement remain in the change history.</p>
+    <p class="mb-3 text-xs text-slate-500">Correct the method or amount with a reason, or delete a payment completely.</p>
     <div class="space-y-3">
         @foreach($receiptGroups as $receiptGroup)
         @php
@@ -43,9 +43,23 @@
                     'previous_hold' => max(0, (float) $eligibleInvoices->where('id', '!=', $primaryInvoice->id)->sum('hold_amount') - $receiptGroup->where('invoice_id', '!=', $primaryInvoice->id)->where('status', 'Hold')->sum('amount')),
                     'previous_paid' => max(0, (float) $eligibleInvoices->where('id', '!=', $primaryInvoice->id)->sum('paid_amount') - $receiptGroup->where('invoice_id', '!=', $primaryInvoice->id)->where('status', 'Completed')->sum('amount')),
                 ])
-                <button type="button" class="btn-secondary mt-2" data-edit-payment="{{ $receipt->id }}"
-                    x-data="{details: @js($editData), action: @js(route('jobs.payments.update', [$job, $receipt]))}"
-                    @click="$dispatch('edit-job-payment', {payment: details, action})">Edit payment</button>
+                @php($deleteData = [
+                    'number' => $receipt->number ?: 'Legacy receipt',
+                    'invoice_number' => $paymentInvoice->number,
+                    'received_amount' => number_format($snapshot['received_amount'], 2),
+                    'applied_amount' => number_format($snapshot['amount'], 2),
+                    'change_amount' => (float) $snapshot['change_amount'],
+                    'method' => $receipt->method,
+                    'paid_at' => $receipt->paid_at->format('d M Y'),
+                ])
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button type="button" class="btn-secondary" data-edit-payment="{{ $receipt->id }}"
+                        x-data="{details: @js($editData), action: @js(route('jobs.payments.update', [$job, $receipt]))}"
+                        @click="$dispatch('edit-job-payment', {payment: details, action})">Edit payment</button>
+                    <button type="button" class="btn-secondary !border-red-200 !text-red-600 hover:!bg-red-50" data-delete-payment="{{ $receipt->id }}"
+                        x-data="{details: @js($deleteData), action: @js(route('jobs.payments.destroy', [$job, $receipt]))}"
+                        @click="$dispatch('delete-job-payment', {payment: details, action})">Delete payment</button>
+                </div>
                 @elseif(in_array($receipt->status, ['Completed', 'Hold']) && $receipt->method !== 'Salary Deduction')
                 <p class="mt-2 text-amber-700">{{ $blockedReason }}</p>
                 @endif

@@ -494,7 +494,19 @@ class SalesBillingController extends Controller
                 }
             }
             $invoice->update(['status' => 'Cancelled', 'paid_amount' => 0, 'due_amount' => 0, 'link_enabled' => false, 'cancel_reason' => $data['reason'], 'cancelled_by' => auth()->id(), 'cancelled_at' => now()]);
-            $invoice->jobCard?->update(['status' => 'Completed']);
+            if ($invoice->jobCard) {
+                $oldStatus = $invoice->jobCard->status;
+                $invoice->jobCard->update(['status' => 'Completed']);
+                DB::table('job_card_status_logs')->insert([
+                    'job_card_id' => $invoice->jobCard->id,
+                    'old_status' => $oldStatus,
+                    'new_status' => 'Completed',
+                    'note' => 'Bill '.$invoice->number.' cancelled: '.$data['reason'],
+                    'changed_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
         });
 
         return back()->with('success', $invoice->invoice_type === 'Quotation' ? 'Quotation cancelled.' : 'Invoice cancelled with stock and ledger reversals.');

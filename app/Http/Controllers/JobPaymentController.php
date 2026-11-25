@@ -28,4 +28,11 @@ class JobPaymentController extends Controller
 
         return redirect()->route('jobs.show', $job)->with('success', 'Payment corrected. The reason and before/after details are recorded in Status History & Change Logs.');
     }
+
+    public function destroy(JobCard $job, Payment $payment, PaymentCorrectionService $service): RedirectResponse
+    {
+        $service->delete($job, $payment);
+
+        return redirect()->route('jobs.show', $job)->with('success', 'Payment deleted and balances updated.');
+    }
 }

@@ -36,7 +36,7 @@ class JobCardController extends Controller
     public function index(Request $r)
     {
         $data = $r->validate(['bike_id' => 'nullable|integer|min:1', 'bike_search' => 'nullable|string|max:60']);
-        $q = JobCard::with('intake.bike.customer', 'technician', 'invoice')->latest()->latest('id');
+        $q = JobCard::with('intake.bike.customer', 'technician', 'invoice', 'cancelledInvoice')->latest()->latest('id');
         $search = preg_replace('/[^a-z0-9]/i', '', $data['bike_search'] ?? '');
         if ($search !== '') {
             $normalize = fn ($column) => "LOWER(REPLACE(REPLACE(REPLACE(REPLACE({$column}, ' ', ''), '-', ''), '.', ''), '/', ''))";
@@ -132,7 +132,7 @@ class JobCardController extends Controller
             ->orderBy('job_card_status_logs.created_at', 'desc')
             ->get();
 
-        $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments');
+        $job->load('intake.bike.customer', 'technician', 'parts.product.stocks', 'parts.expense.account', 'services', 'invoice.payments', 'cancelledInvoice');
         $advances = JobAdvance::with('account', 'cheque')->where('job_card_id', $job->id)->whereNull('payment_id')->orderBy('id')->get();
         $previousBalances = PreviousCustomerBalance::forJob($job);
         $oldDue = PreviousCustomerBalance::total($previousBalances);

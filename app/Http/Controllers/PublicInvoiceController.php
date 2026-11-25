@@ -41,9 +41,10 @@ class PublicInvoiceController extends Controller
     private function openInvoice(Request $request, string $token): Invoice
     {
         $invoice = Invoice::withoutGlobalScope(ShopScope::class)->with(['customer', 'bike', 'store', 'jobCard.intake.bike.customer', 'jobCard.technician', 'jobCard.parts.product', 'jobCard.services', 'items.product', 'payments'])->where('public_token', $token)->firstOrFail();
-        abort_if($invoice->status === 'Cancelled', 410, 'This invoice has been cancelled.');
-        abort_unless($invoice->link_enabled, 410, 'This invoice link has been disabled.');
-        abort_if($invoice->link_expires_at?->isPast(), 410, 'This invoice link has expired.');
+        if ($invoice->status !== 'Cancelled') {
+            abort_unless($invoice->link_enabled, 410, 'This invoice link has been disabled.');
+            abort_if($invoice->link_expires_at?->isPast(), 410, 'This invoice link has expired.');
+        }
         $invoice->increment('open_count');
         $invoice->update(['last_opened_at' => now()]);
         PublicBillAccess::create(['invoice_id' => $invoice->id, 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(), 'opened_at' => now()]);

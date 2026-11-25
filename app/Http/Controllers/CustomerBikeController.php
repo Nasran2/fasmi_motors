@@ -323,13 +323,13 @@ class CustomerBikeController extends Controller
                 $q->where(function ($x) use ($term, $clean, $words) {
                     $x->where('number', 'like', "%{$term}%")
                         ->orWhereHas('intake.bike', fn ($b) => $b->where('number', 'like', "%{$term}%"))
-                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
+                        ->orWhereHas('intake.bike.customer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
                         ->orWhereHas('quickBike', fn ($b) => $b->where('number', 'like', "%{$term}%"))
                         ->orWhereHas('quickCustomer', fn ($c) => $c->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"));
                     if ($clean !== '') {
                         $x->orWhereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"])
                             ->orWhereHas('intake.bike', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
-                            ->orWhereHas('customer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
+                            ->orWhereHas('intake.bike.customer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
                             ->orWhereHas('quickBike', fn ($b) => $b->whereRaw("replace(replace(number, '-', ''), ' ', '') like ?", ["%{$clean}%"]))
                             ->orWhereHas('quickCustomer', fn ($c) => $c->whereRaw("replace(replace(phone, '-', ''), ' ', '') like ?", ["%{$clean}%"]));
                     }

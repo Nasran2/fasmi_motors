@@ -1,14 +1,20 @@
 @props(['job', 'statusClass'])
 
-<section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Job card overview">
+<section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {{ $job->status === 'Cancelled' ? 'border-rose-300 bg-rose-50/30' : '' }}" aria-label="Job card overview">
+    @if($job->status === 'Cancelled')
+    <div class="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 p-4 text-center">
+        <div class="text-base font-extrabold uppercase tracking-wider text-rose-700">🚫 This Job Card Has Been Cancelled</div>
+        <p class="mt-1 text-xs text-rose-600">This job card is cancelled. Work, billing, and progress on this job are voided.</p>
+    </div>
+    @endif
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm font-extrabold text-slate-600">{{ $job->is_quick_job ? 'Quick Job' : 'Job Card' }} · {{ $job->number }}@if($job->repair_staff)<span class="ml-2 text-blue-700">Staff bike · {{ $job->repair_staff->name }}</span>@endif</p>
+        <p class="text-sm font-extrabold {{ $job->status === 'Cancelled' ? 'line-through text-slate-400' : 'text-slate-600' }}">{{ $job->is_quick_job ? 'Quick Job' : 'Job Card' }} · {{ $job->number }}@if($job->repair_staff)<span class="ml-2 text-blue-700">Staff bike · {{ $job->repair_staff->name }}</span>@endif</p>
         <span class="rounded-full px-3 py-1 text-sm font-extrabold {{ $statusClass }}">{{ $job->status }}</span>
     </div>
     <div class="grid gap-4 md:grid-cols-2">
         <div class="min-w-0 rounded-xl bg-[#0b2447] px-5 py-4 text-white">
             <p class="text-xs font-bold uppercase tracking-wider text-slate-300">Bike Number</p>
-            <h1 class="mt-2 break-words text-3xl font-black leading-tight tracking-wide sm:text-4xl">{{ $job->bike?->number ?: 'Not recorded' }}</h1>
+            <h1 class="mt-2 break-words text-3xl font-black leading-tight tracking-wide sm:text-4xl {{ $job->status === 'Cancelled' ? 'line-through opacity-70' : '' }}">{{ $job->bike?->number ?: 'Not recorded' }}</h1>
             <p class="mt-2 text-sm text-slate-200">{{ $job->bike?->model }}</p>
             @if($job->bike?->exists && auth()->user()->canAccess('job_card.edit'))
             <details class="mt-3" @if($errors->bikeNumber->any()) open @endif>

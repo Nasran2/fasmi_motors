@@ -38,6 +38,7 @@ return [
         'jobs.invoice' => 'job_card.complete',
         'jobs.previous-balance.store' => 'job_card.edit',
         'jobs.payments.update' => 'sales.receive_payments',
+        'jobs.payments.destroy' => 'sales.receive_payments',
         'jobs.dues.payment' => 'sales.receive_payments',
         'jobs.advances.*' => 'sales.receive_payments',
         'jobs.unlock' => 'job_card.edit',

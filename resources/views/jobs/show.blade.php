@@ -170,7 +170,7 @@
                 <input type="checkbox" x-model="includePreviousBalance" class="mt-0.5 size-4 accent-red-600" @checked(old('show_previous_balance_on_bill', $job->show_previous_balance_on_bill))>
                 <span>Include outstanding balances on bill</span>
             </label>
-            <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $job->invoice ? '.' : ' or Generate invoice.' }}</p>
+            <p class="mt-2 text-xs text-slate-500">Shows dated unpaid bills and Grand Total. Save with {{ $isLocked ? 'Update Status' : 'Update job' }}{{ $isLocked || $job->invoice ? '.' : ' or Generate invoice.' }}</p>
             <div x-show="includePreviousBalance" x-cloak class="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs">
                 @if(!$job->invoice && $advanceTotal > 0)
                 <p class="text-slate-500">Advance allocation is a preview until billing. New job charges are covered first, then the oldest unpaid bills.</p>
@@ -217,7 +217,24 @@
             <x-job-balances-payment-button :job="$job" :balances="$previousBalances" :due="$paymentSummary['due']"/>
             @endif
         </div>
+        @elseif($job->status === 'Cancelled')
+        <div class="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-center text-xs text-rose-700">
+            <p class="font-bold text-sm uppercase">Job Card Cancelled</p>
+            <p class="mt-1 text-slate-500">This job card is cancelled. Re-billing is not permitted.</p>
+            @if($job->cancelledInvoice)
+                <a href="{{ route('invoices.public', $job->cancelledInvoice->public_token) }}" target="_blank" class="mt-2 inline-block font-bold text-rose-600 underline">View Cancelled Bill ({{ $job->cancelledInvoice->number }})</a>
+            @endif
+        </div>
         @else
+        @if($job->cancelledInvoice)
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 space-y-1 mt-5">
+            <div class="flex items-center justify-between">
+                <span class="font-bold text-rose-700 text-sm">⚠️ Previous Bill ({{ $job->cancelledInvoice->number }}) Cancelled</span>
+                <a href="{{ route('invoices.public', $job->cancelledInvoice->public_token) }}" target="_blank" class="font-bold text-rose-600 underline hover:text-rose-800">View Cancelled Bill</a>
+            </div>
+            <p class="text-slate-600">The previous bill {{ $job->cancelledInvoice->number }} was cancelled{{ $job->cancelledInvoice->cancel_reason ? ' (' . $job->cancelledInvoice->cancel_reason . ')' : '' }}. You can generate a new bill and collect payment below.</p>
+        </div>
+        @endif
         <form method="POST" action="{{ route('jobs.invoice',$job) }}" class="mt-5 space-y-3" x-data="{ repairPayment: @js(old('staff_repair_payment', 'normal')) }" x-effect="$dispatch('payment-due-selected', {due: Math.max(0, jobTotal + (includePaymentBalance && repairPayment !== 'salary' ? {{ (float) $oldDue }} : 0) - {{ $advanceTotal }})})">
             @csrf<x-submission-token/>
             @php
@@ -671,6 +688,7 @@ function saveEditedName() {
 @endforeach
 @endif
 @include('jobs.partials.payment-edit-dialog')
+@include('jobs.partials.payment-delete-dialog')
 <script>
 function openUnlockModal() {
     document.getElementById('unlock-job-dialog').showModal();
