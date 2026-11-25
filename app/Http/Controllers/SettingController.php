@@ -218,9 +218,10 @@ class SettingController extends Controller
 
         if ($group === 'payment') {
             $chargeRules = [];
+            $validChargeAccounts = implode(',', array_keys(\App\Support\PaymentMethodCharges::CHARGE_ACCOUNTS));
             foreach (['pm_cash', 'pm_card', 'pm_bank', 'pm_cheque', 'pm_qr'] as $key) {
                 $chargeRules[$key.'_charge_percent'] = ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:100'];
-                $chargeRules[$key.'_charge_account'] = ['nullable', 'in:bank,main,spare_parts'];
+                $chargeRules[$key.'_charge_account'] = ['nullable', 'in:'.$validChargeAccounts];
             }
             $r->validate($chargeRules);
         }

@@ -31,7 +31,11 @@ test('payment method settings defaults card charge to 2.5 percent on bank accoun
         ->assertOk()
         ->assertSee('name="pm_card_charge_percent"', false)
         ->assertSee('value="2.5"', false)
-        ->assertSee('name="pm_card_charge_account"', false);
+        ->assertSee('name="pm_card_charge_account"', false)
+        ->assertSee('Main Account — opening balance')
+        ->assertSee('Spare Parts Account — opening balance')
+        ->assertSee('Spare Parts Account Cashier — today’s cash')
+        ->assertSee('Bank Account');
 
     $this->post(route('system-settings.save'), [
         'group' => 'payment',
@@ -212,4 +216,51 @@ test('cancelling correcting or deleting a card payment reverses or purges its ch
 
     expect(Expense::findOrFail($exp2Id)->status)->toBe('Cancelled')
         ->and($bank->fresh()->balance)->toBe(0.0);
+});
+
+test('spare parts cashier charge account option deducts fee from today open cashier drawer', function () {
+    $this->post(route('system-settings.save'), [
+        'group' => 'payment',
+        'pm_card_charge_percent' => '2.5',
+        'pm_card_charge_account' => 'spare_parts_cashier',
+    ])->assertSessionHasNoErrors();
+
+    expect(PaymentMethodCharges::chargeAccountType('Card'))->toBe('spare_parts_cashier');
+
+    $customer = Customer::create(['name' => 'Cashier Fee Customer', 'phone' => '0775554455']);
+    $store = Store::create(['name' => 'Cashier Fee Store', 'active' => true]);
+    $product = Product::create(['code' => 'CF-002', 'name' => 'Air Filter', 'cost_price' => 1000, 'selling_price' => 2000, 'minimum_stock' => 1, 'unit' => 'pcs', 'active' => true]);
+    StoreStock::create(['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => 5]);
+    $bank = Account::systemAccount('bank');
+
+    $this->post(route('sales.parts.store'), [
+        'customer_mode' => 'existing',
+        'customer_id' => $customer->id,
+        'store_id' => $store->id,
+        'discount' => 0,
+        'tax' => 0,
+        'paid_amount' => 2000,
+        'payment_method' => 'Card',
+        'account_id' => $bank->id,
+        'items' => [['product_id' => $product->id, 'quantity' => 1, 'unit_price' => 2000, 'discount' => 0]],
+    ])->assertSessionHasNoErrors();
+
+    $payment = Payment::firstOrFail();
+    $expense = Expense::findOrFail($payment->charge_expense_id);
+    $tx = AccountTransaction::where('reference_type', Expense::class)
+        ->where('reference_id', $expense->id)
+        ->firstOrFail();
+
+    expect((float) $expense->amount)->toBe(50.0)
+        ->and($expense->account_id)->toBe(Account::systemAccount('spare_parts')->id)
+        ->and($expense->payment_method)->toBe('Cash')
+        ->and($expense->funding_allocations)->toBe([['source' => 'spare_parts_cashier', 'amount' => '50.00']])
+        ->and($tx->funding_source)->toBe('spare_parts_cashier')
+        ->and($tx->payment_method)->toBe('Cash')
+        ->and(Account::systemAccount('spare_parts')->balance)->toBe(-50.0)
+        ->and(Account::systemAccount('bank')->balance)->toBe(2000.0);
+
+    $summary = app(CashierService::class)->summary(today()->toDateString());
+    expect($summary['cash_paid'])->toBe(50.0)
+        ->and($summary['cash_in_hand'])->toBe(-50.0);
 });

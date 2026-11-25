@@ -15,9 +15,10 @@ final class PaymentMethodCharges
     ];
 
     public const CHARGE_ACCOUNTS = [
+        'main' => 'Main Account — opening balance',
+        'spare_parts' => 'Spare Parts Account — opening balance',
+        'spare_parts_cashier' => 'Spare Parts Account Cashier — today’s cash',
         'bank' => 'Bank Account',
-        'spare_parts' => 'Spare Parts Account',
-        'main' => 'Main Account',
     ];
 
     public static function normalizeMethod(?string $method): string

@@ -16,7 +16,7 @@
     {{-- Help Box --}}
     <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed space-y-1">
       <p>ℹ️ <strong>Payment Routing:</strong> Map payment types to corresponding accounts (e.g. Cards and QR transactions going to Bank Account while Cash transactions route to Cash Book).</p>
-      <p>💳 <strong>Payment Charges:</strong> Configure the bank/card fee percentage per method (Card defaults to <strong>2.5%</strong>). When a receipt is recorded, the charge is saved as an <strong>Expense</strong> deducted directly from the selected <strong>Charge Account</strong> (default <strong>Bank Account</strong>, outside the cashier drawer) while preserving the existing Bank-to-Main transfer concept.</p>
+      <p>💳 <strong>Payment Charges:</strong> Configure the bank/card fee percentage per method (Card defaults to <strong>2.5%</strong>). When a receipt is recorded, the charge is saved as an <strong>Expense</strong> deducted from the selected <strong>Charge Account (Expense)</strong> source (default <strong>Bank Account</strong>; opening-balance and Bank sources stay outside the cashier drawer, while <strong>Spare Parts Account Cashier — today’s cash</strong> deducts from the open cashier drawer) while preserving the existing Bank-to-Main transfer concept.</p>
     </div>
 
     <x-flash />

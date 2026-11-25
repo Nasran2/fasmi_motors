@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\AuditLog;
+use App\Models\CashierSession;
 use App\Models\Expense;
 use App\Models\FinancialCategory;
 use App\Models\Invoice;
@@ -173,10 +174,26 @@ class PaymentChargeService
         CarbonInterface|string $date,
         ?int $createdBy = null,
     ): Expense {
-        $account = Account::systemAccount($accountType);
-        $rateText = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
         $parsedDate = Carbon::parse($date);
+        $fundingSource = $accountType;
+        if ($fundingSource === 'spare_parts_cashier') {
+            $hasOpenCashier = CashierSession::whereDate('session_date', $parsedDate->toDateString())
+                ->where('status', 'open')
+                ->exists();
+            if (! $hasOpenCashier) {
+                $fundingSource = 'spare_parts';
+            }
+        }
+        $ledgerType = app(OutgoingFundingService::class)->type($fundingSource);
+        $account = Account::systemAccount($ledgerType);
+        $isCashierDrawer = $fundingSource === 'spare_parts_cashier';
+        $expensePaymentMethod = $isCashierDrawer ? 'Cash' : ($method === 'Cash' ? 'Bank Transfer' : $method);
+        $rateText = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
         $description = "{$method} charge ({$rateText}%) for {$documentNumber}";
+        $sourceLabel = PaymentMethodCharges::CHARGE_ACCOUNTS[$fundingSource] ?? $account->name;
+        $deductionNote = $isCashierDrawer
+            ? 'Deducted from '.$sourceLabel
+            : 'Deducted from '.$sourceLabel.' outside cashier';
 
         FinancialCategory::firstOrCreate(
             ['module' => 'expense', 'name' => self::EXPENSE_CATEGORY],
@@ -191,27 +208,26 @@ class PaymentChargeService
             'description' => $description,
             'amount' => $chargeAmount,
             'account_id' => $account->id,
-            'payment_method' => $method === 'Cash' ? 'Bank Transfer' : $method,
+            'payment_method' => $expensePaymentMethod,
             'reference_number' => $receiptNumber,
-            'funding_allocations' => [['source' => $accountType, 'amount' => number_format($chargeAmount, 2, '.', '')]],
-            'note' => "Auto {$rateText}% fee on {$method} receipt {$receiptNumber} (Rs. ".number_format($baseAmount, 2).') · Deducted from '.$account->name.' outside cashier',
+            'funding_allocations' => [['source' => $fundingSource, 'amount' => number_format($chargeAmount, 2, '.', '')]],
+            'note' => "Auto {$rateText}% fee on {$method} receipt {$receiptNumber} (Rs. ".number_format($baseAmount, 2).") · {$deductionNote}",
             'status' => 'Active',
             'created_by' => auth()->id() ?? $createdBy ?? 1,
         ]);
 
-        // Post strictly from the configured account outside the cashier drawer.
         app(AccountService::class)->recordTransaction(
-            $accountType,
+            $ledgerType,
             'expense',
             $chargeAmount,
             $description,
             $expense,
-            $method === 'Cash' ? 'Bank Transfer' : $method,
-            "Receipt {$receiptNumber} · Deducted outside cashier",
+            $expensePaymentMethod,
+            "Receipt {$receiptNumber} · {$deductionNote}",
             $account->id,
             $parsedDate,
             self::EXPENSE_CATEGORY,
-            $accountType,
+            $fundingSource,
         );
 
         return $expense;
