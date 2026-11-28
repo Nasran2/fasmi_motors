@@ -155,14 +155,12 @@ class AttendanceCalculationService
         $worked = max(0, (int) floor(($out->getTimestamp() - $in->getTimestamp()) / 60) - $result['break_minutes']);
         $result['working_minutes'] = $worked;
         $result['working_hours'] = round($worked / 60, 2);
-        $result['late_minutes'] = $this->calculateLateMinutes($in, $open, (int) $settings->late_grace_minutes);
-        $result['early_leave_minutes'] = $this->calculateEarlyLeaveMinutes($out, $close, (int) $settings->early_leave_grace_minutes);
-        if ($settings->late_deduction_type === 'Half day per occurrences') {
-            $result['late_minutes'] = $in->gt($this->time($dateString, $schedule['late_cutoff'])) ? max(1, (int) $open->diffInMinutes($in)) : 0;
-        }
-        if ($settings->early_leave_deduction_type === 'Half day per occurrences') {
-            $result['early_leave_minutes'] = $out->lt($this->time($dateString, $schedule['early_cutoff'])) ? max(1, (int) $out->diffInMinutes($close)) : 0;
-        }
+        $lateCutoff = $this->time($dateString, $schedule['late_cutoff']);
+        $earlyCutoff = $this->time($dateString, $schedule['early_cutoff']);
+        $late = $settings->late_deduction_type === 'Half day per occurrences' ? $in->gte($lateCutoff) : $in->gt($lateCutoff);
+        $early = $settings->early_leave_deduction_type === 'Half day per occurrences' ? $out->lte($earlyCutoff) : $out->lt($earlyCutoff);
+        $result['late_minutes'] = $late ? max(1, (int) $open->diffInMinutes($in)) : 0;
+        $result['early_leave_minutes'] = $early ? max(1, (int) $out->diffInMinutes($close)) : 0;
 
         if ($settings->enable_half_day && ($in->gt($this->time($dateString, $schedule['morning_cutoff'])) || $out->lt($this->time($dateString, $schedule['evening_cutoff'])))) {
             $result['status'] = $in->gt($this->time($dateString, $schedule['morning_cutoff'])) ? 'Morning Half Day' : 'Evening Half Day';
@@ -173,7 +171,9 @@ class AttendanceCalculationService
         } else {
             if ($settings->enable_late_deduction && $result['late_minutes'] > 0) {
                 if ($settings->late_deduction_type !== 'Half day per occurrences') {
-                    $result['late_deduction_amount'] = $this->deduction((string) $settings->late_deduction_type, (float) $settings->late_deduction_amount, $result['late_minutes'], $dailySalary);
+                    $result['late_deduction_amount'] = $this->deduction((string) $settings->late_deduction_type, $settings->late_deduction_type === 'Fixed amount' ? $schedule['late_fee'] : (float) $settings->late_deduction_amount, $result['late_minutes'], $dailySalary);
+                } else {
+                    $result['late_deduction_amount'] = $schedule['late_fee'];
                 }
                 if (in_array($result['status'], ['Present', 'Auto Closed'], true)) {
                     $result['status'] = 'Late';
@@ -181,7 +181,9 @@ class AttendanceCalculationService
             }
             if ($settings->enable_early_leave_deduction && $result['early_leave_minutes'] > 0) {
                 if ($settings->early_leave_deduction_type !== 'Half day per occurrences') {
-                    $result['early_leave_deduction_amount'] = $this->deduction((string) $settings->early_leave_deduction_type, (float) $settings->early_leave_deduction_amount, $result['early_leave_minutes'], $dailySalary);
+                    $result['early_leave_deduction_amount'] = $this->deduction((string) $settings->early_leave_deduction_type, $settings->early_leave_deduction_type === 'Fixed amount' ? $schedule['early_fee'] : (float) $settings->early_leave_deduction_amount, $result['early_leave_minutes'], $dailySalary);
+                } else {
+                    $result['early_leave_deduction_amount'] = $schedule['early_fee'];
                 }
                 if ($result['status'] === 'Present') {
                     $result['status'] = 'Early Leave';

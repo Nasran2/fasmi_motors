@@ -1255,6 +1255,10 @@ class TechnicianController extends Controller
             'work_schedule_mode' => ['sometimes', 'required', Rule::in(['system_default', 'custom'])],
             'work_start_time' => ['exclude_unless:work_schedule_mode,custom', 'required', 'date_format:H:i'],
             'work_end_time' => ['exclude_unless:work_schedule_mode,custom', 'required', 'date_format:H:i', 'after:work_start_time'],
+            'late_cutoff_time' => ['sometimes', 'nullable', 'date_format:H:i'],
+            'early_leave_cutoff_time' => ['sometimes', 'nullable', 'date_format:H:i'],
+            'late_fee' => ['sometimes', 'nullable', 'numeric', 'decimal:0,2', 'between:0,999999999999.99'],
+            'early_leave_fee' => ['sometimes', 'nullable', 'numeric', 'decimal:0,2', 'between:0,999999999999.99'],
             'salary_period_mode' => ['sometimes', 'required', Rule::in(['system_default', 'normal_calendar', 'custom_start'])],
             'salary_start_day' => ['exclude_unless:salary_period_mode,custom_start', 'required', 'integer', 'min:1', 'max:31'],
             'daily_salary' => ['nullable', 'numeric', 'min:0'],
@@ -1283,6 +1287,18 @@ class TechnicianController extends Controller
 
         if (($data['work_schedule_mode'] ?? null) === 'system_default') {
             $data['work_start_time'] = $data['work_end_time'] = null;
+        }
+
+        $candidate = $technician ? clone $technician : new Technician;
+        $candidate->fill($data);
+        $schedule = StaffWorkSchedule::resolve($candidate);
+        foreach (['late_cutoff_time', 'early_leave_cutoff_time'] as $field) {
+            if ($candidate->$field) {
+                $cutoff = Carbon::parse($candidate->$field)->format('H:i:s');
+                if ($cutoff < $schedule['start'] || $cutoff > $schedule['end']) {
+                    throw ValidationException::withMessages([$field => 'Choose a cutoff within this staff member’s scheduled start and finish times.']);
+                }
+            }
         }
 
         $data['hourly_salary'] = (float) ($data['hourly_salary'] ?? 0);

@@ -525,7 +525,7 @@
         timingEntries.replaceChildren();
         for (const penalty of attendance.timing_half_day_penalties || []) {
             const line = document.createElement('p');
-            line.textContent = `${fmtDate(penalty.date)} · ${penalty.description} · Half day (0.5) · ${money(penalty.amount)}`;
+            line.textContent = `${fmtDate(penalty.date)} · ${penalty.description} · Half day (0.5) · ${money(penalty.amount)}${penalty.waived_fees !== undefined ? ` · Occurrence fees removed: ${money(penalty.waived_fees)}` : ''}`;
             timingEntries.appendChild(line);
         }
         document.getElementById('preview-gross').textContent = money(data.gross_salary);

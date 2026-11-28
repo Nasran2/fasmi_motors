@@ -103,16 +103,14 @@ class SalaryCalculationService
         $halfDayRate = round($noPayRate / 2, 2);
         $halfDayRows = $records->whereIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)
             ->filter(fn ($row) => ! $row->is_leave_day && ! isset($closedDates[$row->date->toDateString()]));
-        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate, $halfDayRate, $closedDates, $settings) {
+        $overrideAdjustment = $records->where('is_manual_edit', true)->sum(function ($record) use ($noPayRate, $halfDayRate, $closedDates) {
             $closed = $record->is_leave_day || isset($closedDates[$record->date->toDateString()]);
             if (in_array($record->status, ['Absent', 'No Pay Leave'], true)) {
                 $calculated = $closed ? 0 : $noPayRate;
             } elseif (in_array($record->status, AttendanceCalculationService::HALF_DAY_STATUSES, true)) {
                 $calculated = $closed ? 0 : $halfDayRate;
             } else {
-                $calculated = ($settings->late_deduction_type === 'Half day per occurrences' ? 0 : (float) $record->late_deduction_amount)
-                    + ($settings->early_leave_deduction_type === 'Half day per occurrences' ? 0 : (float) $record->early_leave_deduction_amount)
-                    + (float) $record->half_day_deduction_amount;
+                $calculated = (float) $record->late_deduction_amount + (float) $record->early_leave_deduction_amount + (float) $record->half_day_deduction_amount;
             }
 
             return (float) $record->deduction_amount - $calculated;
@@ -143,6 +141,7 @@ class SalaryCalculationService
             'half_days' => $halfDays + $timingHalfDays,
             'attendance_half_days' => $halfDays,
             'timing_half_day_penalties' => $timing['penalties'],
+            'timing_fee_items' => $timing['fee_items'],
             'late_days' => $settings->late_deduction_type === 'Half day per occurrences' ? $timing['late'] : $records->where('late_minutes', '>', 0)->count(),
             'early_leave_days' => $settings->early_leave_deduction_type === 'Half day per occurrences' ? $timing['early'] : $records->where('early_leave_minutes', '>', 0)->count(),
             'auto_checkout_days' => $records->where('is_auto_checkout', true)->count(),
@@ -160,12 +159,12 @@ class SalaryCalculationService
                 : round((float) $record->ot_minutes / 60 * (float) ((float) $technician->ot_rate > 0 ? $technician->ot_rate : $technician->hourly_salary), 2)), 2),
             // Rebuild status-based deductions from current staff rates, including older rows
             // saved with zero half-day amounts. Do not also deduct late/early fines on half days.
-            'late_deduction' => $settings->late_deduction_type === 'Half day per occurrences' ? 0.0 : round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('late_deduction_amount'), 2),
-            'early_leave_deduction' => $settings->early_leave_deduction_type === 'Half day per occurrences' ? 0.0 : round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('early_leave_deduction_amount'), 2),
+            'late_deduction' => $settings->late_deduction_type === 'Half day per occurrences' ? $timing['late_fee'] : round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('late_deduction_amount'), 2),
+            'early_leave_deduction' => $settings->early_leave_deduction_type === 'Half day per occurrences' ? $timing['early_fee'] : round((float) $records->whereNotIn('status', AttendanceCalculationService::HALF_DAY_STATUSES)->sum('early_leave_deduction_amount'), 2),
             'half_day_deduction' => round($halfDayRows->count() * $halfDayRate + array_sum(array_column($timing['penalties'], 'amount')), 2),
             'attendance_override_adjustment' => round((float) $overrideAdjustment, 2),
-            'payment_rules' => $settings->only(['enable_late_deduction', 'late_deduction_type', 'late_grace_minutes', 'late_occurrences_per_half_day',
-                'enable_early_leave_deduction', 'early_leave_deduction_type', 'early_leave_grace_minutes', 'early_occurrences_per_half_day',
+            'payment_rules' => $settings->only(['enable_late_deduction', 'late_deduction_type', 'late_grace_minutes', 'late_deduction_amount', 'late_occurrences_per_half_day',
+                'enable_early_leave_deduction', 'early_leave_deduction_type', 'early_leave_grace_minutes', 'early_leave_deduction_amount', 'early_occurrences_per_half_day',
                 'enable_ot', 'ot_calculation_type', 'ot_slab_minutes', 'ot_amount_per_slab', 'ot_round_method', 'ot_grace_minutes_after_closing', 'leave_work_salary_divisor']),
         ];
     }

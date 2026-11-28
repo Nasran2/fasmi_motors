@@ -29,7 +29,7 @@
 
     <x-flash />
     @if($salarySettings->late_deduction_type === 'Half day per occurrences' || $salarySettings->early_leave_deduction_type === 'Half day per occurrences')
-    <p class="rounded-xl bg-blue-50 p-4 text-sm text-blue-900">Late arrivals and early departures are counted separately within each staff salary period. Every {{ $salarySettings->late_occurrences_per_half_day }} late arrivals / {{ $salarySettings->early_occurrences_per_half_day }} early departures adds a separate half-day deduction to salary. Daily attendance keeps actual punches; grouped deductions appear in the salary preview and payslip.</p>
+    <p class="rounded-xl bg-blue-50 p-4 text-sm text-blue-900">Late arrivals and early departures are counted separately within each staff salary period. Each occurrence initially carries the configured fee. Every {{ $salarySettings->late_occurrences_per_half_day }} late arrivals / {{ $salarySettings->early_occurrences_per_half_day }} early departures replaces that group’s fees with a separate half-day deduction. Daily attendance shows the fee before conversion; salary preview and payslips show the final fees and half days.</p>
     @endif
 
     <script type="application/json" id="attendance-shop-calendar">@json($shopCalendar)</script>
