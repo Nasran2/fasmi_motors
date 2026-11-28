@@ -100,16 +100,43 @@ test('each event switch and automatic master actually stop requests', function (
     Http::assertNothingSent();
 });
 
-test('invoice SMS uses APP_URL and public bill works without login', function () {
+test('invoice SMS uses APP_URL and the linked PDF works without login', function () {
     $invoice = smsTestInvoice();
     $log = SmsLog::where('message_type', 'event:billed')->firstOrFail();
-    expect($log->message)->toContain('https://bills.example.com'.route('invoices.public', $invoice->public_token, false))
+    $pdfUrl = 'https://bills.example.com'.route('invoices.public.pdf', $invoice->public_token, false);
+    expect($log->message)->toContain('View bill PDF: '.$pdfUrl)
         ->and($invoice->fresh()->sms_sent_at)->not->toBeNull();
+    Http::assertSent(fn ($request) => $request['text'] === $log->message);
     auth()->logout();
-    $this->get(route('invoices.public', $invoice->public_token))->assertOk()->assertSeeText($invoice->number);
+    $response = $this->get($pdfUrl)->assertOk()->assertHeader('Content-Type', 'application/pdf')
+        ->assertDownload('Bill-'.$invoice->number.'.pdf');
+    expect(substr($response->getContent(), 0, 4))->toBe('%PDF');
     config(['app.url' => 'https://new.example.com']);
     app(WorkshopSmsService::class)->send('billed', $invoice, true);
-    expect(SmsLog::latest('id')->first()->message)->toContain('https://new.example.com/');
+    expect(SmsLog::latest('id')->first()->message)->toContain('https://new.example.com'.route('invoices.public.pdf', $invoice->public_token, false));
+});
+
+test('saved invoice SMS templates include a PDF link even when the placeholder is missing', function (string $template) {
+    Setting::updateOrCreate(['key' => 'sms_tmpl_billed'], ['group' => 'sms', 'value' => $template]);
+    config(['app.url' => 'https://bills.example.com/workshop/']);
+    $invoice = smsTestInvoice();
+    $pdfUrl = 'https://bills.example.com/workshop'.route('invoices.public.pdf', $invoice->public_token, false);
+    $message = SmsLog::where('message_type', 'event:billed')->firstOrFail()->message;
+    expect($message)->toContain($invoice->number, $pdfUrl)->not->toContain('{bill_link}');
+    Http::assertSent(fn ($request) => $request['text'] === $message);
+})->with(['Bill {invoice_no}. View bill: {bill_link}', 'Bill {invoice_no}. Thank you.']);
+
+test('bill PDF SMS is blocked when public PDF downloads are disabled', function () {
+    Setting::updateOrCreate(['key' => 'public_pdf_download'], ['group' => 'invoice', 'value' => '0']);
+    $invoice = smsTestInvoice();
+    expect($invoice->fresh()->sms_sent_at)->toBeNull()
+        ->and(SmsLog::firstOrFail()->failure_reason)->toContain('Enable public PDF downloads');
+    $this->post(route('sales.public-links.sms', $invoice))->assertSessionHas('error');
+    Http::assertNothingSent();
+    Setting::where('key', 'public_pdf_download')->update(['value' => '1']);
+    $this->post(route('sales.public-links.sms', $invoice))->assertSessionHas('success');
+    expect($invoice->fresh()->sms_sent_at)->not->toBeNull();
+    Http::assertSentCount(1);
 });
 
 test('local or disabled invoice links are never sent or marked sent', function () {
@@ -233,7 +260,7 @@ test('bill retry refreshes APP_URL and marks successful timestamp', function () 
     Setting::updateOrCreate(['key' => 'sms_tmpl_billed'], ['group' => 'sms', 'value' => 'Bill {invoice_no}: Rs. {bill_amount}.']);
     $this->post(route('sms.resend', $failed))->assertSessionHas('success');
     expect($invoice->fresh()->sms_sent_at)->not->toBeNull()
-        ->and(SmsLog::latest('id')->first()->message)->toContain('https://live.example.com')
+        ->and(SmsLog::latest('id')->first()->message)->toContain('View bill PDF: https://live.example.com'.route('invoices.public.pdf', $invoice->public_token, false))
         ->and(SmsLog::latest('id')->first()->retry_count)->toBe(1);
     $invoice->update(['link_expires_at' => now()->subDay()]);
     $this->post(route('sales.public-links.sms', $invoice))->assertSessionHas('error');

@@ -7,7 +7,7 @@
 @endphp
 <section class="panel" x-data="{ mode: @js($scheduleMode) }">
     <h2 class="text-lg font-extrabold">Staff Working Times</h2>
-    <p class="mt-2 text-sm text-slate-500">Late arrivals, early leave, OT eligibility and automatic checkout use these times. Grace periods and OT rounding follow the system settings.</p>
+    <p class="mt-2 text-sm text-slate-500">Late arrivals, early leave, OT eligibility and automatic checkout use these times. Late and early thresholds move with this shift. For the default 60-minute thresholds, a 9 AM–6 PM shift is late after 10 AM and early before 5 PM. OT requires arrival by 9 AM and starts from 6 PM.</p>
     <div class="mt-4 grid gap-4 md:grid-cols-3">
         <label><span class="label">Working time rule *</span>
             <select name="work_schedule_mode" x-model="mode" required class="field">

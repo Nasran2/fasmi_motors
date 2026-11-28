@@ -44,6 +44,7 @@
 
         $attendanceAdjustment = (float) data_get($sheet->calculation_snapshot, 'deductions.attendance_adjustment', 0);
     @endphp
+    @include('technicians.partials.timing-half-days')
     @if(data_get($sheet->calculation_snapshot, 'earnings.salary_basis') === 'full_basic')
         <p class="mt-3 text-xs text-slate-600">Paid leave and shop-closed days do not cause no-pay deductions.@if((float) $sheet->no_pay_deduction > 0) Unpaid leave / absence: {{ data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_days', $sheet->total_absent_days) }} day(s) × Rs. {{ number_format(data_get($sheet->calculation_snapshot, 'earnings.unpaid_leave_rate', 0), 2) }}.@endif</p>
     @endif
@@ -90,7 +91,7 @@
     </form>
     @endif
     <section class="panel overflow-hidden p-0">
-        <div class="space-y-2 p-5"><h2 class="font-black">Daily attendance · Check-in &amp; check-out</h2><p class="text-sm text-slate-500">OT requires check-in at or before the staff’s scheduled start and an actual check-out after the scheduled closing grace period. For a 9:00 AM start, 9:00 is eligible; 9:01 is not. Payable OT rounds to the nearest 30 minutes; 15-minute ties round up.</p>
+        <div class="space-y-2 p-5"><h2 class="font-black">Daily attendance · Check-in &amp; check-out</h2><p class="text-sm text-slate-500">OT requires check-in at or before the staff’s scheduled start and an actual check-out after the scheduled closing grace period. For a 9:00 AM start, 9:00 is eligible; 9:01 is not. Payable OT uses the interval, amount and rounding rules saved with this calculation. Actual punch times are retained.</p>
         <p class="text-xs text-slate-500">{{ data_get($sheet->calculation_snapshot, 'attendance_records') !== null ? 'Attendance captured when this paysheet was calculated.' : 'Legacy paysheet: attendance times below are from current records; the saved salary amounts are unchanged.' }}</p></div>
         <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr><th class="p-3">Date</th><th class="p-3">Check-in</th><th class="p-3">Check-out</th><th class="p-3">Status</th><th class="p-3">Worked hours</th><th class="p-3">Payable OT minutes</th><th class="p-3">OT (LKR)</th><th class="p-3">Attendance deduction (LKR)</th></tr></thead><tbody>
         @foreach(\Carbon\CarbonPeriod::create($sheet->period_start, $sheet->period_end) as $day)

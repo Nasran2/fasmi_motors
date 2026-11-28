@@ -15,6 +15,7 @@ use App\Services\DatabaseBackupService;
 use App\Services\HolidayService;
 use App\Services\Sms\TextitSmsService;
 use App\Services\Sms\WorkshopSmsService;
+use App\Support\PaymentMethodCharges;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -94,23 +95,26 @@ class SettingController extends Controller
                 'work_days.*' => 'string|distinct|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
 
                 'enable_late_deduction' => 'nullable|boolean',
-                'late_grace_minutes' => 'required|integer|min:0',
-                'late_deduction_type' => 'required|string',
+                'late_grace_minutes' => 'required|integer|min:0|max:1439',
+                'late_deduction_type' => 'required|in:Half day per occurrences,Fixed amount,Per minute amount',
+                'late_occurrences_per_half_day' => 'sometimes|required|integer|min:1|max:1000',
                 'late_deduction_amount' => 'required|numeric|min:0',
                 'require_reason_late_edit' => 'nullable|boolean',
 
                 'enable_early_leave_deduction' => 'nullable|boolean',
-                'early_leave_grace_minutes' => 'required|integer|min:0',
-                'early_leave_deduction_type' => 'required|string',
+                'early_leave_grace_minutes' => 'required|integer|min:0|max:1439',
+                'early_leave_deduction_type' => 'required|in:Half day per occurrences,Fixed amount,Per minute amount,Half-day deduction',
+                'early_occurrences_per_half_day' => 'sometimes|required|integer|min:1|max:1000',
                 'early_leave_deduction_amount' => 'required|numeric|min:0',
                 'require_reason_early_leave' => 'nullable|boolean',
 
                 'enable_ot' => 'nullable|boolean',
                 'ot_grace_minutes_after_closing' => 'required|integer|min:0',
-                'ot_calculation_type' => 'required|string',
-                'ot_round_method' => 'required|string',
+                'ot_calculation_type' => 'required|in:Fixed amount per slab,Fixed amount per hour,Salary-based hourly rate',
+                'ot_round_method' => 'required|in:Started interval,Ceiling slab,Floor slab,Nearest slab,Exact minutes',
                 'ot_amount_per_slab' => 'required|numeric|min:0',
-                'ot_slab_minutes' => 'required|integer|min:1',
+                'ot_slab_minutes' => 'required|integer|min:1|max:1440',
+                'leave_work_salary_divisor' => 'sometimes|required|numeric|min:1|max:366',
                 'require_ot_approval' => 'nullable|boolean',
                 'allow_manual_ot_override' => 'nullable|boolean',
 
@@ -137,7 +141,7 @@ class SettingController extends Controller
             foreach ($booleans as $b) {
                 $data[$b] = $r->has($b) ? (bool) $r->input($b) : false;
             }
-            $data['work_days'] = $r->input('work_days', []);
+            $data['work_days'] = $r->input('work_days') ?? [];
 
             $oldVal = $salarySetting->toArray();
             $cycleData = [
@@ -218,7 +222,7 @@ class SettingController extends Controller
 
         if ($group === 'payment') {
             $chargeRules = [];
-            $validChargeAccounts = implode(',', array_keys(\App\Support\PaymentMethodCharges::CHARGE_ACCOUNTS));
+            $validChargeAccounts = implode(',', array_keys(PaymentMethodCharges::CHARGE_ACCOUNTS));
             foreach (['pm_cash', 'pm_card', 'pm_bank', 'pm_cheque', 'pm_qr'] as $key) {
                 $chargeRules[$key.'_charge_percent'] = ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:100'];
                 $chargeRules[$key.'_charge_account'] = ['nullable', 'in:'.$validChargeAccounts];

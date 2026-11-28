@@ -157,6 +157,12 @@ class AttendanceCalculationService
         $result['working_hours'] = round($worked / 60, 2);
         $result['late_minutes'] = $this->calculateLateMinutes($in, $open, (int) $settings->late_grace_minutes);
         $result['early_leave_minutes'] = $this->calculateEarlyLeaveMinutes($out, $close, (int) $settings->early_leave_grace_minutes);
+        if ($settings->late_deduction_type === 'Half day per occurrences') {
+            $result['late_minutes'] = $in->gt($this->time($dateString, $schedule['late_cutoff'])) ? max(1, (int) $open->diffInMinutes($in)) : 0;
+        }
+        if ($settings->early_leave_deduction_type === 'Half day per occurrences') {
+            $result['early_leave_minutes'] = $out->lt($this->time($dateString, $schedule['early_cutoff'])) ? max(1, (int) $out->diffInMinutes($close)) : 0;
+        }
 
         if ($settings->enable_half_day && ($in->gt($this->time($dateString, $schedule['morning_cutoff'])) || $out->lt($this->time($dateString, $schedule['evening_cutoff'])))) {
             $result['status'] = $in->gt($this->time($dateString, $schedule['morning_cutoff'])) ? 'Morning Half Day' : 'Evening Half Day';
@@ -166,13 +172,17 @@ class AttendanceCalculationService
             $result['half_day_deduction_amount'] = round($dailySalary / 2, 2);
         } else {
             if ($settings->enable_late_deduction && $result['late_minutes'] > 0) {
-                $result['late_deduction_amount'] = $this->deduction((string) $settings->late_deduction_type, (float) $settings->late_deduction_amount, $result['late_minutes'], $dailySalary);
+                if ($settings->late_deduction_type !== 'Half day per occurrences') {
+                    $result['late_deduction_amount'] = $this->deduction((string) $settings->late_deduction_type, (float) $settings->late_deduction_amount, $result['late_minutes'], $dailySalary);
+                }
                 if (in_array($result['status'], ['Present', 'Auto Closed'], true)) {
                     $result['status'] = 'Late';
                 }
             }
             if ($settings->enable_early_leave_deduction && $result['early_leave_minutes'] > 0) {
-                $result['early_leave_deduction_amount'] = $this->deduction((string) $settings->early_leave_deduction_type, (float) $settings->early_leave_deduction_amount, $result['early_leave_minutes'], $dailySalary);
+                if ($settings->early_leave_deduction_type !== 'Half day per occurrences') {
+                    $result['early_leave_deduction_amount'] = $this->deduction((string) $settings->early_leave_deduction_type, (float) $settings->early_leave_deduction_amount, $result['early_leave_minutes'], $dailySalary);
+                }
                 if ($result['status'] === 'Present') {
                     $result['status'] = 'Early Leave';
                 }
@@ -180,9 +190,12 @@ class AttendanceCalculationService
         }
 
         $result['is_ot_eligible'] = ! $result['is_auto_checkout'] && $this->calculateOTEligibility($in, $out, $open, $close, (int) $settings->ot_grace_minutes_after_closing);
+        if ($settings->ot_round_method === 'Started interval' && (int) $settings->ot_grace_minutes_after_closing === 0) {
+            $result['is_ot_eligible'] = ! $result['is_auto_checkout'] && $in->lte($open) && $out->gte($close);
+        }
         if ($settings->enable_ot && $result['is_ot_eligible']) {
             $result['actual_ot_minutes'] = $this->calculateOTMinutes($out, $close);
-            $result['ot_minutes'] = $this->payableOTMinutes($result['actual_ot_minutes']);
+            $result['ot_minutes'] = $this->payableOTMinutes($result['actual_ot_minutes'], $settings);
             $result['ot_hours'] = round($result['ot_minutes'] / 60, 2);
             $result['ot_amount'] = $this->calculateOTAmount($technician, $result['ot_minutes'], $settings);
         }
@@ -224,10 +237,20 @@ class AttendanceCalculationService
         return max(0, (int) floor(($checkOut->getTimestamp() - $closing->getTimestamp()) / 60));
     }
 
-    public function payableOTMinutes(int $actualMinutes): int
+    public function payableOTMinutes(int $actualMinutes, ?SalarySetting $settings = null): int
     {
-        // Nearest half hour, with 15/45 minute ties rounded up.
-        return (int) (round(max(0, $actualMinutes) / 30, 0, PHP_ROUND_HALF_UP) * 30);
+        $settings ??= SalarySetting::firstOrCreate([]);
+        $minutes = max(0, $actualMinutes);
+        $interval = max(1, (int) $settings->ot_slab_minutes);
+        $blocks = match ($settings->ot_round_method) {
+            'Started interval' => floor($minutes / $interval) + 1,
+            'Floor slab' => floor($minutes / $interval),
+            'Nearest slab' => round($minutes / $interval, 0, PHP_ROUND_HALF_UP),
+            'Exact minutes' => $minutes / $interval,
+            default => ceil($minutes / $interval),
+        };
+
+        return (int) ($blocks * $interval);
     }
 
     public function calculateAttendanceMonthSummary(Technician $technician, CarbonInterface|string $month): array
@@ -275,6 +298,14 @@ class AttendanceCalculationService
     {
         if ($minutes <= 0) {
             return 0;
+        }
+        if ($settings->ot_calculation_type === 'Fixed amount per slab') {
+            return round($minutes / max(1, (int) $settings->ot_slab_minutes) * (float) $settings->ot_amount_per_slab, 2);
+        }
+        if ($settings->ot_calculation_type === 'Salary-based hourly rate') {
+            $hours = max(0.01, (float) StaffWorkSchedule::resolve($technician, $settings)['working_hours']);
+
+            return round($minutes / 60 * $this->dailySalary($technician) / $hours, 2);
         }
         if ((float) $technician->ot_rate > 0) {
             return round($minutes / 60 * (float) $technician->ot_rate, 2);

@@ -132,6 +132,7 @@
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">Half days</span><strong id="preview-half-days" class="text-slate-900">0</strong></div>
           <div class="rounded-xl bg-white p-3"><span class="block text-slate-400">OT hours</span><strong id="preview-ot-hours" class="text-slate-900">0</strong></div>
         </div>
+        <div id="preview-timing-half-days" class="mt-3 space-y-1 text-xs text-slate-700" aria-live="polite"></div>
         <div class="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" aria-live="polite" aria-atomic="true">
           <div class="rounded-xl bg-emerald-50 p-4"><span class="block font-bold text-emerald-700">Gross salary</span><strong id="preview-gross" class="mt-1 block text-xl font-black tabular-nums text-emerald-800">Rs. 0.00</strong></div>
           <div class="rounded-xl bg-red-50 p-4"><span class="block font-bold text-red-700">Total deductions</span><strong id="preview-deductions" class="mt-1 block text-xl font-black tabular-nums text-red-800">Rs. 0.00</strong></div>
@@ -520,6 +521,13 @@
         document.getElementById('preview-absent-days').textContent = parseFloat(attendance.absent_days ?? data.total_absent_days ?? 0);
         document.getElementById('preview-half-days').textContent = parseFloat(attendance.half_days ?? data.half_days ?? 0);
         document.getElementById('preview-ot-hours').textContent = parseFloat(attendance.total_ot_hours ?? data.total_ot_hours ?? 0);
+        const timingEntries = document.getElementById('preview-timing-half-days');
+        timingEntries.replaceChildren();
+        for (const penalty of attendance.timing_half_day_penalties || []) {
+            const line = document.createElement('p');
+            line.textContent = `${fmtDate(penalty.date)} · ${penalty.description} · Half day (0.5) · ${money(penalty.amount)}`;
+            timingEntries.appendChild(line);
+        }
         document.getElementById('preview-gross').textContent = money(data.gross_salary);
         document.getElementById('preview-deductions').textContent = money(data.total_deductions);
         document.getElementById('preview-net').textContent = money(data.net_payable);

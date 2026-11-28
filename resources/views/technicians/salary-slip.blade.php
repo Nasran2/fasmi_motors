@@ -206,6 +206,7 @@
     @endif
 
 
+    @include('technicians.partials.timing-half-days')
     @if($sheet->status === 'Draft' && $sheet->uses_legacy_daily_salary)
         <p class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 no-print">This draft uses the previous daily earnings calculation. Open <a href="{{ route('technicians.salaries.show', $sheet) }}#refresh-salary-calculation" class="font-bold underline">salary details → Refresh salary calculation</a> to use full Basic Salary with separate unpaid leave / absence deductions.</p>
     @endif

@@ -15,7 +15,7 @@
 
     {{-- Help Box --}}
     <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-700 leading-relaxed">
-      ℹ️ <strong>Technician Attendance & OT Rules:</strong> This page establishes company workshop hours and deduction thresholds. Make sure to map correct cutoff hours to automate morning and evening half-day markers.
+      ℹ️ <strong>Technician Attendance & OT Rules:</strong> This page establishes company workshop hours and deduction thresholds. Every 3 late arrivals and every 3 early departures create separate half-day deductions by default. Counters reset for each staff salary period.
     </div>
 
     <x-flash />
@@ -147,8 +147,10 @@
           </div>
         </div>
 
+        @php $timingSchedule = \App\Support\StaffWorkSchedule::resolve(); @endphp
+        <p class="text-sm text-slate-600">Current default cutoffs: late after {{ \Carbon\Carbon::parse($timingSchedule['late_cutoff'])->format('h:i A') }}; early before {{ \Carbon\Carbon::parse($timingSchedule['early_cutoff'])->format('h:i A') }}. Thresholds move with each staff member’s start and finish times.</p>
         {{-- Section 3: Late Coming Rules --}}
-        <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+        <div x-data="{ deductionType: @js(old('late_deduction_type', $salarySetting->late_deduction_type)) }" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🏃‍♂️ Late Coming Rules</h2>
           
           <div class="grid gap-4 sm:grid-cols-2">
@@ -160,19 +162,25 @@
               </label>
             </div>
             <div>
-              <label class="label">Late Grace Period (Minutes)</label>
+              <label class="label">Late threshold: minutes after staff start</label>
               <input type="number" name="late_grace_minutes" value="{{ $salarySetting->late_grace_minutes }}" class="w-full">
             </div>
             <div>
               <label class="label">Late Deduction Type</label>
-              <select name="late_deduction_type" class="w-full">
+              <select x-model="deductionType" name="late_deduction_type" class="w-full">
+                <option value="Half day per occurrences" @selected($salarySetting->late_deduction_type === 'Half day per occurrences')>Half day for every set of late arrivals</option>
                 <option value="Fixed amount" @selected($salarySetting->late_deduction_type === 'Fixed amount')>Fixed amount per day</option>
                 <option value="Per minute amount" @selected($salarySetting->late_deduction_type === 'Per minute amount')>Per minute amount</option>
               </select>
             </div>
-            <div>
-              <label class="label">Late Deduction Amount (Rs.)</label>
+            <div x-show="deductionType !== 'Half day per occurrences'" x-cloak>
+              <label class="label">Fee amount (only when a fee type is selected)</label>
               <input type="number" step="0.01" name="late_deduction_amount" value="{{ $salarySetting->late_deduction_amount }}" class="w-full">
+            </div>
+            <div>
+              <label class="label">Late arrivals per half-day deduction</label>
+              <input type="number" name="late_occurrences_per_half_day" min="1" max="1000" required value="{{ old('late_occurrences_per_half_day', $salarySetting->late_occurrences_per_half_day) }}" class="w-full">
+              <p class="mt-1 text-xs text-slate-500">Default: 3 → half day; 6 → another separate half day. No late fee applies in this mode.</p>
             </div>
             <div class="pt-6">
               <label class="flex items-center gap-2 cursor-pointer select-none">
@@ -185,7 +193,7 @@
         </div>
 
         {{-- Section 4: Early Leave Rules --}}
-        <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+        <div x-data="{ deductionType: @js(old('early_leave_deduction_type', $salarySetting->early_leave_deduction_type)) }" class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🚶‍♂️ Early Leave Rules</h2>
           
           <div class="grid gap-4 sm:grid-cols-2">
@@ -197,20 +205,26 @@
               </label>
             </div>
             <div>
-              <label class="label">Early Leave Grace Period (Minutes)</label>
+              <label class="label">Early threshold: minutes before staff finish</label>
               <input type="number" name="early_leave_grace_minutes" value="{{ $salarySetting->early_leave_grace_minutes }}" class="w-full">
             </div>
             <div>
               <label class="label">Early Leave Deduction Type</label>
-              <select name="early_leave_deduction_type" class="w-full">
+              <select x-model="deductionType" name="early_leave_deduction_type" class="w-full">
+                <option value="Half day per occurrences" @selected($salarySetting->early_leave_deduction_type === 'Half day per occurrences')>Half day for every set of early departures</option>
                 <option value="Fixed amount" @selected($salarySetting->early_leave_deduction_type === 'Fixed amount')>Fixed amount per day</option>
                 <option value="Per minute amount" @selected($salarySetting->early_leave_deduction_type === 'Per minute amount')>Per minute amount</option>
                 <option value="Half-day deduction" @selected($salarySetting->early_leave_deduction_type === 'Half-day deduction')>Half-day deduction</option>
               </select>
             </div>
-            <div>
-              <label class="label">Deduction Amount (Rs.)</label>
+            <div x-show="deductionType !== 'Half day per occurrences'" x-cloak>
+              <label class="label">Fee amount (only when a fee type is selected)</label>
               <input type="number" step="0.01" name="early_leave_deduction_amount" value="{{ $salarySetting->early_leave_deduction_amount }}" class="w-full">
+            </div>
+            <div>
+              <label class="label">Early departures per half-day deduction</label>
+              <input type="number" name="early_occurrences_per_half_day" min="1" max="1000" required value="{{ old('early_occurrences_per_half_day', $salarySetting->early_occurrences_per_half_day) }}" class="w-full">
+              <p class="mt-1 text-xs text-slate-500">Counted separately from late arrivals. Each completed set adds one half-day deduction.</p>
             </div>
             <div class="pt-6">
               <label class="flex items-center gap-2 cursor-pointer select-none">
@@ -233,15 +247,16 @@
                 <input type="checkbox" name="enable_ot" value="1" @checked($salarySetting->enable_ot) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                 <span class="text-xs font-bold text-slate-700">Enable Overtime (OT) calculations after closing time</span>
               </label>
-              <p class="mt-2 text-xs text-slate-500">OT is eligible only for check-in at or before workshop opening time (8:00 AM when opening is 8:00). Check-in at 8:01 AM is ineligible. Closing-time grace still applies. Eligible OT is paid to the nearest 30 minutes: 5:16 → 5:30, 5:44 → 5:30, 5:45 → 6:00 when closing is 5:00 PM. Actual punch times are retained.</p>
+              <p class="mt-2 text-xs text-slate-500">OT requires arrival at or before the staff’s scheduled start and an actual checkout. Default: Rs. 50 for each started 15-minute interval from scheduled finish: 5:00–5:14 PM = Rs. 50, 5:15–5:29 PM = Rs. 100. Late arrival earns no OT. Automatic checkout earns no OT.</p>
             </div>
             <div>
               <label class="label">OT Grace Period after Closing (Minutes)</label>
               <input type="number" name="ot_grace_minutes_after_closing" value="{{ $salarySetting->ot_grace_minutes_after_closing }}" class="w-full">
             </div>
             <div>
-              <label class="label">Fallback slab amount rounding</label>
+              <label class="label">Payable OT rounding</label>
               <select name="ot_round_method" class="w-full">
+                <option value="Started interval" @selected($salarySetting->ot_round_method === 'Started interval')>Each started interval (including finish time)</option>
                 <option value="Ceiling slab" @selected($salarySetting->ot_round_method === 'Ceiling slab')>Ceiling slab (round up)</option>
                 <option value="Floor slab" @selected($salarySetting->ot_round_method === 'Floor slab')>Floor slab (round down)</option>
                 <option value="Nearest slab" @selected($salarySetting->ot_round_method === 'Nearest slab')>Nearest slab</option>
@@ -257,11 +272,11 @@
               </select>
             </div>
             <div>
-              <label class="label">Fallback OT Amount per Slab (Rs.)</label>
+              <label class="label">OT amount per interval (Rs.)</label>
               <input type="number" step="0.01" name="ot_amount_per_slab" value="{{ $salarySetting->ot_amount_per_slab }}" class="w-full">
             </div>
             <div>
-              <label class="label">Fallback OT Slab Duration (Minutes)</label>
+              <label class="label">OT interval (minutes)</label>
               <input type="number" name="ot_slab_minutes" value="{{ $salarySetting->ot_slab_minutes }}" class="w-full">
             </div>
             <div class="grid grid-cols-2 gap-2 sm:col-span-2 border-t border-slate-100 pt-3">
@@ -279,10 +294,11 @@
           </div>
         </div>
 
+        <p class="text-xs text-slate-500">Fixed amount per interval uses the interval and amount above. Advanced ranges below apply to hourly calculation when the staff has no individual OT rate.</p>
         {{-- Section 6: Custom OT Slab Amount Rules --}}
         <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h2 class="text-base font-black text-slate-800">📊 OT Slab Amount Rules</h2>
+            <h2 class="text-base font-black text-slate-800">📊 Advanced OT Amount Ranges</h2>
             <button type="button" onclick="addSlabRow()" class="btn-secondary !min-h-8 !py-1 !px-2.5 text-xs text-red-600 font-black">＋ Add Slab Row</button>
           </div>
           
@@ -332,6 +348,14 @@
           </div>
         </div>
 
+        <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+          <h2 class="text-base font-black text-slate-800">Friday / Company Holiday Work</h2>
+          <label class="block"><span class="label">Extra working day salary = Basic Salary ÷</span>
+            <input type="number" name="leave_work_salary_divisor" min="1" max="366" step="0.01" required value="{{ old('leave_work_salary_divisor', $salarySetting->leave_work_salary_divisor) }}" class="w-full">
+          </label>
+          <p class="text-sm text-slate-500">Default divisor: 25. Basic Salary Rs. 50,000 → Rs. 2,000 extra for each worked Friday or company holiday. Closed days without work receive no extra pay. Set weekly closed days above and company holidays in Leave &amp; Holidays.</p>
+        </div>
+
         {{-- Section 7: Half Day Rules --}}
         <div class="panel bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <h2 class="text-base font-black text-slate-800 border-b border-slate-100 pb-3">🌓 Half Day Rules</h2>
@@ -341,7 +365,7 @@
               <label class="flex items-center gap-2 cursor-pointer select-none">
                 <input type="hidden" name="enable_half_day" value="0">
                 <input type="checkbox" name="enable_half_day" value="1" @checked($salarySetting->enable_half_day) class="rounded border-slate-300 text-red-600 focus:ring-red-500">
-                <span class="text-xs font-bold text-slate-700">Enable Half Day rules for late arrival / early leave</span>
+                <span class="text-xs font-bold text-slate-700">Also classify a single very late arrival / very early departure as a half day</span>
               </label>
             </div>
             <div>

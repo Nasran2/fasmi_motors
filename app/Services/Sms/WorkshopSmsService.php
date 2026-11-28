@@ -23,7 +23,7 @@ class WorkshopSmsService
             'assigned' => ['label' => 'Technician assigned or reassigned', 'recipient' => 'Technician', 'default' => 1, 'template' => 'Dear {technician_name}, job {job_no}, bike {bike_no}, is assigned to you. Model: {bike_model}. Complaint: {complaint}. - {business_name}'],
             'progress' => ['label' => 'Repair progress updated', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}: {status}. - {business_name}'],
             'completed' => ['label' => 'Repair completed / ready for pickup', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}, is ready for pickup. - {business_name}'],
-            'billed' => ['label' => 'Invoice issued with bill link', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, bill {invoice_no}: Rs. {bill_amount}. Balance: Rs. {due_amount}. View bill: {bill_link} - {business_name}'],
+            'billed' => ['label' => 'Invoice issued with PDF bill link', 'recipient' => 'Customer', 'default' => 1, 'template' => 'Dear {customer_name}, bill {invoice_no}: Rs. {bill_amount}. Balance: Rs. {due_amount}. View bill PDF: {bill_link} - {business_name}'],
             'payment' => ['label' => 'Payment received', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, payment Rs. {paid_amount} received for {invoice_no}. Receipt: {receipt_no}. Balance: Rs. {due_amount}. - {business_name}'],
             'delivered' => ['label' => 'Bike handed over', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, bike {bike_no}, job {job_no}, has been handed over. Thank you. - {business_name}'],
             'cancelled' => ['label' => 'Job cancelled', 'recipient' => 'Customer', 'default' => 0, 'template' => 'Dear {customer_name}, job {job_no} for bike {bike_no} has been cancelled. - {business_name}'],
@@ -97,11 +97,11 @@ class WorkshopSmsService
                 '{due_amount}' => number_format((float) ($record instanceof Payment ? $record->balance_after : $invoice?->due_amount), 2),
                 '{priority}' => $job?->priority ?? '', '{complaint}' => $job?->complaint ?? $intake?->complaint ?? '', '{status}' => $status,
                 '{business_name}' => Setting::valueFor('business_name', 'Fasmir Motors'),
-                '{bill_link}' => $invoice?->public_token ? self::publicBaseUrl().route('invoices.public', $invoice->public_token, false) : '',
+                '{bill_link}' => $invoice?->public_token ? self::publicBaseUrl().route('invoices.public.pdf', $invoice->public_token, false) : '',
             ];
             $template = self::normalizeTemplate($event, (string) Setting::valueFor('sms_tmpl_'.$event, $definition['template']));
             if ($event === 'billed' && ! str_contains($template, '{bill_link}')) {
-                $template .= ' View bill: {bill_link}';
+                $template .= ' View bill PDF: {bill_link}';
             }
             $message = strtr($template, $values);
             $options = ['module' => 'Workshop automation', 'message_type' => $event === 'progress' ? 'event:progress:'.$status : 'event:'.$event,
@@ -112,6 +112,8 @@ class WorkshopSmsService
                 $error = 'The invoice link is disabled, expired, or unavailable.';
             } elseif ($event === 'billed' && ! self::hasPublicBaseUrl()) {
                 $error = 'Set APP_URL to the public HTTPS address in .env; localhost links cannot be opened by customers.';
+            } elseif ($event === 'billed' && ! filter_var(Setting::valueFor('public_pdf_download', true), FILTER_VALIDATE_BOOL)) {
+                $error = 'Enable public PDF downloads in Invoice Settings before sending a bill PDF link.';
             }
             if ($error) {
                 $log = SmsLog::create(['phone' => $phone, 'phone_number' => $phone, 'formatted_phone' => PhoneFormatter::format($phone), 'message' => $message,

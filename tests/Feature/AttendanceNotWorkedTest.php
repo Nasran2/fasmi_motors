@@ -15,7 +15,7 @@ beforeEach(function () {
     $this->travelTo('2026-10-29 12:00:00');
     $this->actingAs(User::factory()->create());
     SalarySetting::firstOrCreate([])->update(['work_days' => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday', 'Sunday'],
-        'opening_time' => '08:00', 'closing_time' => '17:00', 'enable_half_day' => false, 'enable_ot' => true]);
+        'opening_time' => '08:00', 'closing_time' => '17:00', 'enable_half_day' => false, 'enable_ot' => true, 'ot_calculation_type' => 'Fixed amount per hour', 'ot_round_method' => 'Nearest slab', 'ot_slab_minutes' => 30]);
     $this->staff = Technician::create(['name' => 'Not Worked Staff', 'phone' => '0774321999', 'salary_type' => 'Daily', 'daily_salary' => 1500,
         'salary_period_mode' => 'normal_calendar', 'basic_salary' => 39000, 'ot_rate' => 150, 'epf_eligible' => false, 'etf_eligible' => false]);
     HolidayDate::create(['holiday_date' => '2026-10-14', 'holiday_name' => 'Maintenance closure', 'holiday_type' => 'Company',

@@ -99,6 +99,7 @@
             <div class="border-t border-slate-200 pt-4 text-sm">
               <div class="font-semibold text-slate-700">Customer invoice address</div>
               <div class="mt-1 break-all text-slate-500">{{ \App\Services\Sms\WorkshopSmsService::publicBaseUrl() }}</div>
+              <div class="mt-2 text-slate-500">Bill SMS includes a public PDF link that customers can open without signing in. Public PDF downloads must be enabled in Invoice Settings.</div>
               @unless($publicUrlReady)
                 <div role="status" class="mt-2 text-amber-700">Invoice SMS is blocked until APP_URL in .env points to your public HTTPS address.</div>
               @endunless

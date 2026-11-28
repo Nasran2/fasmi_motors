@@ -13,7 +13,7 @@ use Carbon\Carbon;
 beforeEach(function () {
     Carbon::setTestNow('2026-10-29 12:00:00');
     $this->actingAs(User::factory()->create());
-    SalarySetting::firstOrCreate([])->update(['enable_ot' => true, 'opening_time' => '08:00 AM', 'closing_time' => '05:00 PM', 'ot_grace_minutes_after_closing' => 15, 'enable_half_day' => false]);
+    SalarySetting::firstOrCreate([])->update(['enable_ot' => true, 'opening_time' => '08:00 AM', 'closing_time' => '05:00 PM', 'ot_grace_minutes_after_closing' => 15, 'ot_calculation_type' => 'Fixed amount per hour', 'ot_round_method' => 'Nearest slab', 'ot_slab_minutes' => 30, 'enable_half_day' => false]);
     $this->staff = Technician::create(['name' => 'Bulk OT Staff', 'phone' => '0700999000', 'active' => true, 'salary_type' => 'Monthly', 'basic_salary' => 30000, 'ot_rate' => 150, 'salary_period_mode' => 'normal_calendar', 'commission_type' => 'Manual only']);
     $this->makeRow = fn ($date, $extra = []) => TechnicianAttendance::create(array_replace(['technician_id' => $this->staff->id, 'date' => $date, 'in_time' => '08:00:00', 'out_time' => '18:00:00', 'status' => 'Present', 'created_by' => auth()->id()], $extra));
     $this->payload = ['scope' => 'filtered', 'from' => '2026-10-01', 'to' => '2026-10-31', 'reason' => 'Apply inclusive 8 AM overtime'];

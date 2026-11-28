@@ -23,6 +23,8 @@ final class StaffWorkSchedule
         $systemClose = Carbon::parse($day.$systemEnd);
         $morning = Carbon::parse($day.($settings->morning_half_day_cutoff ?: '12:00'));
         $evening = Carbon::parse($day.($settings->evening_half_day_cutoff ?: '13:00'));
+        $late = $open->copy()->addMinutes((int) $settings->late_grace_minutes);
+        $early = $close->copy()->subMinutes((int) $settings->early_leave_grace_minutes);
         if ($custom) {
             $morning = $open->copy()->addSeconds($morning->getTimestamp() - $systemOpen->getTimestamp());
             $evening = $close->copy()->subSeconds($systemClose->getTimestamp() - $evening->getTimestamp());
@@ -34,7 +36,8 @@ final class StaffWorkSchedule
 
         return ['mode' => $custom ? 'custom' : 'system_default', 'start' => $start, 'end' => $end,
             'working_hours' => round($hours, 4), 'break_minutes' => (int) $settings->lunch_break_minutes,
-            'morning_cutoff' => $morning->format('H:i:s'), 'evening_cutoff' => $evening->format('H:i:s')];
+            'morning_cutoff' => $morning->format('H:i:s'), 'evening_cutoff' => $evening->format('H:i:s'),
+            'late_cutoff' => $late->format('H:i:s'), 'early_cutoff' => $early->format('H:i:s')];
     }
 
     public static function importSchedules(): array
